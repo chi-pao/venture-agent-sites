@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顧客分析ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 50px auto; padding: 20px; background: #f9f9f9; border: 1px solid #ddd; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>顧客分析ツール</h1>
+        <form id="analysisForm">
+            <label for="customerName">顧客名:</label>
+            <input type="text" id="customerName" required>
+            <label for="salesAmount">売上金額:</label>
+            <input type="number" id="salesAmount" required>
+            <label for="reviewCount">レビュー数:</label>
+            <input type="number" id="reviewCount" required>
+            <label for="usageCount">利用回数:</label>
+            <input type="number" id="usageCount" required>
+            <button type="button" id="analyzeButton">分析</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+    <script>
+        document.getElementById('analyzeButton').addEventListener('click', analyze);
+
+        function analyze() {
+            const customerName = document.getElementById('customerName').value;
+            const salesAmount = parseFloat(document.getElementById('salesAmount').value);
+            const reviewCount = parseInt(document.getElementById('reviewCount').value);
+            const usageCount = parseInt(document.getElementById('usageCount').value);
+
+            const result = {
+                customerName: customerName,
+                averageSales: salesAmount / usageCount,
+                reviewScore: reviewCount / usageCount
+            };
+
+            document.getElementById('result').innerText = `
+                顧客名: ${result.customerName}
+                平均売上: ${result.averageSales.toFixed(2)}
+                レビュー数: ${result.reviewScore.toFixed(2)}
+            `;
+
+            // localStorage に結果を保存
+            localStorage.setItem('analysisResult', JSON.stringify(result));
+
+            // CSV 出力
+            const csvData = [
+                '顧客名', result.customerName,
+                '平均売上', result.averageSales.toFixed(2),
+                'レビュー数', result.reviewScore.toFixed(2)
+            ].join('\n');
+
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '分析結果.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
