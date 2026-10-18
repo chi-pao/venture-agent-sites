@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>書籍管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>書籍管理アプリ</h1>
+        <form id="bookForm">
+            <label for="title">書籍タイトル:</label>
+            <input type="text" id="title" required>
+            <label for="author">著者名:</label>
+            <input type="text" id="author" required>
+            <label for="genre">ジャンル:</label>
+            <input type="text" id="genre" required>
+            <button type="submit">登録</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        document.getElementById('bookForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const title = document.getElementById('title').value;
+            const author = document.getElementById('author').value;
+            const genre = document.getElementById('genre').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `書籍名: ${title}, 著者: ${author}, ジャンル: ${genre}`;
+            // データをlocalStorageに保存
+            localStorage.setItem(title, JSON.stringify({ title, author, genre }));
+        });
+
+        // CSV出力
+        document.getElementById('bookForm').addEventListener('submit', function() {
+            const books = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = JSON.parse(localStorage.getItem(key));
+                books.push(value);
+            }
+            const csvContent = "data:text/csv;charset=utf-8," + books.map(book => Object.values(book).join(",")).join("\n");
+            const link = document.createElement("a");
+            link.href = encodeURI(csvContent);
+            link.download = "books.csv";
+            link.click();
+        });
+    </script>
+</body>
+</html>
