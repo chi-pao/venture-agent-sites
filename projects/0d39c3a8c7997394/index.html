@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシピシェアプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { margin: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>レシピシェアプラットフォーム</h1>
+        <form id="recipeForm">
+            <label for="recipeName">レシピ名:</label>
+            <input type="text" id="recipeName" required>
+            <label for="ingredients">材料:</label>
+            <textarea id="ingredients" rows="4" required></textarea>
+            <label for="instructions">手順:</label>
+            <textarea id="instructions" rows="6" required></textarea>
+            <button type="submit">保存</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const recipeName = document.getElementById('recipeName').value;
+            const ingredients = document.getElementById('ingredients').value;
+            const instructions = document.getElementById('instructions').value;
+            const result = document.getElementById('result');
+
+            result.innerHTML = `
+                <h2>${recipeName}</h2>
+                <p><strong>材料:</strong><br>${ingredients}</p>
+                <p><strong>手順:</strong><br>${instructions}</p>
+            `;
+
+            // レシピの保存（localStorage）
+            localStorage.setItem(recipeName, JSON.stringify({ ingredients, instructions }));
+        });
+
+        // 保存されたレシピを表示
+        const savedRecipes = JSON.parse(localStorage.getItem('recipes')) || [];
+        savedRecipes.forEach(recipe => {
+            const result = document.getElementById('result');
+            result.innerHTML += `
+                <h2>${recipe.recipeName}</h2>
+                <p><strong>材料:</strong><br>${recipe.ingredients}</p>
+                <p><strong>手順:</strong><br>${recipe.instructions}</p>
+            `;
+        });
+    </script>
+</body>
+</html>
