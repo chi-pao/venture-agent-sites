@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マインドフルネスアプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { margin: 10px 0; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>マインドフルネスアプリ</h1>
+        <form id="inputForm">
+            <label for="stressLevel">ストレスレベル (1-10):</label>
+            <input type="number" id="stressLevel" min="1" max="10" required>
+            <br>
+            <label for="activity">最近の活動:</label>
+            <input type="text" id="activity" required>
+            <br>
+            <button type="button" id="calculate">結果を見る</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('calculate').addEventListener('click', function() {
+            const stressLevel = document.getElementById('stressLevel').value;
+            const activity = document.getElementById('activity').value;
+            const resultDiv = document.getElementById('result');
+
+            if (stressLevel && activity) {
+                const processedResult = `ストレスレベル: ${stressLevel}, 活動: ${activity}`;
+                resultDiv.textContent = processedResult;
+                localStorage.setItem('lastResult', processedResult);
+            } else {
+                resultDiv.textContent = '入力が不完全です。';
+            }
+        });
+
+        const lastResult = localStorage.getItem('lastResult');
+        if (lastResult) {
+            document.getElementById('result').textContent = lastResult;
+        }
+
+        document.getElementById('inputForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>
