@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学習支援アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>学習支援アプリ</h1>
+    <form id="inputForm">
+        <label for="inputValue">入力値:</label>
+        <input type="number" id="inputValue" min="0" required>
+        <button type="button" id="calculateButton">計算</button>
+    </form>
+    <div id="result" contenteditable="false">結果が表示されます</div>
+    <button type="button" id="saveButton">保存</button>
+    <a href="#" id="downloadButton">CSVダウンロード</a>
+
+    <script>
+        document.getElementById('calculateButton').addEventListener('click', function() {
+            const inputValue = document.getElementById('inputValue').value;
+            const result = inputValue * 2; // 簡単な計算例
+            document.getElementById('result').textContent = `結果: ${result}`;
+        });
+
+        document.getElementById('saveButton').addEventListener('click', function() {
+            const inputValue = document.getElementById('inputValue').value;
+            const result = document.getElementById('result').textContent;
+            localStorage.setItem('inputValue', inputValue);
+            localStorage.setItem('result', result);
+            alert('データが保存されました');
+        });
+
+        document.getElementById('downloadButton').addEventListener('click', function() {
+            const inputValue = localStorage.getItem('inputValue');
+            const result = localStorage.getItem('result');
+            const csvData = `入力値,結果\n${inputValue},${result}`;
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'result.csv';
+            a.click();
+        });
+    </script>
+</body>
+</html>
