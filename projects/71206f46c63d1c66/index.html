@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学習記録アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>学習記録アプリ</h1>
+        <form id="inputForm">
+            <label for="studyTime">学習時間（分）:</label>
+            <input type="number" id="studyTime" min="0" required>
+            <label for="studySubject">学習科目:</label>
+            <input type="text" id="studySubject" required>
+            <label for="studyDate">学習日:</label>
+            <input type="date" id="studyDate" required>
+            <button type="button" id="submitBtn">記録</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        document.getElementById('submitBtn').addEventListener('click', function() {
+            const studyTime = document.getElementById('studyTime').value;
+            const studySubject = document.getElementById('studySubject').value;
+            const studyDate = document.getElementById('studyDate').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `学習日: ${studyDate}<br>科目: ${studySubject}<br>時間: ${studyTime}分`;
+
+            // ローカルストレージにデータを保存
+            localStorage.setItem(studyDate, JSON.stringify({ subject: studySubject, time: studyTime }));
+        });
+    </script>
+</body>
+</html>
