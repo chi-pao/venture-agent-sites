@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインマーケティング支援アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンラインマーケティング支援アプリ</h1>
+        <form id="form">
+            <label for="input1">入力値1:</label>
+            <input type="number" id="input1" required>
+            <label for="input2">入力値2:</label>
+            <input type="number" id="input2" required>
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div class="result" id="result"></div>
+        <button type="button" onclick="saveToLocalStorage()">保存</button>
+        <button type="button" onclick="downloadCSV()">CSVダウンロード</button>
+    </div>
+
+    <script>
+        function calculate() {
+            const input1 = parseFloat(document.getElementById('input1').value);
+            const input2 = parseFloat(document.getElementById('input2').value);
+            const result = input1 + input2;
+            document.getElementById('result').innerText = `結果: ${result}`;
+        }
+
+        function saveToLocalStorage() {
+            const input1 = document.getElementById('input1').value;
+            const input2 = document.getElementById('input2').value;
+            const result = document.getElementById('result').innerText;
+            localStorage.setItem('input1', input1);
+            localStorage.setItem('input2', input2);
+            localStorage.setItem('result', result);
+        }
+
+        function downloadCSV() {
+            const input1 = document.getElementById('input1').value;
+            const input2 = document.getElementById('input2').value;
+            const result = document.getElementById('result').innerText;
+            const csvContent = `入力値1,入力値2,結果\n${input1},${input2},${result}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'result.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
