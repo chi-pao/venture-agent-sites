@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインストレージセキュリティツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>オンラインストレージセキュリティツール</h1>
+    <form id="securityForm">
+        <label for="inputData">データ入力:</label>
+        <input type="text" id="inputData" required>
+        <br>
+        <button type="button" onclick="processInput()">結果を見る</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        function processInput() {
+            const inputData = document.getElementById('inputData').value;
+            const resultDiv = document.getElementById('result');
+
+            // ここでは仮のAI処理を模倣
+            const processedData = inputData.toUpperCase() + " - AI処理済み";
+
+            resultDiv.innerHTML = `結果: ${processedData}`;
+            localStorage.setItem('lastInput', inputData);
+        }
+
+        window.onload = function() {
+            const lastInput = localStorage.getItem('lastInput');
+            if (lastInput) {
+                document.getElementById('inputData').value = lastInput;
+                processInput();
+            }
+        };
+
+        document.getElementById('inputData').addEventListener('input', function() {
+            localStorage.removeItem('lastInput');
+        });
+    </script>
+</body>
+</html>
