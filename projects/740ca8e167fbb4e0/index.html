@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在宅ワーク管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>在宅ワーク管理アプリ</h1>
+        <form id="workForm">
+            <label for="workHours">在宅ワーク時間（時間）:</label>
+            <input type="number" id="workHours" min="0" required>
+            <br>
+            <label for="breakHours">休憩時間（時間）:</label>
+            <input type="number" id="breakHours" min="0" required>
+            <br>
+            <label for="taskCount">タスク数:</label>
+            <input type="number" id="taskCount" min="0" required>
+            <br>
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div id="result"></div>
+        <button type="button" onclick="saveData()">保存</button>
+        <a href="data:text/csv;charset=utf-8," download="result.csv">CSV出力</a>
+    </div>
+
+    <script>
+        function calculate() {
+            const workHours = document.getElementById('workHours').value;
+            const breakHours = document.getElementById('breakHours').value;
+            const taskCount = document.getElementById('taskCount').value;
+
+            if (workHours < breakHours) {
+                alert('在宅ワーク時間は休憩時間より長く設定してください。');
+                return;
+            }
+
+            const productiveHours = workHours - breakHours;
+            const productivity = (productiveHours / workHours) * 100;
+            const tasksPerHour = taskCount / productiveHours;
+
+            const result = `在宅ワーク時間: ${workHours}時間<br>
+                            休憩時間: ${breakHours}時間<br>
+                            生産性: ${productivity.toFixed(2)}%<br>
+                            1時間あたりのタスク数: ${tasksPerHour.toFixed(2)}件`;
+            document.getElementById('result').innerText = result;
+        }
+
+        function saveData() {
+            const workHours = document.getElementById('workHours').value;
+            const breakHours = document.getElementById('breakHours').value;
+            const taskCount = document.getElementById('taskCount').value;
+
+            const result = `在宅ワーク時間: ${workHours}時間<br>
+                            休憩時間: ${breakHours}時間<br>
+                            タスク数: ${taskCount}件`;
+
+            localStorage.setItem('workData', result);
+            alert('データが保存されました。');
+        }
+    </script>
+</body>
+</html>
