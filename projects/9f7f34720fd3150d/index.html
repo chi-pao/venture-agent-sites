@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>返品対応管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input { width: 100%; padding: 8px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>返品対応管理アプリ</h1>
+        <form id="returnForm">
+            <div class="form-group">
+                <label for="orderNumber">注文番号</label>
+                <input type="text" id="orderNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="returnReason">返品理由</label>
+                <input type="text" id="returnReason" required>
+            </div>
+            <div class="form-group">
+                <label for="quantity">返品数量</label>
+                <input type="number" id="quantity" required>
+            </div>
+            <button type="submit">申請</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+    <script>
+        document.getElementById('returnForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const orderNumber = document.getElementById('orderNumber').value;
+            const returnReason = document.getElementById('returnReason').value;
+            const quantity = document.getElementById('quantity').value;
+            const resultDiv = document.getElementById('result');
+
+            const result = `注文番号: ${orderNumber}\n返品理由: ${returnReason}\n返品数量: ${quantity}`;
+            resultDiv.textContent = result;
+
+            // データをlocalStorageに保存
+            localStorage.setItem('returnData', JSON.stringify({ orderNumber, returnReason, quantity }));
+        });
+
+        // localStorageからデータを読み込み表示
+        if (localStorage.getItem('returnData')) {
+            const data = JSON.parse(localStorage.getItem('returnData'));
+            document.getElementById('result').textContent = `注文番号: ${data.orderNumber}\n返品理由: ${data.returnReason}\n返品数量: ${data.quantity}`;
+        }
+    </script>
+</body>
+</html>
