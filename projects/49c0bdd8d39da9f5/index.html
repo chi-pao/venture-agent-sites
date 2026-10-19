@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>返品対応管理アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>返品対応管理アプリ</h1>
+        <form id="form">
+            <label for="returnId">返品ID:</label>
+            <input type="text" id="returnId" required>
+            <label for="reason">返品理由:</label>
+            <textarea id="reason" required></textarea>
+            <label for="status">返品ステータス:</label>
+            <select id="status" required>
+                <option value="未処理">未処理</option>
+                <option value="承認済み">承認済み</option>
+                <option value="拒否">拒否</option>
+            </select>
+            <button type="button" onclick="handleReturn()">返品処理</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        function handleReturn() {
+            const returnId = document.getElementById('returnId').value;
+            const reason = document.getElementById('reason').value;
+            const status = document.getElementById('status').value;
+            const resultDiv = document.getElementById('result');
+
+            resultDiv.textContent = `返品ID: ${returnId}\n返品理由: ${reason}\n返品ステータス: ${status}`;
+
+            // ローカルストレージに保存
+            localStorage.setItem(returnId, JSON.stringify({ reason, status }));
+
+            // CSV形式でダウンロード
+            const csvData = `返品ID,返品理由,返品ステータス\n${returnId},${reason},${status}`;
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'return_data.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
