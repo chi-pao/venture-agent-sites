@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシピシェアプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>レシピシェアプラットフォーム</h1>
+        <form id="recipeForm">
+            <label for="ingredients">食材（カンマで区切る）:</label>
+            <input type="text" id="ingredients" required>
+            <label for="cookingTime">調理時間（分）:</label>
+            <input type="number" id="cookingTime" required>
+            <label for="servings">人数:</label>
+            <input type="number" id="servings" required>
+            <button type="submit">レシピ生成</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const ingredients = document.getElementById('ingredients').value.split(', ');
+            const cookingTime = parseInt(document.getElementById('cookingTime').value, 10);
+            const servings = parseInt(document.getElementById('servings').value, 10);
+
+            const result = generateRecipe(ingredients, cookingTime, servings);
+            document.getElementById('result').innerText = result;
+            saveRecipeToLocalStorage(result);
+            downloadRecipeAsCsv(result);
+        });
+
+        function generateRecipe(ingredients, cookingTime, servings) {
+            const baseRecipe = `【レシピ】\n食材: ${ingredients.join(', ')}\n調理時間: ${cookingTime}分\n人数: ${servings}人\n`;
+            const processedRecipe = processRecipe(baseRecipe);
+            return processedRecipe;
+        }
+
+        function processRecipe(recipe) {
+            // 簡単な加工：食材リストをアルファベット順に並び替え
+            const ingredients = recipe.match(/食材: (.+)/)[1].split(', ');
+            ingredients.sort();
+            recipe = recipe.replace(/食材: .+/g, `食材: ${ingredients.join(', ')}`);
+
+            // 調理時間の推奨：人数に応じて調理時間を調整
+            const adjustedCookingTime = cookingTime * (servings / 4);
+            recipe = recipe.replace(/調理時間: .+/g, `調理時間: ${adjustedCookingTime}分`);
+
+            return recipe;
+        }
+
+        function saveRecipeToLocalStorage(recipe) {
+            localStorage.setItem('savedRecipe', JSON.stringify(recipe));
+        }
+
+        function downloadRecipeAsCsv(recipe) {
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(recipe);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = csvContent;
+            downloadLink.download = 'recipe.csv';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+    </script>
+</body>
+</html>
