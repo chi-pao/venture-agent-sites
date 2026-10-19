@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン授業参加管理アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン授業参加管理アプリ</h1>
+        <form id="inputForm">
+            <label for="classDate">授業日時:</label>
+            <input type="text" id="classDate" placeholder="YYYY-MM-DD HH:MM" required>
+            <label for="className">授業名:</label>
+            <input type="text" id="className" required>
+            <label for="attendees">参加者名:</label>
+            <input type="text" id="attendees" required>
+            <label for="status">出席状況:</label>
+            <select id="status">
+                <option value="出席">出席</option>
+                <option value="欠席">欠席</option>
+                <option value="遅刻">遅刻</option>
+            </select>
+            <button type="button" id="addEntry">追加</button>
+        </form>
+        <div id="result"></div>
+        <button id="downloadCsv">CSVダウンロード</button>
+    </div>
+
+    <script>
+        document.getElementById('addEntry').addEventListener('click', addEntry);
+        document.getElementById('downloadCsv').addEventListener('click', downloadCsv);
+
+        function addEntry() {
+            const classDate = document.getElementById('classDate').value;
+            const className = document.getElementById('className').value;
+            const attendees = document.getElementById('attendees').value;
+            const status = document.getElementById('status').value;
+            const resultDiv = document.getElementById('result');
+
+            const entry = `${classDate} ${className} ${attendees} ${status}`;
+            resultDiv.innerHTML += `<p>${entry}</p>`;
+            localStorage.setItem(classDate, entry);
+        }
+
+        function downloadCsv() {
+            const entries = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                entries.push(`${key},${value}`);
+            }
+            const csvContent = 'data:text/csv;charset=utf-8,' + entries.join('\n');
+            const link = document.createElement('a');
+            link.href = encodeURI(csvContent);
+            link.download = 'attendance.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
