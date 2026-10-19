@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>家族間健康情報共有アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        .input-group { margin-bottom: 20px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>家族間健康情報共有アプリ</h1>
+        <div class="input-group">
+            <label for="weight">体重 (kg)</label>
+            <input type="number" id="weight" min="0" step="0.1">
+        </div>
+        <div class="input-group">
+            <label for="height">身長 (cm)</label>
+            <input type="number" id="height" min="0" step="1">
+        </div>
+        <div class="input-group">
+            <label for="bloodPressure">血圧 (mmHg)</label>
+            <input type="number" id="bloodPressure" min="0" step="1">
+        </div>
+        <div class="input-group">
+            <label for="bloodSugar">血糖値 (mg/dL)</label>
+            <input type="number" id="bloodSugar" min="0" step="1">
+        </div>
+        <button id="calculate">計算</button>
+        <div class="result" id="result"></div>
+        <button id="downloadCsv">CSVダウンロード</button>
+    </div>
+
+    <script>
+        document.getElementById('calculate').addEventListener('click', calculateHealthInfo);
+        document.getElementById('downloadCsv').addEventListener('click', downloadCSV);
+
+        function calculateHealthInfo() {
+            const weight = parseFloat(document.getElementById('weight').value);
+            const height = parseFloat(document.getElementById('height').value);
+            const bloodPressure = parseInt(document.getElementById('bloodPressure').value);
+            const bloodSugar = parseInt(document.getElementById('bloodSugar').value);
+
+            if (isNaN(weight) || isNaN(height) || isNaN(bloodPressure) || isNaN(bloodSugar)) {
+                document.getElementById('result').innerText = '入力が不完全です。すべてのフィールドを入力してください。';
+                return;
+            }
+
+            const bmi = weight / (height / 100) ** 2;
+            const healthInfo = `体重: ${weight} kg, 身長: ${height} cm, BMI: ${bmi.toFixed(2)}, 血圧: ${bloodPressure} mmHg, 血糖値: ${bloodSugar} mg/dL`;
+
+            document.getElementById('result').innerText = healthInfo;
+            localStorage.setItem('healthInfo', JSON.stringify({ weight, height, bloodPressure, bloodSugar, bmi }));
+        }
+
+        function downloadCSV() {
+            const healthInfo = JSON.parse(localStorage.getItem('healthInfo'));
+            if (!healthInfo) {
+                alert('計算結果が保存されていません。');
+                return;
+            }
+
+            const csvContent = `体重,身長,BMI,血圧,血糖値\n${healthInfo.weight},${healthInfo.height},${healthInfo.bmi},${healthInfo.bloodPressure},${healthInfo.bloodSugar}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'health_info.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
