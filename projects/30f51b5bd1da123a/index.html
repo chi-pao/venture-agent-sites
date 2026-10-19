@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン会議記録自動化ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>オンライン会議記録自動化ツール</h1>
+    <form id="inputForm">
+        <label for="meetingDuration">会議の長さ（分）:</label>
+        <input type="number" id="meetingDuration" min="1" required>
+        <br><br>
+        <label for="attendees">出席者数:</label>
+        <input type="number" id="attendees" min="1" required>
+        <br><br>
+        <button type="button" id="calculateButton">計算</button>
+    </form>
+    <div id="result" style="margin-top: 20px;"></div>
+
+    <script>
+        document.getElementById('calculateButton').addEventListener('click', function() {
+            const meetingDuration = document.getElementById('meetingDuration').value;
+            const attendees = document.getElementById('attendees').value;
+            const result = calculateMeetingCost(meetingDuration, attendees);
+            document.getElementById('result').innerText = `会議のコストは約 ${result} 円です。`;
+        });
+
+        function calculateMeetingCost(duration, attendees) {
+            // 簡単な計算例：1分あたり10円、1人あたり500円
+            const baseCost = duration * 10;
+            const attendeeCost = attendees * 500;
+            return baseCost + attendeeCost;
+        }
+
+        // データの保存とCSV出力
+        function saveAndExport() {
+            const result = document.getElementById('result').innerText;
+            localStorage.setItem('meetingResult', result);
+            const csvData = `会議のコストは約 ${result} 円です。`;
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'meeting_cost.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('calculateButton').addEventListener('click', function() {
+            const meetingDuration = document.getElementById('meetingDuration').value;
+            const attendees = document.getElementById('attendees').value;
+            const result = calculateMeetingCost(meetingDuration, attendees);
+            document.getElementById('result').innerText = `会議のコストは約 ${result} 円です。`;
+            saveAndExport();
+        });
+    </script>
+</body>
+</html>
