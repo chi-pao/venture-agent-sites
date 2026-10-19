@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学校通知管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>学校通知管理アプリ</h1>
+        <form id="notificationForm">
+            <label for="recipient">受信者:</label>
+            <select id="recipient" name="recipient">
+                <option value="all">全員</option>
+                <option value="parents">保護者</option>
+                <option value="teachers">教職員</option>
+            </select>
+            <br>
+            <label for="message">メッセージ:</label>
+            <textarea id="message" name="message" required></textarea>
+            <br>
+            <button type="button" id="sendButton">通知を送信</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('sendButton').addEventListener('click', function() {
+            const recipient = document.getElementById('recipient').value;
+            const message = document.getElementById('message').value;
+            const resultDiv = document.getElementById('result');
+
+            // メッセージの送信と履歴の保存
+            resultDiv.textContent = `通知が${recipient}に送信されました: ${message}`;
+
+            // ローカルストレージに履歴を保存
+            const history = JSON.parse(localStorage.getItem('notificationHistory')) || [];
+            history.push({ recipient, message });
+            localStorage.setItem('notificationHistory', JSON.stringify(history));
+        });
+    </script>
+</body>
+</html>
