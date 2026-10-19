@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作品収納管理アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+        }
+        label, input, button {
+            display: block;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px;
+            width: 100%;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>作品収納管理アプリ</h1>
+        <form id="form">
+            <label for="workName">作品名:</label>
+            <input type="text" id="workName" required>
+            <label for="workType">作品種類:</label>
+            <input type="text" id="workType" required>
+            <label for="workSize">作品サイズ:</label>
+            <input type="text" id="workSize" required>
+            <button type="button" onclick="calculate()">結果を見る</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        function calculate() {
+            const workName = document.getElementById('workName').value;
+            const workType = document.getElementById('workType').value;
+            const workSize = document.getElementById('workSize').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            // 簡単な計算例: 作品サイズに応じた収納場所提案
+            let suggestion = '';
+            if (workSize === '小さい') {
+                suggestion = '小さな作品は壁飾りに適しています。';
+            } else if (workSize === '大きい') {
+                suggestion = '大きな作品は床に置くか、床に近い場所に飾ります。';
+            } else {
+                suggestion = '作品のサイズを入力してください。';
+            }
+
+            resultDiv.innerHTML = `
+                <p>作品名: ${workName}</p>
+                <p>作品種類: ${workType}</p>
+                <p>作品サイズ: ${workSize}</p>
+                <p>収納場所の提案: ${suggestion}</p>
+            `;
+
+            // データをlocalStorageに保存
+            localStorage.setItem('workName', workName);
+            localStorage.setItem('workType', workType);
+            localStorage.setItem('workSize', workSize);
+            localStorage.setItem('suggestion', suggestion);
+        }
+
+        // CSVダウンロード
+        function downloadCSV() {
+            const workName = localStorage.getItem('workName');
+            const workType = localStorage.getItem('workType');
+            const workSize = localStorage.getItem('workSize');
+            const suggestion = localStorage.getItem('suggestion');
+
+            const csvContent = `作品名,作品種類,作品サイズ,収納場所の提案
+${workName},${workType},${workSize},${suggestion}`;
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '作品収納情報.csv';
+            link.click();
+        }
+
+        // 初期表示
+        window.onload = function() {
+            const workName = localStorage.getItem('workName');
+            const workType = localStorage.getItem('workType');
+            const workSize = localStorage.getItem('workSize');
+            const suggestion = localStorage.getItem('suggestion');
+
+            if (workName && workType && workSize && suggestion) {
+                document.getElementById('result').innerHTML = `
+                    <p>作品名: ${workName}</p>
+                    <p>作品種類: ${workType}</p>
+                    <p>作品サイズ: ${workSize}</p>
+                    <p>収納場所の提案: ${suggestion}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
