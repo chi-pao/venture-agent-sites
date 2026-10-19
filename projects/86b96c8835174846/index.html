@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作品収納管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>作品収納管理アプリ</h1>
+        <form id="form">
+            <label for="workName">作品名:</label>
+            <input type="text" id="workName" required>
+            <label for="artistName">作家名:</label>
+            <input type="text" id="artistName" required>
+            <label for="price">価格:</label>
+            <input type="number" id="price" required>
+            <button type="button" onclick="calculate()">結果表示</button>
+        </form>
+        <div class="result" id="result">
+            <p>結果はここに表示されます。</p>
+        </div>
+    </div>
+
+    <script>
+        function calculate() {
+            const workName = document.getElementById('workName').value;
+            const artistName = document.getElementById('artistName').value;
+            const price = document.getElementById('price').value;
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <p>作品名: ${workName}</p>
+                <p>作家名: ${artistName}</p>
+                <p>価格: ¥${price}</p>
+                <p>価格の倍: ¥${parseInt(price) * 2}</p>
+            `;
+
+            // データをlocalStorageに保存
+            localStorage.setItem('workName', workName);
+            localStorage.setItem('artistName', artistName);
+            localStorage.setItem('price', price);
+
+            // CSV形式のデータを作成してダウンロード
+            const csvData = `作品名,作家名,価格
+${workName},${artistName},${price}
+`;
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '作品収納.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
