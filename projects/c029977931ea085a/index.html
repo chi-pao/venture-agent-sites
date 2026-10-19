@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学習記録管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>学習記録管理アプリ</h1>
+        <form id="inputForm">
+            <label for="studyTime">学習時間（分）:</label>
+            <input type="number" id="studyTime" min="0" required>
+            <label for="subject">科目:</label>
+            <select id="subject">
+                <option value="数学">数学</option>
+                <option value="国語">国語</option>
+                <option value="理科">理科</option>
+                <option value="社会">社会</option>
+            </select>
+            <button type="button" id="calculateButton">計算</button>
+        </form>
+        <div class="result" id="result"></div>
+        <button id="downloadButton">CSVダウンロード</button>
+    </div>
+
+    <script>
+        document.getElementById('calculateButton').addEventListener('click', function() {
+            const studyTime = document.getElementById('studyTime').value;
+            const subject = document.getElementById('subject').value;
+            const result = `科目: ${subject}, 学習時間: ${studyTime}分`;
+            document.getElementById('result').innerText = result;
+        });
+
+        document.getElementById('downloadButton').addEventListener('click', function() {
+            const result = document.getElementById('result').innerText;
+            const csvContent = `科目, 学習時間（分）
+${result}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '学習記録.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+</body>
+</html>
