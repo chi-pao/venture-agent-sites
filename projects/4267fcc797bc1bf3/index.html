@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子育て記録管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { margin: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin-bottom: 10px; }
+        button { padding: 10px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>子育て記録管理アプリ</h1>
+        <form id="form">
+            <label for="weight">体重 (kg):</label>
+            <input type="number" id="weight" step="0.1" min="0">
+            <br>
+            <label for="height">身長 (cm):</label>
+            <input type="number" id="height" step="1" min="0">
+            <br>
+            <label for="diary">日記:</label>
+            <textarea id="diary" rows="4" cols="50"></textarea>
+            <br>
+            <button type="button" onclick="calculateBMI()">BMI計算</button>
+            <button type="button" onclick="saveData()">保存</button>
+            <button type="button" onclick="downloadCSV()">CSVダウンロード</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function calculateBMI() {
+            const weight = parseFloat(document.getElementById('weight').value);
+            const height = parseFloat(document.getElementById('height').value);
+            if (isNaN(weight) || isNaN(height)) {
+                document.getElementById('result').innerText = '体重と身長を正しく入力してください。';
+                return;
+            }
+            const bmi = weight / (height / 100) ** 2;
+            document.getElementById('result').innerText = `BMI: ${bmi.toFixed(2)}`;
+        }
+
+        function saveData() {
+            const weight = document.getElementById('weight').value;
+            const height = document.getElementById('height').value;
+            const diary = document.getElementById('diary').value;
+            localStorage.setItem('weight', weight);
+            localStorage.setItem('height', height);
+            localStorage.setItem('diary', diary);
+            document.getElementById('result').innerText = 'データが保存されました。';
+        }
+
+        function downloadCSV() {
+            const weight = localStorage.getItem('weight');
+            const height = localStorage.getItem('height');
+            const diary = localStorage.getItem('diary');
+            const csvContent = `体重,身長,日記\n${weight},${height},${diary}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '子育て記録.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>
