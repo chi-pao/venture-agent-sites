@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>授業参加通知アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        input, button {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>授業参加通知アプリ</h1>
+        <form id="form">
+            <label for="classTime">授業時間:</label>
+            <input type="text" id="classTime" placeholder="例: 10:00-11:00" required><br>
+            <label for="classLocation">授業場所:</label>
+            <input type="text" id="classLocation" placeholder="例: 1号館201教室" required><br>
+            <label for="classType">授業種類:</label>
+            <select id="classType">
+                <option value="個別">個別授業</option>
+                <option value="全体">全体授業</option>
+            </select><br>
+            <button type="submit">登録</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+    <script>
+        document.getElementById('form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const classTime = document.getElementById('classTime').value;
+            const classLocation = document.getElementById('classLocation').value;
+            const classType = document.getElementById('classType').value;
+            const resultDiv = document.getElementById('result');
+
+            resultDiv.innerHTML = `授業情報: ${classTime} / ${classLocation} / ${classType}`;
+            localStorage.setItem('classInfo', JSON.stringify({ classTime, classLocation, classType }));
+        });
+
+        window.onload = function() {
+            const savedInfo = localStorage.getItem('classInfo');
+            if (savedInfo) {
+                const info = JSON.parse(savedInfo);
+                document.getElementById('classTime').value = info.classTime;
+                document.getElementById('classLocation').value = info.classLocation;
+                document.getElementById('classType').value = info.classType;
+                document.getElementById('result').innerHTML = `授業情報: ${info.classTime} / ${info.classLocation} / ${info.classType}`;
+            }
+        };
+
+        document.getElementById('result').addEventListener('click', function() {
+            const csvData = `授業時間,授業場所,授業種類\n${localStorage.getItem('classInfo')}`;
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '授業情報.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
