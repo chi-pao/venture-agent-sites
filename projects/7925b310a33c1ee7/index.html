@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物件比較・修繕・問い合わせ管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>物件比較・修繕・問い合わせ管理アプリ</h1>
+        <form id="form">
+            <label for="propertyInfo">物件情報 (例: 住所, 面積, 築年数)</label>
+            <textarea id="propertyInfo" required></textarea>
+            <label for="repairRecords">修繕記録 (例: 修繕日, 内容, 費用)</label>
+            <textarea id="repairRecords" required></textarea>
+            <label for="contactInquiries">問い合わせ管理 (例: 連絡先, 内容, 状態)</label>
+            <textarea id="contactInquiries" required></textarea>
+            <button type="button" onclick="processData()">結果を見る</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+        <button type="button" onclick="downloadCSV()">CSVでダウンロード</button>
+    </div>
+
+    <script>
+        function processData() {
+            const propertyInfo = document.getElementById('propertyInfo').value;
+            const repairRecords = document.getElementById('repairRecords').value;
+            const contactInquiries = document.getElementById('contactInquiries').value;
+
+            const result = `
+                <h2>結果</h2>
+                <p><strong>物件情報</strong>: ${propertyInfo}</p>
+                <p><strong>修繕記録</strong>: ${repairRecords}</p>
+                <p><strong>問い合わせ管理</strong>: ${contactInquiries}</p>
+            `;
+
+            document.getElementById('result').innerHTML = result;
+        }
+
+        function downloadCSV() {
+            const propertyInfo = document.getElementById('propertyInfo').value;
+            const repairRecords = document.getElementById('repairRecords').value;
+            const contactInquiries = document.getElementById('contactInquiries').value;
+
+            const csvContent = `データ,物件情報,修繕記録,問い合わせ管理
+物件情報,${propertyInfo},${repairRecords},${contactInquiries}`;
+
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '物件情報.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
