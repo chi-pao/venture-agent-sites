@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン会議自動録画・編集ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン会議自動録画・編集ツール</h1>
+        <form id="form">
+            <label for="meetingDuration">会議時間（分）:</label>
+            <input type="number" id="meetingDuration" required>
+            <label for="videoQuality">映像品質:</label>
+            <select id="videoQuality">
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+            </select>
+            <label for="audioQuality">音声品質:</label>
+            <select id="audioQuality">
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+            </select>
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function calculate() {
+            const duration = document.getElementById('meetingDuration').value;
+            const videoQuality = document.getElementById('videoQuality').value;
+            const audioQuality = document.getElementById('audioQuality').value;
+            const resultDiv = document.getElementById('result');
+
+            if (duration && videoQuality && audioQuality) {
+                const totalSize = (parseInt(duration) * 10) / 1000; // 假设每分钟大小为10MB
+                resultDiv.innerHTML = `会議時間：${duration}分<br>映像品質：${videoQuality}<br>音声品質：${audioQuality}<br>総サイズ：${totalSize.toFixed(2)} MB`;
+                localStorage.setItem('result', JSON.stringify({ duration, videoQuality, audioQuality, totalSize }));
+            } else {
+                resultDiv.innerHTML = 'すべてのフィールドを入力してください。';
+            }
+        }
+
+        window.onload = function() {
+            const savedResult = localStorage.getItem('result');
+            if (savedResult) {
+                const result = JSON.parse(savedResult);
+                document.getElementById('meetingDuration').value = result.duration;
+                document.getElementById('videoQuality').value = result.videoQuality;
+                document.getElementById('audioQuality').value = result.audioQuality;
+                document.getElementById('result').innerHTML = `会議時間：${result.duration}分<br>映像品質：${result.videoQuality}<br>音声品質：${result.audioQuality}<br>総サイズ：${result.totalSize.toFixed(2)} MB`;
+            }
+        };
+
+        document.getElementById('form').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>
