@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_4617102a41d6d3ecf44f18fc:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインマインドフルネス教室</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            min-height: 100px;
+        }
+        #saveButton, #exportButton {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>オンラインマインドフルネス教室</h1>
+    <form id="form">
+        <label for="inputValue">入力値:</label>
+        <input type="number" id="inputValue" min="1" max="100" required>
+        <button type="button" id="calculate">計算</button>
+    </form>
+    <div id="result"></div>
+    <div id="saveButton" style="display: none;">
+        <button type="button" id="saveResult">結果を保存</button>
+    </div>
+    <div id="exportButton" style="display: none;">
+        <button type="button" id="exportResult">結果をCSV出力</button>
+    </div>
+
+    <script>
+        document.getElementById('calculate').addEventListener('click', function() {
+            const inputValue = document.getElementById('inputValue').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = `入力値: ${inputValue} の平方根は ${Math.sqrt(inputValue)}`;
+            document.getElementById('saveResult').style.display = 'block';
+            document.getElementById('exportResult').style.display = 'block';
+        });
+
+        document.getElementById('saveResult').addEventListener('click', function() {
+            const result = document.getElementById('result').textContent;
+            localStorage.setItem('result', result);
+        });
+
+        document.getElementById('exportResult').addEventListener('click', function() {
+            const result = document.getElementById('result').textContent;
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(result);
+            const link = document.createElement('a');
+            link.href = csvContent;
+            link.download = 'result.csv';
+            link.click();
+        });
+    </script>
+</body>
+</html>
