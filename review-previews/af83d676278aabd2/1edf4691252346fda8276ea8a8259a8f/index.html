@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_da66a8dc7c5a78939e6637d2:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在宅ワーク支援ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+        #saveButton, #exportButton { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>在宅ワーク支援ツール</h1>
+    <form id="inputForm">
+        <label for="hoursWorked">労働時間（時間）:</label>
+        <input type="number" id="hoursWorked" min="0" required>
+        <br>
+        <label for="hourlyRate">時給（円）:</label>
+        <input type="number" id="hourlyRate" min="0" required>
+        <br>
+        <button type="button" onclick="calculateIncome()">計算</button>
+    </form>
+    <div id="result" style="margin-top: 20px;"></div>
+    <div id="saveButton" style="margin-top: 20px;">
+        <button type="button" onclick="saveData()">保存</button>
+    </div>
+    <div id="exportButton" style="margin-top: 20px;">
+        <button type="button" onclick="exportData()">CSV出力</button>
+    </div>
+
+    <script>
+        function calculateIncome() {
+            const hoursWorked = document.getElementById('hoursWorked').value;
+            const hourlyRate = document.getElementById('hourlyRate').value;
+            const income = hoursWorked * hourlyRate;
+            document.getElementById('result').innerText = `収入: ${income}円`;
+        }
+
+        function saveData() {
+            const hoursWorked = document.getElementById('hoursWorked').value;
+            const hourlyRate = document.getElementById('hourlyRate').value;
+            const income = document.getElementById('result').innerText;
+            localStorage.setItem('hoursWorked', hoursWorked);
+            localStorage.setItem('hourlyRate', hourlyRate);
+            localStorage.setItem('income', income);
+            alert('データが保存されました。');
+        }
+
+        function exportData() {
+            const hoursWorked = document.getElementById('hoursWorked').value;
+            const hourlyRate = document.getElementById('hourlyRate').value;
+            const income = document.getElementById('result').innerText;
+            const csvContent = `労働時間（時間）: ${hoursWorked}\n時給（円）: ${hourlyRate}\n収入: ${income}`;
+            const csvFile = new Blob([csvContent], { type: 'text/csv' });
+            const csvUrl = URL.createObjectURL(csvFile);
+            const a = document.createElement('a');
+            a.href = csvUrl;
+            a.download = 'incomes.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
