@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_cb53f9cf1e1fe9dcd5c2f61d:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン会議スケジューリング助手</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>オンライン会議スケジューリング助手</h1>
+    <form id="schedulerForm">
+        <label for="participant1">参加者1:</label>
+        <input type="text" id="participant1" required><br>
+        <label for="participant2">参加者2:</label>
+        <input type="text" id="participant2" required><br>
+        <label for="participant3">参加者3:</label>
+        <input type="text" id="participant3" required><br>
+        <label for="meetingTime">会議時間:</label>
+        <input type="time" id="meetingTime" required><br>
+        <button type="button" onclick="scheduleMeeting()">会議スケジューリング</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        function scheduleMeeting() {
+            const participant1 = document.getElementById('participant1').value;
+            const participant2 = document.getElementById('participant2').value;
+            const participant3 = document.getElementById('participant3').value;
+            const meetingTime = document.getElementById('meetingTime').value;
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            const availableTimes = [
+                { time: '10:00', participants: [participant1, participant2] },
+                { time: '11:00', participants: [participant2, participant3] },
+                { time: '13:00', participants: [participant1, participant3] }
+            ];
+
+            let bestTime = null;
+            availableTimes.forEach(timeObj => {
+                if (timeObj.participants.includes(participant1) &&
+                    timeObj.participants.includes(participant2) &&
+                    timeObj.participants.includes(participant3)) {
+                    bestTime = timeObj.time;
+                }
+            });
+
+            if (bestTime) {
+                resultDiv.innerHTML = `最適な会議時間は ${bestTime} です。`;
+                localStorage.setItem('meetingTime', bestTime);
+            } else {
+                resultDiv.innerHTML = '参加者のスケジュールが一致しないため、会議時間は見つかりませんでした。';
+            }
+        }
+
+        const savedTime = localStorage.getItem('meetingTime');
+        if (savedTime) {
+            document.getElementById('result').innerHTML = `過去の会議時間: ${savedTime}`;
+        }
+
+        document.getElementById('schedulerForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>
