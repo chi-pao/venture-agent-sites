@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_df928bee5a609ca2b628cef7:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ビジネスコンサルティングプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, textarea, button { display: block; margin: 10px 0; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ビジネスコンサルティングプラットフォーム</h1>
+        <form id="consultForm">
+            <label for="annualRevenue">年間売上（円）</label>
+            <input type="number" id="annualRevenue" required>
+            <label for="employees">従業員数</label>
+            <input type="number" id="employees" required>
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+        <button onclick="downloadCSV()">CSVダウンロード</button>
+    </div>
+
+    <script>
+        function calculate() {
+            const annualRevenue = document.getElementById('annualRevenue').value;
+            const employees = document.getElementById('employees').value;
+            const result = (parseInt(annualRevenue) / parseInt(employees)).toLocaleString('ja-JP', { minimumFractionDigits: 2 });
+
+            document.getElementById('result').innerText = `平均年間売上（円）: ${result}`;
+        }
+
+        function downloadCSV() {
+            const annualRevenue = document.getElementById('annualRevenue').value;
+            const employees = document.getElementById('employees').value;
+            const result = (parseInt(annualRevenue) / parseInt(employees)).toLocaleString('ja-JP', { minimumFractionDigits: 2 });
+
+            const csvContent = `年間売上,従業員数,平均年間売上（円）
+${annualRevenue},${employees},${result}\n`;
+
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'business_analysis.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>
