@@ -148,6 +148,8 @@ TRAVEL_REQUIREMENTS=('友達・カップル・家族の国内旅行。目的地�
 
 def init_product_quality():
     with db() as c:
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_owner_decisions(
+            idea TEXT PRIMARY KEY,decision TEXT NOT NULL,reason TEXT NOT NULL,updated TEXT NOT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS venture_product_quality(
             idea TEXT PRIMARY KEY,content_sha TEXT DEFAULT '',policy TEXT DEFAULT '',
             ready INTEGER DEFAULT 0,status TEXT DEFAULT '品質確認待ち',
@@ -293,7 +295,32 @@ def record_product_review(name,digest,scope,checks,evidence):
         VALUES(?,?,?,?,?,?)''',(name,digest,scope,json.dumps(checks),evidence.strip()[:4000],now()))
 
 
+def owner_decision(name):
+    rows=query('SELECT * FROM venture_owner_decisions WHERE idea=?',(name,))
+    return rows[0] if rows else {'decision':'未判断','reason':'','updated':''}
+
+
+def development_allowed(name,ai_phase=None):
+    decision=owner_decision(name)['decision']
+    if decision in ('保留','中止'):return False
+    if decision=='継続':return True
+    return ai_phase not in ('中止','保留')
+
+
+def set_owner_decision(name,decision,reason):
+    if decision not in ('継続','保留','中止'):raise ValueError('継続・保留・中止から選んでください')
+    if not reason.strip():raise ValueError('判断理由を入力してください')
+    if not query('SELECT name FROM autonomous_ideas WHERE name=?',(name,)):raise ValueError('事業がありません')
+    execute('''INSERT INTO venture_owner_decisions(idea,decision,reason,updated) VALUES(?,?,?,?)
+        ON CONFLICT(idea) DO UPDATE SET decision=excluded.decision,reason=excluded.reason,updated=excluded.updated''',
+        (name,decision,reason.strip()[:2500],now()))
+    if decision=='継続':
+        product_development_state(name,'修正依頼あり','のぼるさんの継続判断: '+reason.strip())
+    action_record(name,'のぼるさんの判断',decision,reason.strip())
+
+
 def product_quality_allowed(name):
+    if not development_allowed(name):return False
     rows=query('''SELECT q.*,c.content_sha AS saved_sha,c.public_verified FROM venture_product_quality q
         JOIN autonomous_checks c ON c.idea=q.idea WHERE q.idea=?''',(name,))
     if not rows:return False
@@ -425,7 +452,9 @@ def quality_development_cycle(job,cfg):
     rows=query('''SELECT a.name,d.stage,d.scope_sha,d.attempts,d.updated FROM autonomous_ideas a
         LEFT JOIN venture_product_development d ON d.idea=a.name
         LEFT JOIN venture_value_state v ON v.idea=a.name
-        WHERE a.attempts>0 AND COALESCE(v.phase,'') NOT IN ('中止','保留')
+        LEFT JOIN venture_owner_decisions o ON o.idea=a.name
+        WHERE a.attempts>0 AND COALESCE(o.decision,'') NOT IN ('中止','保留')
+            AND (o.decision='継続' OR COALESCE(v.phase,'') NOT IN ('中止','保留'))
         ORDER BY CASE WHEN d.stage='修正依頼あり' THEN 0 WHEN d.idea IS NULL THEN 1 ELSE 2 END,COALESCE(d.updated,'')''')
     waiting={}
     for row in rows:
@@ -631,6 +660,12 @@ def product_portfolio_snapshot():
                   '実利用の好反応あり・収益未検証' if signal else
                   '反応を検証中・収益未検証' if samples else '利用反応未測定・収益未検証')
         technical=phase=='保留' and any(word in reason for word in ('技術','修正上限','試作検査'))
+        owner=owner_decision(name)
+        ai_phase,ai_reason=phase,reason
+        if owner['decision'] in ('中止','保留'):
+            phase=owner['decision'];reason='のぼるさんの判断: '+owner['reason'];technical=False
+        elif owner['decision']=='継続':
+            phase='ユーザー継続';reason='のぼるさんの継続判断: '+owner['reason']
         if phase=='中止':
             group='中止';action='追加開発を停止';next_action='判断根拠を確認。再開には仮説の見直しが必要'
         elif phase=='保留':
@@ -652,7 +687,8 @@ def product_portfolio_snapshot():
             next_action=next_action,priority=row['priority'],evidence=evidence,samples=samples,
             sales=sales,profit=profit,details=row['details'] or 'まだ改善結果の記録がありません',
             judged_at=row['judged_at'] or '未判定',developed_at=row['developed_at'] or '未着手',
-            current=name==current,technical=technical))
+            current=name==current,technical=technical,owner_decision=owner['decision'],owner_reason=owner['reason'],
+            ai_phase=ai_phase,ai_reason=ai_reason))
     return result,current
 
 
@@ -667,15 +703,18 @@ def render_portfolio_status():
          sum(x['group']=='保留' for x in items),sum(x['group']=='中止' for x in items))):
         col.metric(label,count)
     st.caption('育成優先点は運営判断の点数で、成功確率ではありません。好反応・売上・利益は分けて表示します。保留は「儲からないと確定」ではありません。')
+    st.caption('ご自身で選ぶときは「自分が未判断」でAIの保留・中止案も比較できます。未判断は従来のAI判断で運転し、保存した継続・保留・中止はAI判断より優先します。')
     ranked=[x for x in items if x['group'] not in ('中止','保留') and x['priority'] is not None]
     if ranked:
         top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
         st.write('**育成判断の最上位:** '+top['name']+'（'+str(top['priority'])+'点'+('・同点'+str(ties)+'件' if ties>1 else '')+'）')
         st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
-    selection=st.selectbox('表示する状態',['開発・育成中','すべて','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
+    selection=st.selectbox('表示する状態',['開発・育成中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
     visible=[x for x in items if selection=='すべて' or
         (selection=='開発・育成中' and x['group'] not in ('中止','保留')) or
-        (selection=='今の作業中' and x['current']) or x['group']==selection]
+        (selection=='今の作業中' and x['current']) or
+        (selection=='自分が未判断' and x['owner_decision']=='未判断') or
+        (selection=='自分が継続を選んだ事業' and x['owner_decision']=='継続') or x['group']==selection]
     table=[{'事業':x['name'],'今の扱い':x['action'],'開発状態':x['stage'],
             '継続判断':x['phase'],'育成優先点':x['priority'],'根拠の強さ':x['evidence'],
             '判断理由':x['reason'],'次にすること':x['next_action']} for x in visible]
@@ -732,9 +771,20 @@ def render_created_apps(cfg):
             st.write('**'+label+'**')
             st.write('**'+str(idea_details(name).get('product_name') or name)+'**')
             st.write('**育成優先点:** '+('未判定' if summary['priority'] is None else str(summary['priority'])+'点')+' ／ '+summary['evidence'])
+            st.write('**のぼるさんの判断:** '+summary['owner_decision'])
+            st.caption('AIの評価: '+summary['ai_phase']+' ／ '+summary['ai_reason'])
             st.write('**判断理由:** '+summary['reason'])
             st.write('**改善状況:** '+summary['stage'])
             st.write('**次にすること:** '+summary['next_action'])
+            with st.expander('自分で継続・保留・中止を決める'):
+                st.caption('開発はこの判断を優先します。AI評価・実測は別に保持します。継続を選んでも公開・SNS発信の許可にはなりません。保留・中止後も再開できます。')
+                with st.form('owner_decision_'+hashlib.sha256(name.encode()).hexdigest()[:16]):
+                    choices=['継続','保留','中止']
+                    choice=st.radio('開発の判断',choices,index=choices.index(summary['owner_decision']) if summary['owner_decision'] in choices else 0,key='owner_choice_'+name)
+                    reason=st.text_area('その判断をした理由',value=summary['owner_reason'],key='owner_reason_'+name)
+                    if st.form_submit_button('この判断を保存'):
+                        try:set_owner_decision(name,choice,reason);st.success('判断を保存しました');st.rerun()
+                        except ValueError as exc:st.warning(str(exc))
             if summary['group'] not in ('中止','保留'):
                 if st.button('このアプリを優先して作り直す',key='rebuild_product_'+hashlib.sha256(name.encode()).hexdigest()[:16]):
                     if not get_product_spec(name):
@@ -1564,6 +1614,7 @@ def unfinished_project_candidates(job, cfg, limit=1):
                     ORDER BY score DESC, updated ASC LIMIT 40""")
     ranked = []
     for row in rows:
+        if not development_allowed(row['name']):continue
         try:
             item = json.loads(row['rationale'] or '{}')
         except (TypeError, ValueError):
@@ -1789,6 +1840,7 @@ def github_publish(name, page, cfg):
 
     Return a public URL only after the configured host responds successfully.
     """
+    if not development_allowed(name):return '','のぼるさんが保留・中止を選んだ事業です'
     if not local_product_review(name,hashlib.sha256(page.encode('utf-8')).hexdigest()):
         return '', 'のぼるさんの発信OK待ち。確認済みの完成条件と、この版への許可が必要です'
     repo = str(cfg.get('github_repo', '')).strip()
@@ -2120,6 +2172,7 @@ def auto_improve_existing(job,cfg):
         WHERE c.public_verified=1 AND a.published_url!='' ORDER BY a.updated ASC LIMIT 30""")
     for row in rows:
         if not state()['enabled']: return
+        if not development_allowed(row['name']):continue
         result=evaluate_value(row['name'],cfg)
         if result['phase'] not in ('収益継続','育成継続','改善中','仮説改善'): continue
         last=query('SELECT created FROM autonomous_revisions WHERE idea=? ORDER BY id DESC LIMIT 1',(row['name'],))
@@ -2236,7 +2289,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         return '',detail,False
 
     for n in range(1, int(cfg['max_revisions']) + 1):
-        if not state()['enabled']:
+        if not state()['enabled'] or not development_allowed(name):
             break
 
         event(job, f'{name}: 試作品作成・修正 {n}/{cfg["max_revisions"]}')
@@ -2403,6 +2456,7 @@ def cycle(cfg):
         picked = []
         ranked = []
         for name, sc, item in proposals[:min(len(proposals), 8)]:
+            if not development_allowed(name):continue
             if not state()['enabled']:
                 break
             commercial=item.get('commercial_assessment')
@@ -2875,7 +2929,7 @@ def review_value_portfolio(cfg):
 def value_work_capacity(cfg):
     rows = query('''SELECT a.name,v.phase FROM autonomous_ideas a
         LEFT JOIN venture_value_state v ON v.idea=a.name WHERE a.attempts>0''')
-    active = sum(1 for r in rows if r['phase'] not in ('中止', '保留'))
+    active = sum(1 for r in rows if development_allowed(r['name'],r['phase']))
     return max(0, int(cfg.get('max_active', 4)) - active)
 
 
@@ -4104,7 +4158,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.6 ／ 旧試作品と改善候補を区別・品質レビューを追加')
+    st.caption('表示版: 2026.10.22.7 ／ のぼるさんの継続・保留・中止を優先')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
