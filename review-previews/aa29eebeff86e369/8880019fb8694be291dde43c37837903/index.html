@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_17c13266701ccf0890f79f36:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン会計助手</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン会計助手</h1>
+        <div class="input-group">
+            <label for="income">月間収入（円）:</label>
+            <input type="number" id="income" placeholder="例：100000">
+        </div>
+        <div class="input-group">
+            <label for="expenses">月間経費（円）:</label>
+            <input type="number" id="expenses" placeholder="例：50000">
+        </div>
+        <div class="input-group">
+            <label for="taxRate">税率（%）:</label>
+            <input type="number" id="taxRate" placeholder="例：8">
+        </div>
+        <button onclick="calculate()">計算</button>
+        <div class="result" id="result"></div>
+        <button onclick="saveData()">データ保存</button>
+        <button onclick="downloadCSV()">CSVダウンロード</button>
+    </div>
+
+    <script>
+        function calculate() {
+            const income = document.getElementById('income').value;
+            const expenses = document.getElementById('expenses').value;
+            const taxRate = document.getElementById('taxRate').value;
+
+            if (income && expenses && taxRate) {
+                const netIncome = parseInt(income) - parseInt(expenses);
+                const taxAmount = (netIncome * (parseInt(taxRate) / 100)).toFixed(2);
+                const finalAmount = netIncome - parseFloat(taxAmount);
+
+                document.getElementById('result').innerText = `
+                    月間純利益: \${${netIncome} - ${taxAmount}}\n
+                    税金: \${${taxAmount}}
+                `;
+            } else {
+                document.getElementById('result').innerText = '入力が不完全です。';
+            }
+        }
+
+        function saveData() {
+            const income = document.getElementById('income').value;
+            const expenses = document.getElementById('expenses').value;
+            const taxRate = document.getElementById('taxRate').value;
+            const result = document.getElementById('result').innerText;
+
+            localStorage.setItem('income', income);
+            localStorage.setItem('expenses', expenses);
+            localStorage.setItem('taxRate', taxRate);
+            localStorage.setItem('result', result);
+
+            document.getElementById('result').innerText = 'データが保存されました。';
+        }
+
+        function downloadCSV() {
+            const income = document.getElementById('income').value;
+            const expenses = document.getElementById('expenses').value;
+            const taxRate = document.getElementById('taxRate').value;
+            const result = document.getElementById('result').innerText;
+
+            const csvContent = `収入,経費,税率,結果\n${income},${expenses},${taxRate},${result}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', '会計結果.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
