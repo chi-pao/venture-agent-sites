@@ -716,6 +716,15 @@ def render_created_apps(cfg):
     if not shown:st.info('画面ができると、ここに開くボタンが表示されます。')
 
 
+MEDIA_CHARACTER_BRIEF=('架空の子ども、またはおばあちゃんを主人公にする。2人が一緒に登場してもよい。'
+    '現実にはありえないけれど、可愛くて何が起きているか直感的に理解できるオリジナル動画。'
+    '主人公の小さな目的→不思議な出来事→分かりやすい行動→温かい笑いや意外な結末という因果を持たせる。'
+    '冒頭から主人公と目的を映像で伝え、難しい設定説明や長い字幕に頼らない。'
+    '人物の顔・服装・小物の連続性を場面間で保ち、意味不明な変形や唐突な展開を避ける。'
+    '可愛さ、理解しやすさ、続きが見たくなるかを企画・台本・完成動画で確認する。'
+    '子どもが主人公であることと、視聴対象を子どもだけに限定することは別。大人も楽しめる温かい短編を想定する。')
+
+
 def init_media_businesses():
     with db() as c:
         c.execute('''CREATE TABLE IF NOT EXISTS venture_media_accounts(
@@ -729,12 +738,25 @@ def init_media_businesses():
             id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,measured TEXT NOT NULL,
             views INTEGER,followers INTEGER,completion REAL,shares INTEGER,revenue INTEGER,
             expenses INTEGER,source TEXT NOT NULL)''')
+        columns={r['name'] for r in c.execute('PRAGMA table_info(venture_media_accounts)')}
+        for key,definition in (('tiktok_url',"TEXT DEFAULT ''"),('review_mode',"TEXT DEFAULT '全件確認'"),
+                               ('approved_format',"TEXT DEFAULT ''"),('review_evidence',"TEXT DEFAULT ''"),('format_sha',"TEXT DEFAULT ''"),
+                               ('creative_brief',"TEXT DEFAULT ''")):
+            if key not in columns:c.execute('ALTER TABLE venture_media_accounts ADD COLUMN '+key+' '+definition)
         c.execute('''INSERT OR IGNORE INTO venture_media_accounts
             (id,name,platform,audience,concept,monetization,updated) VALUES(?,?,?,?,?,?,?)''',
             ('original-short-lab','もしも発想ラボ（仮）','YouTube Shorts',
              '短いオリジナルの物語や意外な発想を楽しみたい日本語視聴者',
              'もしも日常の道具が話せたら、などの架空設定で笑いや意外な結末を作る。各回に独自の脚本と演出を持たせる。',
              '視聴者の再訪・視聴継続を検証後、参加条件を満たした広告収益や独自作品販売を検討。収益性は未検証。',now()))
+        c.execute("UPDATE venture_media_accounts SET platform='TikTok・YouTube Shorts' WHERE platform='YouTube Shorts'")
+        previous=c.execute("SELECT creative_brief FROM venture_media_accounts WHERE id='original-short-lab'").fetchone()
+        if previous and not previous['creative_brief']:
+            c.execute('''UPDATE venture_media_accounts SET creative_brief=?,concept=?,audience=?,review_mode='全件確認',
+                approved_format='',review_evidence='',format_sha='',updated=? WHERE id='original-short-lab' ''',
+                (MEDIA_CHARACTER_BRIEF,'子どもやおばあちゃんが主人公の、ありえないけど可愛くて分かりやすい短編。主人公の小さな願いと行動、温かい結末を描く。',
+                 '可愛い子どもやおばあちゃんの不思議な物語で、笑ったり癒されたりしたい日本語視聴者',now()))
+            c.execute("UPDATE venture_media_drafts SET status='旧テーマ・見直し待ち' WHERE account_id='original-short-lab' AND status IN ('原稿確認待ち','台本採用・動画制作未接続')")
 
 
 def media_editorial_cycle(job,cfg):
@@ -751,12 +773,19 @@ def media_editorial_cycle(job,cfg):
         if not state()['enabled']:return
         try:
             prompt=('独立した娯楽メディアのオリジナル投稿案を1本だけ日本語で作る。'
-                '出力はタイトル、対象視聴者、冒頭の引き、30〜45秒の脚本、場面別の映像制作指示、字幕、投稿文、'
+                '対象媒体はTikTokとYouTube Shorts。面白さ・独自性・制作費と収益化の道筋を比較する。'
+                'TikTok Creator Rewards検証用は65〜90秒のオリジナル脚本とし、短い集客用と区別。'
+                'YouTube用は同じ企画の短い35〜55秒案または65〜90秒案を意図とともに提案。'
+                '尺だけで収益化できるとは言わず、アカウント参加条件と実績は未確認と明示する。'
+                '出力はタイトル、対象視聴者、冒頭の引き、秒数付き脚本、場面別の映像制作指示、字幕、媒体別の投稿文、'
                 '前回と異なる独自の工夫、検証する反応、必要な素材の順。'
                 '事実やニュースを捏造せず架空の物語と明示。既存作品や著名人の模倣に頼らない。'
                 'アプリ紹介や不動産チェッカーの広告を混ぜない。再生数や利益を保証しない。'
                 'これは台本で、動画生成済み・投稿済みとは記載しない。\n'
                 +json.dumps({k:account[k] for k in ('name','platform','audience','concept')},ensure_ascii=False)
+                +'\nこの事業で最も重視する創作基準:'+account['creative_brief']
+                +'\n各案に、主人公・小さな目的・不思議な出来事・行動・結末と、可愛く理解できる理由を含める。'
+                +'\n承認された型（新しいテーマや大きな変更は再確認）:'+account['approved_format']
                 +'\n重複を避ける過去案:'+json.dumps([x['script'][:500] for x in recent],ensure_ascii=False)
                 +'\n期間・出典付きの実績（未記録は未測定。期間の異なる数値を直接比較せず改善仮説に使う）:'
                 +json.dumps(query('SELECT measured,views,followers,completion,shares,revenue,expenses,source FROM venture_media_metrics WHERE account_id=? ORDER BY id DESC LIMIT 5',(account['id'],)),ensure_ascii=False))
@@ -769,8 +798,20 @@ def media_editorial_cycle(job,cfg):
         return
 
 
+def save_media_review_policy(account_id,mode,approved_format,evidence,approved):
+    rows=query('SELECT audience,concept FROM venture_media_accounts WHERE id=?',(account_id,))
+    if not rows:raise ValueError('アカウント案がありません')
+    if mode not in ('全件確認','まとめて確認（運用方針）','承認した型だけ抜き取り確認（運用方針）'):
+        raise ValueError('確認段階を選んでください')
+    if mode!='全件確認' and (not approved or len(approved_format.strip())<20 or len(evidence.strip())<20):
+        raise ValueError('確認を減らすには、承認する範囲と実績・理由を各20文字以上入力し、自分で承認してください')
+    scope=hashlib.sha256(json.dumps(rows[0],ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+    execute('UPDATE venture_media_accounts SET review_mode=?,approved_format=?,review_evidence=?,format_sha=?,updated=? WHERE id=?',
+        (mode,approved_format.strip()[:3000],evidence.strip()[:3000],scope,now(),account_id))
+
+
 def render_media_business_ui(cfg):
-    st.subheader('AI動画・面白い投稿の事業')
+    st.subheader('TikTok・YouTube ShortsのAI動画事業')
     st.caption('便利アプリ紹介SNS・お買い得物件チェッカーとは別ブランドです。現在はアカウント開設管理と台本作成・実測記録まで。動画生成・自動投稿・実績の自動取得は未接続です。')
     with st.expander('別テーマの専用アカウント案を追加する'):
         with st.form('media_add_account'):
@@ -781,7 +822,7 @@ def render_media_business_ui(cfg):
                 if not all(x.strip() for x in (new_name,new_audience,new_concept)):st.warning('名前・視聴者・テーマを入力してください')
                 else:
                     execute('''INSERT INTO venture_media_accounts(id,name,platform,audience,concept,monetization,updated)
-                        VALUES(?,?,?,?,?,?,?)''',(uuid.uuid4().hex,new_name.strip(),'YouTube Shorts',new_audience.strip(),new_concept.strip(),
+                        VALUES(?,?,?,?,?,?,?)''',(uuid.uuid4().hex,new_name.strip(),'TikTok・YouTube Shorts',new_audience.strip(),new_concept.strip(),
                         '視聴継続・再訪を検証して広告や独自作品販売を検討。収益性は未検証。',now()))
                     st.success('独立した運用案を追加しました。外部アカウントは未開設です。');st.rerun()
     accounts=query('SELECT * FROM venture_media_accounts ORDER BY updated DESC')
@@ -794,18 +835,40 @@ def render_media_business_ui(cfg):
         audience=st.text_input('誰に楽しんでもらうか',value=account['audience'])
         concept=st.text_area('投稿のテーマ・独自性',value=account['concept'])
         url=st.text_input('開設済みYouTubeチャンネルURL（まだなら空欄）',value=account['url'])
+        tiktok_url=st.text_input('開設済みTikTokプロフィールURL（まだなら空欄）',value=account['tiktok_url'])
         enabled=st.checkbox('継続運転で台本を自動作成する（1日1案・未確認3案まで）',value=bool(account['enabled']))
         if st.form_submit_button('運用方針を保存'):
             parsed=urllib.parse.urlparse(url.strip())
+            tt=urllib.parse.urlparse(tiktok_url.strip())
             if not name.strip() or not audience.strip() or not concept.strip():st.warning('名前・対象者・テーマを入力してください')
             elif url.strip() and (parsed.scheme!='https' or parsed.hostname not in ('www.youtube.com','youtube.com')):st.warning('YouTubeのHTTPSチャンネルURLを入力してください')
+            elif tiktok_url.strip() and (tt.scheme!='https' or tt.hostname not in ('www.tiktok.com','tiktok.com') or not tt.path.startswith('/@')):st.warning('TikTokのHTTPSプロフィールURLを入力してください')
             else:
-                execute('UPDATE venture_media_accounts SET name=?,audience=?,concept=?,url=?,enabled=?,status=?,updated=? WHERE id=?',
-                    (name.strip(),audience.strip(),concept.strip(),url.strip(),int(enabled),
-                     'URL登録済・所有／投稿接続は未確認' if url.strip() else '未開設・企画段階',now(),selected))
+                changed=audience.strip()!=account['audience'] or concept.strip()!=account['concept']
+                execute('UPDATE venture_media_accounts SET name=?,audience=?,concept=?,url=?,tiktok_url=?,enabled=?,status=?,review_mode=?,updated=? WHERE id=?',
+                    (name.strip(),audience.strip(),concept.strip(),url.strip(),tiktok_url.strip(),int(enabled),
+                     'URL登録済・所有／投稿接続は未確認' if url.strip() or tiktok_url.strip() else '未開設・企画段階',
+                     '全件確認' if changed else account['review_mode'],now(),selected))
                 st.success('保存しました。外部アカウントの作成や投稿は行っていません。');st.rerun()
     st.write('**収益化の仮説:** '+account['monetization'])
-    st.write('**開設の次の作業:** この専用名と紹介文を決め、YouTubeで専用チャンネルを開設してURLを登録します。メール・本人確認・利用条件への同意はサービス画面で行います。')
+    if account['creative_brief']:st.write('**動画で最も大事にすること:** '+account['creative_brief'])
+    st.write('**開設の次の作業:** 専用名と紹介文を決め、TikTokアカウントとYouTubeチャンネルを開設してそれぞれURLを登録します。メール・本人確認・利用条件への同意はサービス画面で行います。')
+    st.write('**運用順序:** 企画の比較 → 台本確認 → 試作動画 → 完成動画の確認 → 投稿 → 媒体別の実績比較 → 良い型を改善・育成')
+    st.caption('TikTokの報酬対象を狙う65〜90秒案と短い集客用を分けます。YouTube Shortsも媒体の参加・コンテンツ条件を確認します。AI利用や再生数だけで収益化できるとは判断しません。')
+    with st.expander('実績が育った後の確認を減らす方針'):
+        st.write('初期は全件確認。良い型が見つかった後、のぼるさんが範囲を指定して「まとめて確認」、次に「承認した型だけ抜き取り確認」へ進めます。新テーマ・型の変更は全件確認に戻します。')
+        st.caption('現在の動画生成・投稿は未接続のため、ここでは将来の運用方針だけ保存します。台本採用だけで動画公開を許可した扱いにはしません。')
+        with st.form('media_review_policy'):
+            modes=['全件確認','まとめて確認（運用方針）','承認した型だけ抜き取り確認（運用方針）']
+            mode=st.selectbox('確認段階',modes,index=modes.index(account['review_mode']) if account['review_mode'] in modes else 0)
+            approved_format=st.text_area('承認するシリーズ・表現・尺・対象者の範囲',value=account['approved_format'])
+            evidence=st.text_area('減らしてよいと判断した実績と理由（媒体・集計期間・制作費など）',value=account['review_evidence'])
+            allow=st.checkbox('この範囲で確認を減らす方針を自分で承認する',value=False)
+            if st.form_submit_button('確認方針を保存'):
+                try:
+                    save_media_review_policy(selected,mode,approved_format,evidence,allow)
+                    st.success('確認方針を保存しました。自動投稿は開始しません。');st.rerun()
+                except ValueError as exc:st.warning(str(exc))
     drafts=query('SELECT * FROM venture_media_drafts WHERE account_id=? ORDER BY id DESC LIMIT 20',(selected,))
     for draft in drafts:
         with st.expander('#'+str(draft['id'])+' '+draft['status']+' / '+draft['created']):
