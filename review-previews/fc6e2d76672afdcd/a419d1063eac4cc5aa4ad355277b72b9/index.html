@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_6807a5df8fbd2fcdda3b792a:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン授業参加管理アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン授業参加管理アプリ</h1>
+        <form id="inputForm">
+            <label for="classDate">授業日時:</label>
+            <input type="text" id="classDate" placeholder="YYYY-MM-DD HH:MM" required>
+            <label for="className">授業名:</label>
+            <input type="text" id="className" required>
+            <label for="attendees">参加者名:</label>
+            <input type="text" id="attendees" required>
+            <label for="status">出席状況:</label>
+            <select id="status">
+                <option value="出席">出席</option>
+                <option value="欠席">欠席</option>
+                <option value="遅刻">遅刻</option>
+            </select>
+            <button type="button" id="addEntry">追加</button>
+        </form>
+        <div id="result"></div>
+        <button id="downloadCsv">CSVダウンロード</button>
+    </div>
+
+    <script>
+        document.getElementById('addEntry').addEventListener('click', addEntry);
+        document.getElementById('downloadCsv').addEventListener('click', downloadCsv);
+
+        function addEntry() {
+            const classDate = document.getElementById('classDate').value;
+            const className = document.getElementById('className').value;
+            const attendees = document.getElementById('attendees').value;
+            const status = document.getElementById('status').value;
+            const resultDiv = document.getElementById('result');
+
+            const entry = `${classDate} ${className} ${attendees} ${status}`;
+            resultDiv.innerHTML += `<p>${entry}</p>`;
+            localStorage.setItem(classDate, entry);
+        }
+
+        function downloadCsv() {
+            const entries = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                entries.push(`${key},${value}`);
+            }
+            const csvContent = 'data:text/csv;charset=utf-8,' + entries.join('\n');
+            const link = document.createElement('a');
+            link.href = encodeURI(csvContent);
+            link.download = 'attendance.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
