@@ -738,6 +738,16 @@ def init_media_businesses():
             id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,measured TEXT NOT NULL,
             views INTEGER,followers INTEGER,completion REAL,shares INTEGER,revenue INTEGER,
             expenses INTEGER,source TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_media_references(
+            url TEXT PRIMARY KEY,title TEXT NOT NULL,observed TEXT NOT NULL,hypothesis TEXT NOT NULL,created TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_media_feedback(
+            id INTEGER PRIMARY KEY,draft_id INTEGER NOT NULL,account_id TEXT NOT NULL,
+            cute INTEGER NOT NULL,clear INTEGER NOT NULL,interesting INTEGER NOT NULL,
+            notes TEXT NOT NULL,created TEXT NOT NULL)''')
+        c.execute('''INSERT OR IGNORE INTO venture_media_references(url,title,observed,hypothesis,created)
+            VALUES(?,?,?,?,?)''',('https://www.youtube.com/shorts/-kcj3ICSg5E','赤ちゃんなのに社長してます。',
+            'ユーザーの参考指定。ページタイトルのみ確認。映像・音声・構成・収益は未確認。',
+            'タイトルからの企画仮説: 可愛い子どもと大人の役割のギャップは、設定を直感的に伝えられる可能性。作品のコピーではなく独自設定で検証する。',now()))
         columns={r['name'] for r in c.execute('PRAGMA table_info(venture_media_accounts)')}
         for key,definition in (('tiktok_url',"TEXT DEFAULT ''"),('review_mode',"TEXT DEFAULT '全件確認'"),
                                ('approved_format',"TEXT DEFAULT ''"),('review_evidence',"TEXT DEFAULT ''"),('format_sha',"TEXT DEFAULT ''"),
@@ -772,7 +782,8 @@ def media_editorial_cycle(job,cfg):
             except (ValueError,TypeError):pass
         if not state()['enabled']:return
         try:
-            prompt=('独立した娯楽メディアのオリジナル投稿案を1本だけ日本語で作る。'
+            prompt=('独立した娯楽メディアのオリジナル投稿案を作る。まず異なる設定を3案だけ短く比較し、'
+                '可愛さ・理解しやすさ・独自性・制作しやすさの仮説評価から1案を選んで台本化する。'
                 '対象媒体はTikTokとYouTube Shorts。面白さ・独自性・制作費と収益化の道筋を比較する。'
                 'TikTok Creator Rewards検証用は65〜90秒のオリジナル脚本とし、短い集客用と区別。'
                 'YouTube用は同じ企画の短い35〜55秒案または65〜90秒案を意図とともに提案。'
@@ -785,6 +796,11 @@ def media_editorial_cycle(job,cfg):
                 +json.dumps({k:account[k] for k in ('name','platform','audience','concept')},ensure_ascii=False)
                 +'\nこの事業で最も重視する創作基準:'+account['creative_brief']
                 +'\n各案に、主人公・小さな目的・不思議な出来事・行動・結末と、可愛く理解できる理由を含める。'
+                +'\n参考作品の観察と仮説（未視聴を視聴済みとしない・再生数や収益を推測しない）:'
+                +json.dumps(query('SELECT title,observed,hypothesis FROM venture_media_references ORDER BY created DESC LIMIT 8'),ensure_ascii=False)
+                +'\nのぼるさんの実際の評価（視聴者全体の評価やモデル訓練の成果とは別）:'
+                +json.dumps(query('''SELECT f.cute,f.clear,f.interesting,f.notes,d.script FROM venture_media_feedback f
+                    JOIN venture_media_drafts d ON d.id=f.draft_id WHERE f.account_id=? ORDER BY f.id DESC LIMIT 5''',(account['id'],)),ensure_ascii=False)[:7000]
                 +'\n承認された型（新しいテーマや大きな変更は再確認）:'+account['approved_format']
                 +'\n重複を避ける過去案:'+json.dumps([x['script'][:500] for x in recent],ensure_ascii=False)
                 +'\n期間・出典付きの実績（未記録は未測定。期間の異なる数値を直接比較せず改善仮説に使う）:'
@@ -852,6 +868,11 @@ def render_media_business_ui(cfg):
                 st.success('保存しました。外部アカウントの作成や投稿は行っていません。');st.rerun()
     st.write('**収益化の仮説:** '+account['monetization'])
     if account['creative_brief']:st.write('**動画で最も大事にすること:** '+account['creative_brief'])
+    with st.expander('参考作品からの仮説・確認できたこと'):
+        for reference in query('SELECT * FROM venture_media_references ORDER BY created DESC'):
+            st.write(reference['title']);st.link_button('参考作品を開く',reference['url'])
+            st.caption(reference['observed']);st.write(reference['hypothesis'])
+        st.caption('参考作品の良さは仮説として扱い、自分たちの試作評価・投稿実績で確かめます。AIモデル自体の再訓練ではなく、次の生成に評価記録を渡す改善です。')
     st.write('**開設の次の作業:** 専用名と紹介文を決め、TikTokアカウントとYouTubeチャンネルを開設してそれぞれURLを登録します。メール・本人確認・利用条件への同意はサービス画面で行います。')
     st.write('**運用順序:** 企画の比較 → 台本確認 → 試作動画 → 完成動画の確認 → 投稿 → 媒体別の実績比較 → 良い型を改善・育成')
     st.caption('TikTokの報酬対象を狙う65〜90秒案と短い集客用を分けます。YouTube Shortsも媒体の参加・コンテンツ条件を確認します。AI利用や再生数だけで収益化できるとは判断しません。')
@@ -874,6 +895,17 @@ def render_media_business_ui(cfg):
         with st.expander('#'+str(draft['id'])+' '+draft['status']+' / '+draft['created']):
             st.text(draft['script'])
             st.caption('これは台本です。動画制作と完成動画の確認は別に必要です。')
+            with st.form('media_feedback_'+str(draft['id'])):
+                cute=st.slider('可愛いと思える',1,5,3,key='cute_'+str(draft['id']))
+                clear=st.slider('何が起きているか分かる',1,5,3,key='clear_'+str(draft['id']))
+                interesting=st.slider('面白い・続きを見たい',1,5,3,key='interesting_'+str(draft['id']))
+                notes=st.text_area('良いところ・直したいところ（台本への評価）',key='media_notes_'+str(draft['id']))
+                if st.form_submit_button('評価を保存して次の企画に生かす'):
+                    if not notes.strip():st.warning('評価した理由を入力してください')
+                    else:
+                        execute('''INSERT INTO venture_media_feedback(draft_id,account_id,cute,clear,interesting,notes,created)
+                            VALUES(?,?,?,?,?,?,?)''',(draft['id'],selected,cute,clear,interesting,notes.strip()[:2000],now()))
+                        st.success('のぼるさんの評価として保存しました。次の台本生成で参照します。')
             if draft['status']=='原稿確認待ち':
                 if st.button('台本を採用（動画制作待ちへ）',key='media_accept_'+str(draft['id'])):
                     execute("UPDATE venture_media_drafts SET status='台本採用・動画制作未接続' WHERE id=?",(draft['id'],));st.rerun()
