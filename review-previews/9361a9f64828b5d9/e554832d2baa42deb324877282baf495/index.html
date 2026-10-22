@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_e81c39c91bfd4b6dbf9baa68:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会議スケジューリング助手</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .input-group { margin-bottom: 20px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>会議スケジューリング助手</h1>
+        <div class="input-group">
+            <label for="participantCount">参加人数</label>
+            <input type="number" id="participantCount" min="1" required>
+        </div>
+        <div class="input-group">
+            <label for="meetingDuration">会議時間（分）</label>
+            <input type="number" id="meetingDuration" min="1" required>
+        </div>
+        <button onclick="scheduleMeeting()">スケジュールを提案</button>
+        <div class="result" id="result"></div>
+    </div>
+    <script>
+        function scheduleMeeting() {
+            const participantCount = document.getElementById('participantCount').value;
+            const meetingDuration = document.getElementById('meetingDuration').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            if (participantCount < 1 || meetingDuration < 1) {
+                resultDiv.innerHTML = '入力値が正しくありません。';
+                return;
+            }
+
+            const totalMinutes = participantCount * meetingDuration;
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+
+            const result = `会議は${hours}時間${minutes}分の合計時間を必要とします。`;
+            resultDiv.innerHTML = result;
+
+            localStorage.setItem('lastResult', result);
+        }
+
+        const lastResult = localStorage.getItem('lastResult');
+        if (lastResult) {
+            document.getElementById('result').innerHTML = lastResult;
+        }
+    </script>
+</body>
+</html>
