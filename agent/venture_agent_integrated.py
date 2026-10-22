@@ -44,7 +44,7 @@ STOP = AGENT / 'stop.flag'
 THREAD_GUARD = threading.Lock()
 DEFAULT = {'model':'qwen2.5:7b','url':'http://localhost:11434','interval':180,'max_businesses':2,
            'qa_vision_model':'qwen2.5vl:3b','autoqa_setup':True,'min_score':35,'max_revisions':3,'publish':False,'github_repo':'',
-           'github_branch':'main','publish_webhook':'','max_active':4,'pause_on_errors':3,'payment_url':'','analytics_domain':'','analytics_api_url':'','analytics_api_token':'','stripe_api_key':'','auto_marketing':True,'marketing_webhook':'','auto_improve':True,'min_improve_views':100,'improvement_cooldown_hours':168,'plausible_site_id':'','project_payment_links':{},'project_payment_link_ids':{},'target_first':True,'prototype_budget':1,'max_candidate_pool':80,'learning_horizon_days':90,'value_review_interval_days':14,'discovery_cooldown_hours':24,'auto_sns_publish':True,'sns_daily_limit':3,'mastodon_url':'','research_interval_hours':24,'research_sector_batch':2,'public_base_url':''}
+           'github_branch':'main','publish_webhook':'','max_active':12,'pause_on_errors':3,'payment_url':'','analytics_domain':'','analytics_api_url':'','analytics_api_token':'','stripe_api_key':'','auto_marketing':True,'marketing_webhook':'','auto_improve':True,'min_improve_views':100,'improvement_cooldown_hours':168,'plausible_site_id':'','project_payment_links':{},'project_payment_link_ids':{},'target_first':True,'prototype_budget':1,'max_candidate_pool':80,'learning_horizon_days':90,'value_review_interval_days':14,'discovery_cooldown_hours':24,'auto_sns_publish':True,'sns_daily_limit':3,'mastodon_url':'','research_interval_hours':24,'research_sector_batch':2,'public_base_url':''}
 
 
 def now(): return datetime.now().astimezone().isoformat(timespec='seconds')
@@ -1409,10 +1409,19 @@ def portfolio_overview_state(item):
     return 'AIの選別待ち','事業案の見込みを整理中'
 
 
+def review_visible_product(item):
+    return item['group']=='運用中' or (item['group']=='確認待ち' and bool(candidate_production_acceptance(item['name'])))
+
+
 def render_portfolio_overview(items,cfg):
-    st.write('**まずここを見る：どのアプリを進め、何を止めたか**')
-    st.caption('「作り込み対象」は改善する対象です。「今、改善処理中」と表示されたものだけが現在の実行対象です。')
-    buckets={label:[] for label in ('作り込み・確認','AIの選別待ち','中止・保留')}
+    st.write('**確認できるアプリ**')
+    show_history=st.checkbox('開発途中・選別待ち・中止保留の履歴も見る',value=False,key='portfolio_show_history')
+    if not show_history:items=[x for x in items if review_visible_product(x)]
+    st.caption('通常は品質検証を通った確認候補と運用中だけを表示します。開発途中の案は裏で処理します。')
+    if not items and not show_history:
+        st.info('判断できる品質まで検証が済んだアプリはまだありません。開発・検証は継続運転で進めます。')
+        return
+    buckets={label:[] for label in (('作り込み・確認','AIの選別待ち','中止・保留') if show_history else ('作り込み・確認',))}
     for item in items:
         category,label=portfolio_overview_state(item)
         buckets[category].append((item,label))
@@ -1473,17 +1482,19 @@ def render_portfolio_status(cfg=None):
         for col,label in zip(cols,('AI一次選別待ち','AIで保留・中止','作り込み中','完成候補の確認待ち')):
             col.metric(label,sum(x['flow_stage']==label for x in items))
         st.caption('技術課題による保留と需要の否定は分けます。完成候補は制作側で中心機能・PC/スマホ画面・保存復元を確認した版だけです。AIの自己採点では通過させません。')
-    if current:st.info('現在処理中: '+current)
-    else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
+    with st.expander('裏で進めている開発を見る',expanded=False):
+        if current:st.write('現在処理中: '+current)
+        else:st.caption('待機中、全体処理中、または作業対象がログに未記録です。')
     st.caption('育成優先点は運営判断の点数で、成功確率ではありません。好反応・売上・利益は分けて表示します。保留は「儲からないと確定」ではありません。')
     st.caption('ご自身で選ぶときは「自分が未判断」でAIの保留・中止案も比較できます。未判断は従来のAI判断で運転し、保存した継続・保留・中止はAI判断より優先します。')
     ranked=[x for x in items if x['group'] not in ('中止','保留') and x['priority'] is not None]
     if ranked:
-        top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
-        st.write('**育成判断の最上位:** '+top['name']+'（'+str(top['priority'])+'点'+('・同点'+str(ties)+'件' if ties>1 else '')+'）')
-        st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
-    selection=st.selectbox('表示する状態',['作り込み・確認対象','開発・育成中','完成候補の確認待ち','AI一次選別待ち','AIで保留・中止','作り込み中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
-    visible=[x for x in items if selection=='すべて' or
+        with st.expander('AIの開発優先順位を見る',expanded=False):
+            top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
+            st.write('育成判断の最上位: '+top['name']+'（'+str(top['priority'])+'点）')
+            st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
+    selection=st.selectbox('表示する状態',['判断できるアプリだけ','作り込み・確認対象','開発・育成中','完成候補の確認待ち','AI一次選別待ち','AIで保留・中止','作り込み中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
+    visible=[x for x in items if (selection=='判断できるアプリだけ' and review_visible_product(x)) or selection=='すべて' or
         (selection=='作り込み・確認対象' and portfolio_overview_state(x)[0]=='作り込み・確認') or
         (selection=='開発・育成中' and x['group'] not in ('中止','保留')) or
         (selection=='今の作業中' and x['current']) or
@@ -1524,7 +1535,7 @@ def render_created_apps(cfg):
         st.caption('反応・売上・要件・判断材料が変わった事業と、日次の見直しを優先。同じ実測を何度も新しい学習として数えません。')
         st.write('成果物: 分野 → アプリ別 ／ 実測からの参照知識: 分野別 ／ 既存の履歴は元の保存先も参照します。')
         st.code(str(OUT/'sectors'),language=None)
-    st.caption('最初の一覧でアプリ名と状態を確認してください。名前を選ぶと、判断理由・残っている課題・改善版の確認ボタンが表示されます。止めた案は「中止・保留」にまとめています。')
+    st.caption('確認できる品質まで検証が済んだものを表示します。途中版や中止案は、必要なときだけ履歴から確認できます。')
     status_by_name=render_portfolio_status(dict(cfg,selected_sector=selected_sector))
     rows=query('''SELECT a.name,a.published_url,c.content_sha,c.public_verified,
         COALESCE(v.phase,a.phase) AS business_phase,d.stage AS development_stage
@@ -3249,9 +3260,6 @@ def cycle(cfg):
         research_control=query('SELECT * FROM venture_research_control WHERE id=1')[0]
         if research_control['enabled']!=-1 and not research_running() and research_is_due(cfg):
             research_cycle(cfg)
-        if not resume_candidates and value_work_capacity(cfg)<=0:
-            event(job,'新規試作の枠は満員。既存製品の改善・確認・接続準備は別処理で継続（各製品の開発状況を参照）','完了')
-            return
         previous_discovery=query('SELECT created FROM autonomous_actions WHERE idea=? AND action=?',('全体','候補探索'))
         if previous_discovery and not resume_candidates:
             try:
@@ -3612,7 +3620,11 @@ def ensure_value_state(name, cfg):
     if not rows:
         item = idea_details(name)
         days = int(bounded_number(item.get('validation_days'), cfg.get('learning_horizon_days', 90), 30, 365))
-        execute('INSERT OR IGNORE INTO venture_value_state(idea,horizon_days) VALUES(?,?)', (name, days))
+        legacy=query('SELECT phase,last_result FROM autonomous_ideas WHERE name=?',(name,))
+        if legacy and legacy[0]['phase'] in ('中止','保留'):
+            execute('INSERT OR IGNORE INTO venture_value_state(idea,horizon_days,phase,reason) VALUES(?,?,?,?)',
+                (name,days,legacy[0]['phase'],legacy[0]['last_result'] or '既存の中止・保留判断を保持'))
+        else:execute('INSERT OR IGNORE INTO venture_value_state(idea,horizon_days) VALUES(?,?)', (name, days))
         rows = query('SELECT * FROM venture_value_state WHERE idea=?', (name,))
     current = rows[0]
     checks = query('SELECT public_verified FROM autonomous_checks WHERE idea=?', (name,))
@@ -3788,10 +3800,15 @@ def review_value_portfolio(cfg):
 
 
 def value_work_capacity(cfg):
-    rows = query('''SELECT a.name,v.phase FROM autonomous_ideas a
-        LEFT JOIN venture_value_state v ON v.idea=a.name WHERE a.attempts>0''')
-    active = sum(1 for r in rows if development_allowed(r['name'],r['phase']))
-    return max(0, int(cfg.get('max_active', 4)) - active)
+    # Soft queue target, not a hard veto on a newly researched promising candidate.
+    # Completed reviews, operation and dependency/environment waits do not consume a build slot.
+    rows=query("""SELECT a.name,a.published_url,v.phase,d.stage FROM autonomous_ideas a
+        LEFT JOIN venture_value_state v ON v.idea=a.name
+        LEFT JOIN venture_product_development d ON d.idea=a.name WHERE a.attempts>0""")
+    exempt={'のぼるさん確認待ち','画面改善中・接続未完了','検証環境の準備待ち'}
+    active=sum(1 for row in rows if development_allowed(row['name'],row['phase'])
+        and not row['published_url'] and row['stage'] not in exempt and not candidate_production_acceptance(row['name']))
+    return max(1,max(12,int(cfg.get('max_active',12)))-active)
 
 
 def render_value_learning_ui(cfg):
@@ -5019,7 +5036,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.23.3 ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    st.caption('表示版: 2026.10.23.4 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
@@ -5038,7 +5055,8 @@ def render_dashboard():
         cfg['target_first']=True
         st.caption('利用価値と差別化を優先。売上が出る前も収益への道筋と反応を見て育てます。')
         cfg['learning_horizon_days']=st.number_input('標準の育成期間 日',min_value=30,max_value=365,value=int(cfg.get('learning_horizon_days',90)))
-        cfg['max_active']=st.number_input('同時に育てる事業の上限',min_value=1,max_value=10,value=int(cfg.get('max_active',4)))
+        cfg['max_active']=st.number_input('開発待ち枠の目安（有望候補は自動拡張）',min_value=12,max_value=100,value=min(100,max(12,int(cfg.get('max_active',12)))))
+        st.caption('確認待ち・運用中・接続準備待ちは開発枠から除外。目安を超えても、調査基準を通った新規候補には1件ずつ着手できます。')
         cfg['max_businesses']=st.slider('1サイクルの事業数',1,5,int(cfg['max_businesses']))
         cfg['max_revisions']=st.slider('試作品の最大修正回数',1,5,int(cfg['max_revisions']))
         cfg['publish']=st.checkbox('のぼるさんがOKを出した版をGitHubへ保存・公開',value=bool(cfg['publish']))
