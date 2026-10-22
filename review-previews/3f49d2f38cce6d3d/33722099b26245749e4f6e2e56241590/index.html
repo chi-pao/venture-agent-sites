@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_41f32a9dcf9969d66559cbf8:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会計業務自動化アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>会計業務自動化アプリ</h1>
+    <form id="inputForm">
+        <label for="receiptFile">領収書のアップロード:</label>
+        <input type="file" id="receiptFile" accept="image/*" required><br><br>
+        <label for="expenseCategory">経費項目:</label>
+        <input type="text" id="expenseCategory" required><br><br>
+        <button type="button" onclick="processInput()">入力処理</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        function processInput() {
+            const receiptFile = document.getElementById('receiptFile').files[0];
+            const expenseCategory = document.getElementById('expenseCategory').value;
+            const resultDiv = document.getElementById('result');
+
+            // 簡易的な処理と結果表示
+            resultDiv.innerHTML = `経費項目: ${expenseCategory}<br>処理結果: 領収書がアップロードされました。`;
+
+            // 実際の処理
+            if (receiptFile) {
+                // 領収書の仮想解析
+                const parsedReceipt = {
+                    amount: 1000, // 仮想的な金額
+                    category: expenseCategory
+                };
+                resultDiv.innerHTML += `<br>解析結果: 金額 ${parsedReceipt.amount}円, カテゴリー: ${parsedReceipt.category}`;
+
+                // 仮想的な月次報告書生成
+                const monthlyReport = `月次報告書: 2023年10月, 金額 ${parsedReceipt.amount}円, カテゴリー: ${parsedReceipt.category}`;
+                resultDiv.innerHTML += `<br>月次報告書: ${monthlyReport}`;
+
+                // ローカルストレージに保存
+                localStorage.setItem('monthlyReport', monthlyReport);
+            }
+        }
+
+        // CSV出力
+        function downloadCSV() {
+            const monthlyReport = localStorage.getItem('monthlyReport');
+            if (monthlyReport) {
+                const csvData = `月次報告書: ${monthlyReport}`;
+                const csvBlob = new Blob([csvData], { type: 'text/csv' });
+                const csvUrl = URL.createObjectURL(csvBlob);
+                const a = document.createElement('a');
+                a.href = csvUrl;
+                a.download = 'monthly_report.csv';
+                a.click();
+            }
+        }
+    </script>
+</body>
+</html>
