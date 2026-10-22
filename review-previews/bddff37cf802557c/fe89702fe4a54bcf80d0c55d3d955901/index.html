@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_cb74feb99c585c2807d49dbc:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>家族間食事管理アプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+        .download {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>家族間食事管理アプリ</h1>
+        <div class="input-group">
+            <label for="name">名前</label>
+            <input type="text" id="name" placeholder="例：太郎">
+        </div>
+        <div class="input-group">
+            <label for="meal">食事内容</label>
+            <input type="text" id="meal" placeholder="例：野菜炒め">
+        </div>
+        <div class="input-group">
+            <label for="quantity">量（g）</label>
+            <input type="number" id="quantity" placeholder="例：100">
+        </div>
+        <button onclick="calculate()">計算</button>
+        <div class="result" id="result"></div>
+        <div class="download">
+            <button onclick="downloadCSV()">CSVダウンロード</button>
+        </div>
+    </div>
+
+    <script>
+        function calculate() {
+            const name = document.getElementById('name').value;
+            const meal = document.getElementById('meal').value;
+            const quantity = document.getElementById('quantity').value;
+
+            if (name && meal && quantity) {
+                const result = `名前: ${name}, 食事内容: ${meal}, 量: ${quantity}g`;
+                document.getElementById('result').innerText = result;
+            } else {
+                alert('すべてのフィールドを入力してください。');
+            }
+        }
+
+        function downloadCSV() {
+            const result = document.getElementById('result').innerText;
+            const csvContent = `名前,食事内容,量
+${result.replace(/,/g, ',')}`;
+
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '食事記録.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
