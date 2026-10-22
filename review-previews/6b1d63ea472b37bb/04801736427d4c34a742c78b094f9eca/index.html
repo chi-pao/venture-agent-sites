@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_83d81a302af119085b6156c0:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>データ入力自動化ツール</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>データ入力自動化ツール</h1>
+        <form id="inputForm">
+            <label for="inputData">入力データ (カンマで区切る):</label>
+            <textarea id="inputData" rows="4" required></textarea>
+            <button type="button" onclick="processInput()">入力</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        function processInput() {
+            const inputData = document.getElementById('inputData').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            const data = inputData.split(',').map(item => item.trim());
+            const result = data.map(item => {
+                return `入力: ${item}, 結果: ${parseFloat(item) * 1.1}`;
+            }).join('<br>');
+
+            resultDiv.innerHTML = result;
+        }
+
+        document.getElementById('inputForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+
+        function saveData() {
+            const inputData = document.getElementById('inputData').value;
+            const resultDiv = document.getElementById('result').innerHTML;
+            localStorage.setItem('inputData', inputData);
+            localStorage.setItem('resultData', resultDiv);
+        }
+
+        function loadData() {
+            const inputData = localStorage.getItem('inputData');
+            const resultData = localStorage.getItem('resultData');
+            if (inputData) {
+                document.getElementById('inputData').value = inputData;
+            }
+            if (resultData) {
+                document.getElementById('result').innerHTML = resultData;
+            }
+        }
+
+        document.getElementById('inputForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            saveData();
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
