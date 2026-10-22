@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_23aa10d3e6b86b634371cfe0:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マインドフルネスアプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { margin: 10px 0; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>マインドフルネスアプリ</h1>
+        <form id="inputForm">
+            <label for="stressLevel">ストレスレベル (1-10):</label>
+            <input type="number" id="stressLevel" min="1" max="10" required>
+            <br>
+            <label for="activity">最近の活動:</label>
+            <input type="text" id="activity" required>
+            <br>
+            <button type="button" id="calculate">結果を見る</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('calculate').addEventListener('click', function() {
+            const stressLevel = document.getElementById('stressLevel').value;
+            const activity = document.getElementById('activity').value;
+            const resultDiv = document.getElementById('result');
+
+            if (stressLevel && activity) {
+                const processedResult = `ストレスレベル: ${stressLevel}, 活動: ${activity}`;
+                resultDiv.textContent = processedResult;
+                localStorage.setItem('lastResult', processedResult);
+            } else {
+                resultDiv.textContent = '入力が不完全です。';
+            }
+        });
+
+        const lastResult = localStorage.getItem('lastResult');
+        if (lastResult) {
+            document.getElementById('result').textContent = lastResult;
+        }
+
+        document.getElementById('inputForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>
