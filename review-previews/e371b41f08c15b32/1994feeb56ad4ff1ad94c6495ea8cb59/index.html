@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_1f9660968161d39584bbf65a:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインマインドフルネス教室</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>オンラインマインドフルネス教室</h1>
+    <form id="form">
+        <label for="minutes">瞑想時間（分）:</label>
+        <input type="number" id="minutes" min="1" max="60" required>
+        <br><br>
+        <label for="sessions">週に何回:</label>
+        <input type="number" id="sessions" min="1" max="7" required>
+        <br><br>
+        <button type="button" id="calculate">結果を見る</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('calculate').addEventListener('click', function() {
+            const minutes = document.getElementById('minutes').value;
+            const sessions = document.getElementById('sessions').value;
+            const result = calculateResult(minutes, sessions);
+            document.getElementById('result').innerText = result;
+        });
+
+        function calculateResult(minutes, sessions) {
+            const totalMinutes = minutes * sessions;
+            return `週に${sessions}回、${minutes}分瞑想すると、${totalMinutes}分瞑想します。`;
+        }
+
+        // localStorage保存
+        function saveResult() {
+            const result = document.getElementById('result').innerText;
+            localStorage.setItem('mindfulnessResult', result);
+        }
+
+        // 保存された結果を表示
+        function loadResult() {
+            const savedResult = localStorage.getItem('mindfulnessResult');
+            if (savedResult) {
+                document.getElementById('result').innerText = savedResult;
+            }
+        }
+
+        // CSV出力
+        function downloadCSV() {
+            const result = document.getElementById('result').innerText;
+            const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent(result);
+            const link = document.createElement('a');
+            link.href = csvContent;
+            link.download = 'mindfulness_result.csv';
+            link.click();
+        }
+
+        // ロード時に保存された結果を表示
+        window.onload = function() {
+            loadResult();
+        };
+
+        // ボタン操作で結果を保存
+        document.getElementById('calculate').addEventListener('click', function() {
+            const minutes = document.getElementById('minutes').value;
+            const sessions = document.getElementById('sessions').value;
+            const result = calculateResult(minutes, sessions);
+            document.getElementById('result').innerText = result;
+            saveResult();
+        });
+    </script>
+</body>
+</html>
