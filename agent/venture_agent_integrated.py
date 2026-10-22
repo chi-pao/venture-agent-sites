@@ -243,7 +243,48 @@ def ensure_product_spec(name,cfg,plan=''):
 def quality_requirements_text(name):
     spec=get_product_spec(name)
     if not spec:return '完成条件の設計待ち。発信できません。'
-    return json.dumps(dict(spec,baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS),ensure_ascii=False,indent=2)
+    return json.dumps(dict(spec,baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS,
+        common_business_review=common_business_basis(name)),ensure_ascii=False,indent=2)
+
+
+def common_business_basis(name,feedback=None,metrics=None):
+    """One evidence vocabulary for business review, UI and product prompts; read-only."""
+    item=idea_details(name);spec=get_product_spec(name) or {}
+    feedback=latest_value_feedback(name) if feedback is None else feedback
+    metrics=sourced_value_metrics(latest_metrics(name)) if metrics is None else metrics
+    audience=str(spec.get('audience') or item.get('target_customer') or '').strip()
+    outcome=str(spec.get('requested_outcome') or item.get('customer_pain') or '').strip()
+    difference=str(spec.get('differentiation') or item.get('differentiation') or '').strip()
+    reach=str(item.get('acquisition_plan') or '').strip()
+    money=str(item.get('monetization') or '').strip()
+    samples=int(feedback.get('sample_count') or 0)
+    axes=[
+        {'軸':'対象者・困りごと','状態':'仮説あり' if audience and outcome else '未整理','根拠':audience+' / '+outcome,
+         '確認すること':'誰が、どの場面で、何に困っているかを本人の反応で確かめる'},
+        {'軸':'役立つ・面白い・時間短縮','状態':'実測あり（内容を確認）' if samples else '未測定',
+         '根拠':str(samples)+'人の評価 / '+str(feedback.get('notes') or '実利用の評価記録なし'),
+         '確認すること':'役立った・面白い・また使いたいという反応、利用前後の時間を確かめる'},
+        {'軸':'差別化','状態':'否定的な反応あり' if feedback.get('differentiation')=='既存で十分' else '仮説あり' if difference else '未整理',
+         '根拠':difference+' / 利用者の評価: '+str(feedback.get('differentiation') or '未測定'),
+         '確認すること':'既存手段と同じ課題で比較し、この製品を選ぶ理由を確かめる'},
+        {'軸':'集客経路','状態':'仮説あり' if reach else '未整理','根拠':reach or '誰にどこで紹介するか未整理',
+         '確認すること':'紹介先→訪問→利用開始を別々に測り、来ないことと価値がないことを分ける'},
+        {'軸':'支払意思・採算','状態':'実支払い・利益あり' if metrics.get('sales') and metrics.get('profit') is not None and metrics['profit']>0 else
+             '実支払いあり・採算は別判定' if metrics.get('sales') else '仮説あり・支払い未検証' if money else '未整理',
+         '根拠':money+' / 売上件数: '+('未測定' if metrics.get('sales') is None else str(metrics['sales']))+
+             ' / 利益: '+('未測定' if metrics.get('profit') is None else str(metrics['profit'])+'円'),
+         '確認すること':'誰が何に払うか、実支払い・費用・返金を確かめる。再生や訪問を売上扱いしない'},
+        {'軸':'製品の完成度・実現性','状態':'完成条件あり・実装確認は別' if spec.get('acceptance') else '完成条件未整理',
+         '根拠':' / '.join(spec.get('must_have',[])),
+         '確認すること':'対象者の中心作業を最後まで操作する。デザイン・スマホ・保存・必要な接続を確認する'}]
+    missing=[]
+    for condition,label in ((audience and outcome,'対象者と困りごと'),(difference,'差別化'),(reach,'集客経路'),(money,'支払意思の仮説')):
+        if not condition:missing.append(label)
+    return {'policy':'全事業共通・仮説と実測を分離-1','axes':axes,'hypothesis_ready':not missing,
+        'missing':missing,'business_specific_checks':spec.get('acceptance',[]),
+        'next_validation':'まず'+ '・'.join(missing)+'を具体化する' if missing else
+            '完成条件の実操作を確認する。その後に集客と利用反応を測る' if not samples else
+            '反応・差別化・支払意思・費用を照合し、改善仮説を1つ検証する'}
 
 
 def review_generated_product(name,page,previous,cfg):
@@ -796,6 +837,14 @@ def render_created_apps(cfg):
                 st.write(summary['details'])
                 st.write('実利用の評価 '+str(summary['samples'])+'人 ／ 実売上 '+('未測定' if summary['sales'] is None else str(summary['sales'])+'件'))
                 st.caption('開発状況の更新: '+summary['developed_at'])
+            with st.expander('全事業共通の判断基準・この業種の確認項目'):
+                basis=common_business_basis(name)
+                st.dataframe(basis['axes'],hide_index=True,width='stretch')
+                st.write('**次の検証:** '+basis['next_validation'])
+                st.write('**この製品の実操作で確認すること:**')
+                for check in basis['business_specific_checks']:st.write('・'+check)
+                if not basis['business_specific_checks']:st.caption('業種ごとの完成条件はまだ設計されていません。')
+                st.caption('未測定は低評価ではありません。仮説点が高いことと、需要・利益の実証は別です。')
             if candidate:
                 asset,page=candidate
                 improved=asset['kind'] in ('品質改善候補HTML','改善候補HTML')
@@ -2805,6 +2854,7 @@ def evaluate_value(name, cfg, persist=False):
     item, feedback = idea_details(name), latest_value_feedback(name)
     state_row = ensure_value_state(name, cfg)
     v, metrics = value_profile(item), sourced_value_metrics(latest_metrics(name))
+    basis=common_business_basis(name,feedback,metrics)
     clock = policy_clock()
     elapsed = max(0, (clock - datetime.fromisoformat(state_row['started'])).days) if state_row['started'] else 0
     horizon = state_row['horizon_days']
@@ -2820,7 +2870,7 @@ def evaluate_value(name, cfg, persist=False):
     value_signal = samples >= 3 and (positive_ratio >= .4 or (saved is not None and saved >= .2))
     sales = metrics['sales'] or 0
     potential = (v['benefit'] >= 3 and v['difference'] >= 2 and v['revenue'] >= 2
-                 and bool(item.get('monetization')) and bool(item.get('target_customer')))
+                 and basis['hypothesis_ready'])
     disproved = (samples >= 5 and int(feedback.get('negative_users', 0)) >= max(3, samples * .6)
                  and (feedback.get('differentiation') == '既存で十分' or feedback.get('revenue_rejected')
                       or int(feedback.get('negative_users',0)) >= samples * .8)
@@ -2858,6 +2908,9 @@ def evaluate_value(name, cfg, persist=False):
     elif disproved and elapsed >= horizon:
         phase, priority = '仮説改善', 45
         reason = '否定的な反応を確認。課題・価値提案を1つ改善し、14日以上空けて新しい利用者でもう一度確認する'
+    elif not basis['hypothesis_ready']:
+        phase,priority='計画整理待ち',50
+        reason='共通基準で未整理: '+'・'.join(basis['missing'])+'。収益化不可とは判断せず、仮説を具体化する'
     elif not state_row['started']:
         phase, priority = '計測待ち', 50
         outreach=acquisition_state(name)
@@ -2881,7 +2934,8 @@ def evaluate_value(name, cfg, persist=False):
         phase,priority,reason='保留',10,'試作検査の修正上限に到達。需要がないと断定せず技術的に保留し、別の案を探索'
     result = {'name': name, 'phase': phase, 'priority': priority, 'reason': reason,
               'elapsed_days': elapsed, 'horizon_days': horizon, 'next_review': next_review,
-              'key': evidence_key, 'facts': facts, 'origin': v['origin'], 'value_signal': value_signal}
+              'key': evidence_key, 'facts': facts, 'origin': v['origin'], 'value_signal': value_signal,
+              'common_basis':basis}
     if persist:
         execute('''UPDATE venture_value_state SET phase=?,reason=?,priority=?,bad_windows=?,
             last_key=?,next_review=?,updated=? WHERE idea=?''', (phase, reason, priority,
@@ -4158,7 +4212,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.7 ／ のぼるさんの継続・保留・中止を優先')
+    st.caption('表示版: 2026.10.22.8 ／ 全事業共通の判断軸・仮説と実測を分離')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
