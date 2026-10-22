@@ -121,7 +121,7 @@ def config():
 
 
 PRODUCT_QUALITY_POLICY='2026-10-22-end-to-end-2'
-PRODUCT_DEVELOPMENT_BASELINE='2026-10-22-useful-start-1'
+PRODUCT_DEVELOPMENT_BASELINE='2026-10-22-useful-start-2'
 PRODUCT_BASELINE_REQUIREMENTS=[
     '最初の画面に対象ユーザー、具体的な困りごと、得られる結果、3段階の使い方を示す',
     '用途に合う独自の画面構成・配色・余白・見出しを設計し、他事業のデザインを流用しない',
@@ -242,6 +242,35 @@ def quality_requirements_text(name):
     spec=get_product_spec(name)
     if not spec:return '完成条件の設計待ち。発信できません。'
     return json.dumps(dict(spec,baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS),ensure_ascii=False,indent=2)
+
+
+def review_generated_product(name,page,previous,cfg):
+    """Source-based AI critique, never a claim of visual or customer validation."""
+    if previous and re.sub(r'\s+','',page)==re.sub(r'\s+','',previous):
+        return False,'改善前と同じ内容。対象者・画面構成・中心機能の具体的な変更が必要'
+    criteria=('audience','workflow','design','mobile','recovery','difference')
+    prompt=('生成されたHTMLを厳しくコードレビューする。ブラウザで見た・実利用したとは主張しない。'
+        '入力の写しだけの結果、何用か分からない画面、装飾しただけの試作は不合格。'
+        '対象者(audience)、目的を達成する実処理(workflow)、用途に合う見出し・情報階層・結果表示(design)、'
+        'スマホの入力と押しやすさ(mobile)、保存・復元・エラー回復(recovery)、代替より役立つ実処理(difference)を各0〜5点で採点。'
+        'JSONのみ。キーは上記6項目。それぞれ {"score":整数,"evidence":"HTMLから正確に引用した8文字以上の短い部分","reason":"理由と不足"}。'
+        '4点は主要部分が実装されている場合のみ。未接続や不明は点を盛らない。'
+        '\n要件:'+quality_requirements_text(name)[:7000]+'\nHTML:'+page[:30000])
+    try:
+        raw=ai(prompt,cfg,2000).strip()
+        raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw,flags=re.I)
+        review=json.loads(raw)
+        issues=[]
+        for key in criteria:
+            item=review.get(key,{})
+            score=item.get('score')
+            evidence=item.get('evidence','')
+            if (isinstance(score,bool) or not isinstance(score,(int,float)) or not 4<=score<=5
+                    or not isinstance(evidence,str) or len(evidence)<8 or evidence not in page):
+                issues.append(key+': '+str(item.get('reason','実装根拠を確認できない'))[:200])
+        return not issues,'コード上のAI品質レビュー（見た目・実用性は人の確認が必要）: '+('; '.join(issues) if issues else '6項目の実装根拠あり')
+    except (ValueError,TypeError,AttributeError):
+        return False,'AI品質レビューの応答を検証できない。改善完了とは扱わず次回再試行'
 
 
 def local_product_review(name,digest):
@@ -685,7 +714,7 @@ def render_created_apps(cfg):
         row=indexed.get(name,{'name':name,'published_url':'','content_sha':'','public_verified':0,
             'business_phase':summary['phase'],'development_stage':summary['stage']})
         name=row['name'];candidate=None
-        for asset in query("SELECT id,path,kind,validation FROM agent_assets WHERE idea=? AND kind IN ('品質改善候補HTML','改善候補HTML','試作品HTML') ORDER BY id DESC",(name,)):
+        for asset in query("SELECT id,path,kind,validation,created FROM agent_assets WHERE idea=? AND kind IN ('品質改善候補HTML','改善候補HTML','試作品HTML') ORDER BY CASE WHEN kind='品質改善候補HTML' THEN 0 WHEN kind='改善候補HTML' THEN 1 ELSE 2 END,id DESC",(name,)):
             path=Path(asset['path'])
             if not path.is_file():continue
             try:page=path.read_text(encoding='utf-8')
@@ -706,20 +735,30 @@ def render_created_apps(cfg):
             st.write('**判断理由:** '+summary['reason'])
             st.write('**改善状況:** '+summary['stage'])
             st.write('**次にすること:** '+summary['next_action'])
+            if summary['group'] not in ('中止','保留'):
+                if st.button('このアプリを優先して作り直す',key='rebuild_product_'+hashlib.sha256(name.encode()).hexdigest()[:16]):
+                    if not get_product_spec(name):
+                        st.warning('完成条件を設計待ちです。継続運転で先に対象者と機能を整理します。')
+                    else:
+                        request_product_changes(name,'現在の画面は完成度不足。対象者と用途が伝わる冒頭、独自のデザイン、押しやすいスマホ操作、実際に役立つ中心機能、保存と復元を全面的に見直す。説明や色だけの変更では不十分。')
+                        st.success('優先の作り直しを依頼しました。継続運転で処理します。');st.rerun()
             with st.expander('このアプリの直近の改善内容・実測'):
                 st.write(summary['details'])
                 st.write('実利用の評価 '+str(summary['samples'])+'人 ／ 実売上 '+('未測定' if summary['sales'] is None else str(summary['sales'])+'件'))
                 st.caption('開発状況の更新: '+summary['developed_at'])
             if candidate:
                 asset,page=candidate
-                st.caption('作成中・検査未合格' if '不合格' in asset['validation'] else '作成済み・確認用')
+                improved=asset['kind'] in ('品質改善候補HTML','改善候補HTML')
+                st.caption(('改善候補・完成度は未確認' if improved else '旧試作品・ブラッシュアップ前')+' ／ 作成日時: '+str(asset['created'] or '不明'))
+                if not improved:st.warning('この画面は以前の試作品です。改善版はまだ作成・確認できていません。')
+                with st.expander('この画面の検査結果を見る'):st.write(asset['validation'])
                 try:
                     preview=ensure_product_preview(name,page,cfg)
-                    st.link_button('改善版の画面を開く' if asset['kind']=='品質改善候補HTML' else '作成済みの画面を開く',preview['url'],type='primary')
+                    st.link_button('改善候補を開いて確認する' if improved else '旧試作品を見る（改善前）',preview['url'],type='primary' if improved else 'secondary')
                 except (ValueError,OSError) as exc:st.warning('画面の準備待ち: '+str(exc))
             elif row['published_url']:
-                st.caption('現在の公開版')
-                st.link_button('作成済みの画面を開く',row['published_url'],type='primary')
+                st.caption('現在の公開版。今回ブラッシュアップした版とは限りません。')
+                st.link_button('現在の公開版を見る',row['published_url'])
             else:st.caption('開ける画面はまだありません。状態・課題は上記のとおりです。')
     if not shown:st.info('画面ができると、ここに開くボタンが表示されます。')
 
@@ -2267,6 +2306,15 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             + (' / ' + '; '.join(errors) if errors else '')
         )
 
+        if not errors and browser_ok and existing_page and re.sub(r'\s+','',page)==re.sub(r'\s+','',existing_page):
+            errors.append('改善前と同じHTML')
+            verdict+=' / 不合格: 改善前と同じHTML'
+        if not errors and browser_ok and not partial:
+            quality_ok,quality_message=review_generated_product(name,page,existing_page,cfg)
+            verdict+=' / '+quality_message
+            if not quality_ok:
+                errors.append('品質レビュー未合格')
+                verdict+=' / 不合格'
         if not errors and browser_ok:
             save(job, name, asset_kind, page, 'html', verdict)
             return page, verdict+(' / 開発途中版・接続未確認・発信不可' if partial else ''), not partial
@@ -4056,7 +4104,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.5 ／ 状態・判断理由・確認ボタンを同じカードに表示')
+    st.caption('表示版: 2026.10.22.6 ／ 旧試作品と改善候補を区別・品質レビューを追加')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
