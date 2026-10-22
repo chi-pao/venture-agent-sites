@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_2ad733509db7974f8939d43d:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシピシェアプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>レシピシェアプラットフォーム</h1>
+        <form id="recipeForm">
+            <label for="ingredients">食材（カンマで区切る）:</label>
+            <input type="text" id="ingredients" required>
+            <label for="cookingTime">調理時間（分）:</label>
+            <input type="number" id="cookingTime" required>
+            <label for="servings">人数:</label>
+            <input type="number" id="servings" required>
+            <button type="submit">レシピ生成</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const ingredients = document.getElementById('ingredients').value.split(', ');
+            const cookingTime = parseInt(document.getElementById('cookingTime').value, 10);
+            const servings = parseInt(document.getElementById('servings').value, 10);
+
+            const result = generateRecipe(ingredients, cookingTime, servings);
+            document.getElementById('result').innerText = result;
+            saveRecipeToLocalStorage(result);
+            downloadRecipeAsCsv(result);
+        });
+
+        function generateRecipe(ingredients, cookingTime, servings) {
+            const baseRecipe = `【レシピ】\n食材: ${ingredients.join(', ')}\n調理時間: ${cookingTime}分\n人数: ${servings}人\n`;
+            const processedRecipe = processRecipe(baseRecipe);
+            return processedRecipe;
+        }
+
+        function processRecipe(recipe) {
+            // 簡単な加工：食材リストをアルファベット順に並び替え
+            const ingredients = recipe.match(/食材: (.+)/)[1].split(', ');
+            ingredients.sort();
+            recipe = recipe.replace(/食材: .+/g, `食材: ${ingredients.join(', ')}`);
+
+            // 調理時間の推奨：人数に応じて調理時間を調整
+            const adjustedCookingTime = cookingTime * (servings / 4);
+            recipe = recipe.replace(/調理時間: .+/g, `調理時間: ${adjustedCookingTime}分`);
+
+            return recipe;
+        }
+
+        function saveRecipeToLocalStorage(recipe) {
+            localStorage.setItem('savedRecipe', JSON.stringify(recipe));
+        }
+
+        function downloadRecipeAsCsv(recipe) {
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(recipe);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = csvContent;
+            downloadLink.download = 'recipe.csv';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+    </script>
+</body>
+</html>
