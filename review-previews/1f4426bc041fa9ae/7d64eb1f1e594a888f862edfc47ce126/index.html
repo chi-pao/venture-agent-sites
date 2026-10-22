@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_f8f3359adceaca2984f18cdc:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>授業スケジュール管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>授業スケジュール管理アプリ</h1>
+        <form id="scheduleForm">
+            <label for="subject">科目:</label>
+            <input type="text" id="subject" required><br>
+
+            <label for="date">日付:</label>
+            <input type="date" id="date" required><br>
+
+            <label for="time">時間:</label>
+            <input type="time" id="time" required><br>
+
+            <label for="teacher">先生:</label>
+            <input type="text" id="teacher" required><br>
+
+            <label for="location">場所:</label>
+            <input type="text" id="location" required><br>
+
+            <button type="button" onclick="addSchedule()">追加</button>
+        </form>
+
+        <h2>スケジュール一覧</h2>
+        <table id="scheduleTable">
+            <thead>
+                <tr>
+                    <th>科目</th>
+                    <th>日付</th>
+                    <th>時間</th>
+                    <th>先生</th>
+                    <th>場所</th>
+                </tr>
+            </thead>
+            <tbody id="scheduleBody">
+                <!-- スケジュールが追加される -->
+            </tbody>
+        </table>
+
+        <h2>レポート</h2>
+        <button type="button" onclick="generateReport()">レポート生成</button>
+        <div id="report"></div>
+    </div>
+
+    <script>
+        const scheduleBody = document.getElementById('scheduleBody');
+
+        function addSchedule() {
+            const subject = document.getElementById('subject').value;
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const teacher = document.getElementById('teacher').value;
+            const location = document.getElementById('location').value;
+
+            const row = `
+                <tr>
+                    <td>${subject}</td>
+                    <td>${date}</td>
+                    <td>${time}</td>
+                    <td>${teacher}</td>
+                    <td>${location}</td>
+                </tr>
+            `;
+            scheduleBody.innerHTML += row;
+
+            // 入力欄をクリア
+            document.getElementById('subject').value = '';
+            document.getElementById('date').value = '';
+            document.getElementById('time').value = '';
+            document.getElementById('teacher').value = '';
+            document.getElementById('location').value = '';
+        }
+
+        function generateReport() {
+            const rows = Array.from(scheduleBody.getElementsByTagName('tr')).slice(1);
+            const report = rows.map(row => {
+                const cells = Array.from(row.getElementsByTagName('td'));
+                return `${cells[0].textContent} (${cells[1].textContent} ${cells[2].textContent} ${cells[3].textContent} ${cells[4].textContent})`;
+            }).join('\n');
+
+            document.getElementById('report').innerText = report;
+        }
+
+        // スケジュールの保存と読み込み
+        window.onload = function() {
+            const savedSchedules = localStorage.getItem('schedules');
+            if (savedSchedules) {
+                const schedules = JSON.parse(savedSchedules);
+                schedules.forEach(addSchedule);
+            }
+        };
+
+        document.getElementById('scheduleBody').addEventListener('click', function(event) {
+            if (event.target.tagName === 'TR') {
+                const row = event.target;
+                const cells = Array.from(row.getElementsByTagName('td'));
+                const subject = cells[0].textContent;
+                const date = cells[1].textContent;
+                const time = cells[2].textContent;
+                const teacher = cells[3].textContent;
+                const location = cells[4].textContent;
+
+                alert(`科目: ${subject}\n日付: ${date}\n時間: ${time}\n先生: ${teacher}\n場所: ${location}`);
+            }
+        });
+
+        document.getElementById('report').addEventListener('click', function(event) {
+            if (event.target.tagName === 'BUTTON') {
+                generateReport();
+            }
+        });
+
+        document.getElementById('scheduleForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+
+        document.getElementById('scheduleForm').addEventListener('change', function() {
+            addSchedule();
+        });
+
+        document.getElementById('scheduleBody').addEventListener('click', function(event) {
+            if (event.target.tagName === 'TR') {
+                const row = event.target;
+                const cells = Array.from(row.getElementsByTagName('td'));
+                const subject = cells[0].textContent;
+                const date = cells[1].textContent;
+                const time = cells[2].textContent;
+                const teacher = cells[3].textContent;
+                const location = cells[4].textContent;
+
+                alert(`科目: ${subject}\n日付: ${date}\n時間: ${time}\n先生: ${teacher}\n場所: ${location}`);
+            }
+        });
+
+        document.getElementById('scheduleBody').addEventListener('click', function(event) {
+            if (event.target.tagName === 'TR') {
+                const row = event.target;
+                const cells = Array.from(row.getElementsByTagName('td'));
+                const subject = cells[0].textContent;
+                const date = cells[1].textContent;
+                const time = cells[2].textContent;
+                const teacher = cells[3].textContent;
+                const location = cells[4].textContent;
+
+                alert(`科目: ${subject}\n日付: ${date}\n時間: ${time}\n先生: ${teacher}\n場所: ${location}`);
+            }
+        });
+
+        // レポートのCSVダウンロード
+        document.getElementById('report').addEventListener('click', function(event) {
+            if (event.target.tagName === 'BUTTON') {
+                generateReport();
+                const report = document.getElementById('report').innerText;
+                const blob = new Blob([report], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'schedule_report.csv';
+                a.click();
+            }
+        });
+    </script>
+</body>
+</html>
