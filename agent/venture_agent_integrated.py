@@ -628,7 +628,6 @@ def product_portfolio_snapshot():
 
 
 def render_portfolio_status():
-    st.subheader('どの事業を育てているか')
     items,current=product_portfolio_snapshot()
     if current:st.info('現在処理中: '+current)
     else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
@@ -651,7 +650,9 @@ def render_portfolio_status():
     table=[{'事業':x['name'],'今の扱い':x['action'],'開発状態':x['stage'],
             '継続判断':x['phase'],'育成優先点':x['priority'],'根拠の強さ':x['evidence'],
             '判断理由':x['reason'],'次にすること':x['next_action']} for x in visible]
-    if table:st.dataframe(table,hide_index=True,width='stretch')
+    if table:
+        with st.expander('一覧表で比較する'):
+            st.dataframe(table,hide_index=True,width='stretch')
     else:st.info('この状態の事業はありません。')
     if visible:
         with st.expander('事業ごとの判断理由・実測・改善内容を見る'):
@@ -663,14 +664,13 @@ def render_portfolio_status():
             st.write('実利用の評価人数: '+str(item['samples'])+'人 / 実売上件数: '+('未測定' if item['sales'] is None else str(item['sales']))+
                 ' / 利益: '+('未測定' if item['profit'] is None else str(item['profit'])+'円'))
             st.caption('事業判断の更新: '+item['judged_at']+' / 開発状態の更新: '+item['developed_at'])
-    return {x['name']:x for x in items}
+    return {x['name']:x for x in visible}
 
 
 def render_created_apps(cfg):
-    status_by_name=render_portfolio_status()
     st.subheader('作ったサイト・アプリを見る')
-    st.caption('ボタンを押すと、今できている画面が別タブで開きます。未完成のものも確認できます。')
-    include_archived=st.checkbox('中止・保留も表示する',value=False,key='created_apps_include_archived')
+    st.caption('状態・判断理由・次の行動と、画面を開くボタンを同じカードにまとめています。中止・保留は「表示する状態」で切り替えます。')
+    status_by_name=render_portfolio_status()
     rows=query('''SELECT a.name,a.published_url,c.content_sha,c.public_verified,
         COALESCE(v.phase,a.phase) AS business_phase,d.stage AS development_stage
         FROM autonomous_ideas a LEFT JOIN autonomous_checks c ON c.idea=a.name
@@ -680,8 +680,10 @@ def render_created_apps(cfg):
             AND x.kind IN ('品質改善候補HTML','改善候補HTML','試作品HTML'))
         ) ORDER BY a.updated DESC''')
     shown=0
-    for row in rows:
-        if not include_archived and row['business_phase'] in ('中止','保留'):continue
+    indexed={row['name']:row for row in rows}
+    for name,summary in sorted(status_by_name.items(),key=lambda pair:(not pair[1]['current'],-(pair[1]['priority'] or 0),pair[0])):
+        row=indexed.get(name,{'name':name,'published_url':'','content_sha':'','public_verified':0,
+            'business_phase':summary['phase'],'development_stage':summary['stage']})
         name=row['name'];candidate=None
         for asset in query("SELECT id,path,kind,validation FROM agent_assets WHERE idea=? AND kind IN ('品質改善候補HTML','改善候補HTML','試作品HTML') ORDER BY id DESC",(name,)):
             path=Path(asset['path'])
@@ -694,25 +696,31 @@ def render_created_apps(cfg):
             if asset['kind']=='試作品HTML' and row['public_verified'] and row['published_url'] and row['content_sha']!=digest:
                 break
             candidate=(asset,page);break
-        if not candidate and not row['published_url']:continue
         shown+=1
         with st.container(border=True):
+            label={'作業中':'🟢 今まさに開発中','確認待ち':'🟡 改善版を確認できます','運用中':'🔵 運用・継続改善',
+                   '改善・接続':'🛠 ブラッシュアップ対象','保留':'⏸ 保留','中止':'⏹ 開発を中止'}[summary['group']]
+            st.write('**'+label+'**')
             st.write('**'+str(idea_details(name).get('product_name') or name)+'**')
-            st.caption('事業判断: '+str(row['business_phase'] or '未検証')+' / 開発: '+str(row['development_stage'] or '未確認'))
-            summary=status_by_name.get(name)
-            if summary:
-                st.write('**'+summary['action']+'** ／ '+summary['evidence'])
-                st.caption('判断理由: '+summary['reason'])
+            st.write('**育成優先点:** '+('未判定' if summary['priority'] is None else str(summary['priority'])+'点')+' ／ '+summary['evidence'])
+            st.write('**判断理由:** '+summary['reason'])
+            st.write('**改善状況:** '+summary['stage'])
+            st.write('**次にすること:** '+summary['next_action'])
+            with st.expander('このアプリの直近の改善内容・実測'):
+                st.write(summary['details'])
+                st.write('実利用の評価 '+str(summary['samples'])+'人 ／ 実売上 '+('未測定' if summary['sales'] is None else str(summary['sales'])+'件'))
+                st.caption('開発状況の更新: '+summary['developed_at'])
             if candidate:
                 asset,page=candidate
                 st.caption('作成中・検査未合格' if '不合格' in asset['validation'] else '作成済み・確認用')
                 try:
                     preview=ensure_product_preview(name,page,cfg)
-                    st.link_button('作成中の画面を開く',preview['url'],type='primary')
+                    st.link_button('改善版の画面を開く' if asset['kind']=='品質改善候補HTML' else '作成済みの画面を開く',preview['url'],type='primary')
                 except (ValueError,OSError) as exc:st.warning('画面の準備待ち: '+str(exc))
-            else:
+            elif row['published_url']:
                 st.caption('現在の公開版')
                 st.link_button('作成済みの画面を開く',row['published_url'],type='primary')
+            else:st.caption('開ける画面はまだありません。状態・課題は上記のとおりです。')
     if not shown:st.info('画面ができると、ここに開くボタンが表示されます。')
 
 
@@ -4048,6 +4056,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
+    st.caption('表示版: 2026.10.22.5 ／ 状態・判断理由・確認ボタンを同じカードに表示')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
