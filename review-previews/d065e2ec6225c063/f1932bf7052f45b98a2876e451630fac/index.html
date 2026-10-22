@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_2e124290d138983173862ca0:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン英会話レッスンプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン英会話レッスンプラットフォーム</h1>
+        <form id="form">
+            <label for="inputText">入力文字列:</label>
+            <textarea id="inputText" rows="4" required></textarea><br>
+            <button type="button" id="processButton" onclick="processInput()">結果表示</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        function processInput() {
+            const inputText = document.getElementById('inputText').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            // 入力文字列の長さを表示
+            resultDiv.innerHTML += `<p>入力文字列の長さ: ${inputText.length}</p>`;
+            // 単語数を計算
+            const words = inputText.split(/\s+/).filter(word => word !== '').length;
+            resultDiv.innerHTML += `<p>単語数: ${words}</p>`;
+            // 文字列を大文字に変換
+            const upperCaseText = inputText.toUpperCase();
+            resultDiv.innerHTML += `<p>大文字に変換: ${upperCaseText}</p>`;
+            // 文字列を小文字に変換
+            const lowerCaseText = inputText.toLowerCase();
+            resultDiv.innerHTML += `<p>小文字に変換: ${lowerCaseText}</p>`;
+        }
+
+        document.getElementById('form').addEventListener('submit', function(event) {
+            event.preventDefault();
+        });
+
+        function saveToLocal() {
+            const inputText = document.getElementById('inputText').value;
+            localStorage.setItem('inputText', inputText);
+            alert('入力内容がローカルストレージに保存されました。');
+        }
+
+        function downloadCSV() {
+            const inputText = document.getElementById('inputText').value;
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(inputText);
+            const link = document.createElement('a');
+            link.href = csvContent;
+            link.download = 'input_text.csv';
+            link.click();
+        }
+
+        document.getElementById('processButton').addEventListener('click', processInput);
+        document.getElementById('saveButton').addEventListener('click', saveToLocal);
+        document.getElementById('downloadButton').addEventListener('click', downloadCSV);
+    </script>
+</body>
+</html>
