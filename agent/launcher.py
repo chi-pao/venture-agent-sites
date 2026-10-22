@@ -55,10 +55,11 @@ def install_update(data_home, code_home, fetch=download):
     backup = data_home / 'backups' / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(time.time_ns()))
     backup.mkdir(parents=True)
     backup_database(data_home, backup)
-    if current.exists():
-        shutil.copy2(current, backup / 'previous.py')
+    previous_source = current if current.exists() else data_home / 'venture_agent_integrated.py'
+    if previous_source.exists():
+        shutil.copy2(previous_source, backup / 'previous.py')
         previous_stage = code_home / 'previous.tmp'
-        shutil.copy2(current, previous_stage)
+        shutil.copy2(previous_source, previous_stage)
         os.replace(previous_stage, code_home / 'previous.py')
     os.replace(stage, current)
     (code_home / 'installed.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
