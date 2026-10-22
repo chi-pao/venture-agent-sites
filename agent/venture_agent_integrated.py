@@ -97,6 +97,7 @@ def init():
     init_acquisition()
     init_revenue_research()
     init_product_quality()
+    init_media_businesses()
     restore_bluesky_credentials()
 
 
@@ -565,7 +566,108 @@ def ensure_product_preview(name,page,cfg):
             'web_url':row['web_url'],'content_sha':digest,'details':row['details']}
 
 
+def product_portfolio_snapshot():
+    """Read-only portfolio display. Missing data never becomes a negative demand verdict."""
+    rows=query('''SELECT a.name,a.phase,a.score,a.published_url,a.attempts,
+        v.phase AS value_phase,v.reason,v.priority,v.updated AS judged_at,v.next_review,
+        d.stage,d.details,d.updated AS developed_at
+        FROM autonomous_ideas a LEFT JOIN venture_value_state v ON v.idea=a.name
+        LEFT JOIN venture_product_development d ON d.idea=a.name
+        WHERE a.attempts>0 OR a.published_url!='' OR d.idea IS NOT NULL
+        ORDER BY COALESCE(v.priority,0) DESC,a.updated DESC''')
+    jobs=query('SELECT state,details,started FROM agent_jobs ORDER BY id DESC LIMIT 1')
+    current=''
+    if jobs and jobs[0]['state']=='実行中' and state()['enabled']:
+        # Latest job only: an old abandoned running row is not today's current work.
+        for line in reversed(str(jobs[0]['details'] or '').splitlines()):
+            matches=[r['name'] for r in rows if r['name']+':' in line]
+            if matches:
+                current=max(matches,key=len);break
+    result=[]
+    for row in rows:
+        name=row['name'];phase=row['value_phase'] or row['phase'] or '未判定'
+        stage=row['stage'] or '開発状態未確認'
+        reason=row['reason'] or '判断根拠はまだ記録されていません'
+        feedback=latest_value_feedback(name)
+        metrics=sourced_value_metrics(latest_metrics(name))
+        samples=int(feedback.get('sample_count') or 0)
+        sales=metrics.get('sales');profit=metrics.get('profit')
+        positives=max([int(feedback.get(k) or 0) for k in
+            ('useful_users','enjoyable_users','wishlist_users','returning_users','payment_intent_users')])
+        before=feedback.get('before_minutes');after=feedback.get('after_minutes')
+        saved=(before-after)/before if before and after is not None else None
+        signal=samples>=3 and (positives/samples>=.4 or (saved is not None and saved>=.2))
+        evidence=('実支払い・利益あり' if sales and profit is not None and profit>0 else
+                  '実支払いあり・採算検証中' if sales else
+                  '実利用の好反応あり・収益未検証' if signal else
+                  '反応を検証中・収益未検証' if samples else '利用反応未測定・収益未検証')
+        technical=phase=='保留' and any(word in reason for word in ('技術','修正上限','試作検査'))
+        if phase=='中止':
+            group='中止';action='追加開発を停止';next_action='判断根拠を確認。再開には仮説の見直しが必要'
+        elif phase=='保留':
+            group='保留';action='技術的な保留' if technical else '判断保留'
+            next_action='技術課題を解消して再評価' if technical else '根拠・差別化・利用反応を追加して再評価'
+        elif name==current:
+            group='作業中';action='今このアプリを処理中';next_action='今回の作成・検査結果を待つ'
+        elif stage=='のぼるさん確認待ち':
+            group='確認待ち';action='改善版あり・確認待ち';next_action='画面を開いて試す → 修正依頼または発信OK'
+        elif phase in ('収益継続','育成継続','改善中') and row['published_url'] and local_product_review(name,
+                next(iter(query('SELECT content_sha FROM autonomous_checks WHERE idea=?',(name,))),{}).get('content_sha','')):
+            group='運用中';action='承認済み版を運用・継続改善';next_action='集客・実利用の計測を続け、改善版は改めて確認する'
+        elif stage=='画面改善中・接続未完了' or '接続' in stage:
+            group='改善・接続';action='画面改善／接続機能は未完成';next_action='独立機能の改善を継続。API・サーバー実装が別途必要'
+        else:
+            group='改善・接続';action='ブラッシュアップ対象'
+            next_action='修正依頼・経過時間に応じて順番に改善。毎サイクル全件を書き換えるものではありません'
+        result.append(dict(name=name,phase=phase,stage=stage,reason=reason,group=group,action=action,
+            next_action=next_action,priority=row['priority'],evidence=evidence,samples=samples,
+            sales=sales,profit=profit,details=row['details'] or 'まだ改善結果の記録がありません',
+            judged_at=row['judged_at'] or '未判定',developed_at=row['developed_at'] or '未着手',
+            current=name==current,technical=technical))
+    return result,current
+
+
+def render_portfolio_status():
+    st.subheader('どの事業を育てているか')
+    items,current=product_portfolio_snapshot()
+    if current:st.info('現在処理中: '+current)
+    else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
+    columns=st.columns(5)
+    for col,label,count in zip(columns,('改善・接続','確認待ち','運用中','保留','中止'),
+        (sum(x['group'] in ('作業中','改善・接続') for x in items),
+         sum(x['group']=='確認待ち' for x in items),sum(x['group']=='運用中' for x in items),
+         sum(x['group']=='保留' for x in items),sum(x['group']=='中止' for x in items))):
+        col.metric(label,count)
+    st.caption('育成優先点は運営判断の点数で、成功確率ではありません。好反応・売上・利益は分けて表示します。保留は「儲からないと確定」ではありません。')
+    ranked=[x for x in items if x['group'] not in ('中止','保留') and x['priority'] is not None]
+    if ranked:
+        top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
+        st.write('**育成判断の最上位:** '+top['name']+'（'+str(top['priority'])+'点'+('・同点'+str(ties)+'件' if ties>1 else '')+'）')
+        st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
+    selection=st.selectbox('表示する状態',['開発・育成中','すべて','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
+    visible=[x for x in items if selection=='すべて' or
+        (selection=='開発・育成中' and x['group'] not in ('中止','保留')) or
+        (selection=='今の作業中' and x['current']) or x['group']==selection]
+    table=[{'事業':x['name'],'今の扱い':x['action'],'開発状態':x['stage'],
+            '継続判断':x['phase'],'育成優先点':x['priority'],'根拠の強さ':x['evidence'],
+            '判断理由':x['reason'],'次にすること':x['next_action']} for x in visible]
+    if table:st.dataframe(table,hide_index=True,width='stretch')
+    else:st.info('この状態の事業はありません。')
+    if visible:
+        with st.expander('事業ごとの判断理由・実測・改善内容を見る'):
+            name=st.selectbox('詳しく見る事業',[x['name'] for x in visible],key='portfolio_detail_name')
+            item=next(x for x in visible if x['name']==name)
+            st.write('**継続・休止の理由:** '+item['reason'])
+            st.write('**直近の改善結果・課題:** '+item['details'])
+            st.write('**次の行動:** '+item['next_action'])
+            st.write('実利用の評価人数: '+str(item['samples'])+'人 / 実売上件数: '+('未測定' if item['sales'] is None else str(item['sales']))+
+                ' / 利益: '+('未測定' if item['profit'] is None else str(item['profit'])+'円'))
+            st.caption('事業判断の更新: '+item['judged_at']+' / 開発状態の更新: '+item['developed_at'])
+    return {x['name']:x for x in items}
+
+
 def render_created_apps(cfg):
+    status_by_name=render_portfolio_status()
     st.subheader('作ったサイト・アプリを見る')
     st.caption('ボタンを押すと、今できている画面が別タブで開きます。未完成のものも確認できます。')
     include_archived=st.checkbox('中止・保留も表示する',value=False,key='created_apps_include_archived')
@@ -597,6 +699,10 @@ def render_created_apps(cfg):
         with st.container(border=True):
             st.write('**'+str(idea_details(name).get('product_name') or name)+'**')
             st.caption('事業判断: '+str(row['business_phase'] or '未検証')+' / 開発: '+str(row['development_stage'] or '未確認'))
+            summary=status_by_name.get(name)
+            if summary:
+                st.write('**'+summary['action']+'** ／ '+summary['evidence'])
+                st.caption('判断理由: '+summary['reason'])
             if candidate:
                 asset,page=candidate
                 st.caption('作成中・検査未合格' if '不合格' in asset['validation'] else '作成済み・確認用')
@@ -608,6 +714,127 @@ def render_created_apps(cfg):
                 st.caption('現在の公開版')
                 st.link_button('作成済みの画面を開く',row['published_url'],type='primary')
     if not shown:st.info('画面ができると、ここに開くボタンが表示されます。')
+
+
+def init_media_businesses():
+    with db() as c:
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_media_accounts(
+            id TEXT PRIMARY KEY,name TEXT NOT NULL,platform TEXT NOT NULL,audience TEXT NOT NULL,
+            concept TEXT NOT NULL,monetization TEXT NOT NULL,url TEXT DEFAULT '',
+            status TEXT DEFAULT '未開設・企画段階',enabled INTEGER DEFAULT 0,updated TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_media_drafts(
+            id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,script TEXT NOT NULL,
+            status TEXT DEFAULT '原稿確認待ち',created TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_media_metrics(
+            id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,measured TEXT NOT NULL,
+            views INTEGER,followers INTEGER,completion REAL,shares INTEGER,revenue INTEGER,
+            expenses INTEGER,source TEXT NOT NULL)''')
+        c.execute('''INSERT OR IGNORE INTO venture_media_accounts
+            (id,name,platform,audience,concept,monetization,updated) VALUES(?,?,?,?,?,?,?)''',
+            ('original-short-lab','もしも発想ラボ（仮）','YouTube Shorts',
+             '短いオリジナルの物語や意外な発想を楽しみたい日本語視聴者',
+             'もしも日常の道具が話せたら、などの架空設定で笑いや意外な結末を作る。各回に独自の脚本と演出を持たせる。',
+             '視聴者の再訪・視聴継続を検証後、参加条件を満たした広告収益や独自作品販売を検討。収益性は未検証。',now()))
+
+
+def media_editorial_cycle(job,cfg):
+    # Explicit opt-in only; local scripts are never uploaded or treated as rendered video.
+    rows=query('SELECT * FROM venture_media_accounts WHERE enabled=1 ORDER BY updated')
+    for account in rows:
+        pending=query("SELECT COUNT(*) AS n FROM venture_media_drafts WHERE account_id=? AND status='原稿確認待ち'",(account['id'],))[0]['n']
+        if pending>=3:continue
+        recent=query('SELECT script,created FROM venture_media_drafts WHERE account_id=? ORDER BY id DESC LIMIT 5',(account['id'],))
+        if recent:
+            try:
+                if (policy_clock()-datetime.fromisoformat(recent[0]['created'])).total_seconds()<86400:continue
+            except (ValueError,TypeError):pass
+        if not state()['enabled']:return
+        try:
+            prompt=('独立した娯楽メディアのオリジナル投稿案を1本だけ日本語で作る。'
+                '出力はタイトル、対象視聴者、冒頭の引き、30〜45秒の脚本、場面別の映像制作指示、字幕、投稿文、'
+                '前回と異なる独自の工夫、検証する反応、必要な素材の順。'
+                '事実やニュースを捏造せず架空の物語と明示。既存作品や著名人の模倣に頼らない。'
+                'アプリ紹介や不動産チェッカーの広告を混ぜない。再生数や利益を保証しない。'
+                'これは台本で、動画生成済み・投稿済みとは記載しない。\n'
+                +json.dumps({k:account[k] for k in ('name','platform','audience','concept')},ensure_ascii=False)
+                +'\n重複を避ける過去案:'+json.dumps([x['script'][:500] for x in recent],ensure_ascii=False)
+                +'\n期間・出典付きの実績（未記録は未測定。期間の異なる数値を直接比較せず改善仮説に使う）:'
+                +json.dumps(query('SELECT measured,views,followers,completion,shares,revenue,expenses,source FROM venture_media_metrics WHERE account_id=? ORDER BY id DESC LIMIT 5',(account['id'],)),ensure_ascii=False))
+            script=ai(prompt,cfg,2400).strip()
+            if len(script)<100:raise ValueError('原稿が短すぎます')
+            execute('INSERT INTO venture_media_drafts(account_id,script,created) VALUES(?,?,?)',(account['id'],script[:15000],now()))
+            execute('UPDATE venture_media_accounts SET updated=? WHERE id=?',(now(),account['id']))
+            event(job,account['name']+': オリジナル台本を作成。動画制作・外部投稿は未実施')
+        except Exception as exc:event(job,account['name']+': 原稿作成待ち '+type(exc).__name__)
+        return
+
+
+def render_media_business_ui(cfg):
+    st.subheader('AI動画・面白い投稿の事業')
+    st.caption('便利アプリ紹介SNS・お買い得物件チェッカーとは別ブランドです。現在はアカウント開設管理と台本作成・実測記録まで。動画生成・自動投稿・実績の自動取得は未接続です。')
+    with st.expander('別テーマの専用アカウント案を追加する'):
+        with st.form('media_add_account'):
+            new_name=st.text_input('追加するアカウント案の名前',key='media_new_name')
+            new_audience=st.text_input('対象視聴者',key='media_new_audience')
+            new_concept=st.text_area('独自の投稿テーマ',key='media_new_concept')
+            if st.form_submit_button('アカウント案を追加（外部開設は次の段階）'):
+                if not all(x.strip() for x in (new_name,new_audience,new_concept)):st.warning('名前・視聴者・テーマを入力してください')
+                else:
+                    execute('''INSERT INTO venture_media_accounts(id,name,platform,audience,concept,monetization,updated)
+                        VALUES(?,?,?,?,?,?,?)''',(uuid.uuid4().hex,new_name.strip(),'YouTube Shorts',new_audience.strip(),new_concept.strip(),
+                        '視聴継続・再訪を検証して広告や独自作品販売を検討。収益性は未検証。',now()))
+                    st.success('独立した運用案を追加しました。外部アカウントは未開設です。');st.rerun()
+    accounts=query('SELECT * FROM venture_media_accounts ORDER BY updated DESC')
+    st.dataframe([{'アカウント案':r['name'],'媒体':r['platform'],'開設状態':r['status'],
+        '自動台本':bool(r['enabled']),'収益判断':'未検証（実績は下欄）'} for r in accounts],hide_index=True,width='stretch')
+    selected=st.selectbox('運用するアカウント',[r['id'] for r in accounts],format_func=lambda k:next(r['name'] for r in accounts if r['id']==k),key='media_account')
+    account=next(r for r in accounts if r['id']==selected)
+    with st.form('media_account_settings'):
+        name=st.text_input('アカウント名（仮名可）',value=account['name'])
+        audience=st.text_input('誰に楽しんでもらうか',value=account['audience'])
+        concept=st.text_area('投稿のテーマ・独自性',value=account['concept'])
+        url=st.text_input('開設済みYouTubeチャンネルURL（まだなら空欄）',value=account['url'])
+        enabled=st.checkbox('継続運転で台本を自動作成する（1日1案・未確認3案まで）',value=bool(account['enabled']))
+        if st.form_submit_button('運用方針を保存'):
+            parsed=urllib.parse.urlparse(url.strip())
+            if not name.strip() or not audience.strip() or not concept.strip():st.warning('名前・対象者・テーマを入力してください')
+            elif url.strip() and (parsed.scheme!='https' or parsed.hostname not in ('www.youtube.com','youtube.com')):st.warning('YouTubeのHTTPSチャンネルURLを入力してください')
+            else:
+                execute('UPDATE venture_media_accounts SET name=?,audience=?,concept=?,url=?,enabled=?,status=?,updated=? WHERE id=?',
+                    (name.strip(),audience.strip(),concept.strip(),url.strip(),int(enabled),
+                     'URL登録済・所有／投稿接続は未確認' if url.strip() else '未開設・企画段階',now(),selected))
+                st.success('保存しました。外部アカウントの作成や投稿は行っていません。');st.rerun()
+    st.write('**収益化の仮説:** '+account['monetization'])
+    st.write('**開設の次の作業:** この専用名と紹介文を決め、YouTubeで専用チャンネルを開設してURLを登録します。メール・本人確認・利用条件への同意はサービス画面で行います。')
+    drafts=query('SELECT * FROM venture_media_drafts WHERE account_id=? ORDER BY id DESC LIMIT 20',(selected,))
+    for draft in drafts:
+        with st.expander('#'+str(draft['id'])+' '+draft['status']+' / '+draft['created']):
+            st.text(draft['script'])
+            st.caption('これは台本です。動画制作と完成動画の確認は別に必要です。')
+            if draft['status']=='原稿確認待ち':
+                if st.button('台本を採用（動画制作待ちへ）',key='media_accept_'+str(draft['id'])):
+                    execute("UPDATE venture_media_drafts SET status='台本採用・動画制作未接続' WHERE id=?",(draft['id'],));st.rerun()
+                if st.button('見送る',key='media_skip_'+str(draft['id'])):
+                    execute("UPDATE venture_media_drafts SET status='見送り' WHERE id=?",(draft['id'],));st.rerun()
+    with st.form('media_metrics'):
+        st.write('**実際の運用実績を記録**（取得した期間をそろえて入力）')
+        views=st.number_input('再生数',min_value=0,key='media_views')
+        followers=st.number_input('登録者数',min_value=0,key='media_followers')
+        completion=st.number_input('視聴完了率（%）',min_value=0.,max_value=100.,key='media_completion')
+        shares=st.number_input('共有数',min_value=0,key='media_shares')
+        revenue=st.number_input('実売上（円）',min_value=0,key='media_revenue')
+        expenses=st.number_input('確認済み費用（円）',min_value=0,key='media_expenses')
+        source=st.text_input('出典と集計期間（例: YouTube Studio・10月分）',key='media_source')
+        if st.form_submit_button('実績を記録'):
+            if not source.strip():st.warning('実績の出典と集計期間を入力してください')
+            else:
+                execute('INSERT INTO venture_media_metrics(account_id,measured,views,followers,completion,shares,revenue,expenses,source) VALUES(?,?,?,?,?,?,?,?,?)',
+                    (selected,now(),views,followers,completion,shares,revenue,expenses,source.strip()))
+                st.success('手動の実測記録として保存しました');st.rerun()
+    metrics=query('''SELECT measured AS 記録日時,views AS 再生数,followers AS 登録者,completion AS 視聴完了率,
+        revenue AS 売上,expenses AS 費用,revenue-expenses AS 差引,source AS 出典 FROM venture_media_metrics WHERE account_id=? ORDER BY id DESC LIMIT 20''',(selected,))
+    if metrics:st.dataframe(metrics,hide_index=True,width='stretch')
+    else:st.info('実測はまだありません。売上ゼロや再生数だけでは自動で中止しません。')
 
 
 def render_product_review_ui(cfg):
@@ -1980,6 +2207,7 @@ def cycle(cfg):
         reconcile_publications(job,cfg=cfg)
         refresh_product_quality(job,cfg)
         quality_development_cycle(job,cfg)
+        media_editorial_cycle(job,cfg)
         sync_external_metrics(job,cfg)
         portfolio_review(job)
         portfolio_priority = portfolio_opportunity(job,cfg)
@@ -3789,7 +4017,7 @@ def render_dashboard():
     if s['last_error']: st.error('直近のエラー: '+s['last_error'])
     st.caption('最終ハートビート: '+str(s['heartbeat'] or 'なし'))
     render_created_apps(cfg)
-    t1,t2,t3,t4,t5,t6,t7=st.tabs(['事業一覧・継続判断','実行履歴と成果物','実測値の入力','公開と運用','利用者の反応と学習','SNS集客','分野探索・収益化検証'])
+    t1,t2,t3,t4,t5,t6,t7,t8=st.tabs(['事業一覧・継続判断','実行履歴と成果物','実測値の入力','公開と運用','利用者の反応と学習','SNS集客','分野探索・収益化検証','AI動画・投稿事業'])
     with t1:
         records=query('SELECT name,phase,score,attempts,last_result,published_url,updated FROM autonomous_ideas ORDER BY updated DESC')
         if records: st.dataframe(records,hide_index=True,width='stretch')
@@ -3859,6 +4087,8 @@ def render_dashboard():
         render_sns_ui(cfg)
     with t7:
         render_research_ui(cfg)
+    with t8:
+        render_media_business_ui(cfg)
     if st.button('画面を更新'): st.rerun()
 
 
