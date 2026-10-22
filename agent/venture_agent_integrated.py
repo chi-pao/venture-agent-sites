@@ -120,8 +120,8 @@ def config():
     return c
 
 
-PRODUCT_QUALITY_POLICY='2026-10-22-end-to-end-2'
-PRODUCT_DEVELOPMENT_BASELINE='2026-10-22-useful-start-2'
+PRODUCT_QUALITY_POLICY='2026-10-22-production-verified-3'
+PRODUCT_DEVELOPMENT_BASELINE='2026-10-22-production-verified-3'
 PRODUCT_BASELINE_REQUIREMENTS=[
     '最初の画面に対象ユーザー、具体的な困りごと、得られる結果、3段階の使い方を示す',
     '用途に合う独自の画面構成・配色・余白・見出しを設計し、他事業のデザインを流用しない',
@@ -318,7 +318,7 @@ def review_generated_product(name,page,previous,cfg):
 
 def local_product_review(name,digest):
     scope=product_scope_sha(name)
-    if not scope:return None
+    if not scope or not production_acceptance(name,digest):return None
     rows=query('SELECT * FROM venture_product_reviews WHERE idea=? AND content_sha=? AND scope_sha=?',(name,digest,scope))
     if not rows:return None
     try:
@@ -327,9 +327,37 @@ def local_product_review(name,digest):
     except (ValueError,TypeError):return None
 
 
+PRODUCTION_CHECKS=('audience_instructions','primary_workflow','desktop_visual','mobile_visual','save_reload','export_restore','invalid_input','connections')
+
+
+def production_acceptance(name,digest):
+    """Independent production QA, bound to both bytes and current requirements, never AI self-score."""
+    rows=query('SELECT value FROM agent_settings WHERE key=?',('production_acceptance:'+name+':'+digest,))
+    if not rows:return None
+    try:
+        item=json.loads(rows[0]['value'])
+        spec=get_product_spec(name) or {}
+        if (item.get('policy')==PRODUCT_QUALITY_POLICY and item.get('content_sha')==digest
+                and item.get('scope_sha') and item.get('scope_sha')==product_scope_sha(name) and item.get('reviewer')=='Codex実操作検証'
+                and spec.get('delivery_mode') in ('browser_local','connected') and item.get('delivery_mode')==spec.get('delivery_mode')
+                and all(isinstance(item.get('checks',{}).get(k),str) and len(item['checks'][k])>=15 for k in PRODUCTION_CHECKS)):
+            return item
+    except (ValueError,TypeError,AttributeError):pass
+    return None
+
+
+def candidate_production_acceptance(name):
+    assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
+    if not assets:return None
+    try:return production_acceptance(name,hashlib.sha256(Path(assets[0]['path']).read_bytes()).hexdigest())
+    except OSError:return None
+
+
 def record_product_review(name,digest,scope,checks,evidence):
     if not re.fullmatch(r'[0-9a-f]{64}',digest) or not scope or scope!=product_scope_sha(name):
         raise ValueError('確認中に製品要件が変わりました。最新の完成条件で確認し直してください')
+    if not production_acceptance(name,digest):
+        raise ValueError('制作側の実操作・画面確認がまだ完了していません。旧試作品やAIの自己採点だけでは発信OKに進めません')
     if not all(checks.get(k) is True for k in PRODUCT_RELEASE_CHECKS) or len(evidence.strip())<20:
         raise ValueError('全項目の実操作確認と、確認した結果の記録が必要です')
     execute('''INSERT OR REPLACE INTO venture_product_reviews(idea,content_sha,scope_sha,checks,evidence,reviewed)
@@ -345,6 +373,9 @@ def development_allowed(name,ai_phase=None):
     decision=owner_decision(name)['decision']
     if decision in ('保留','中止'):return False
     if decision=='継続':return True
+    if ai_phase is None:
+        rows=query("SELECT COALESCE(NULLIF(v.phase,''),a.phase) AS phase FROM autonomous_ideas a LEFT JOIN venture_value_state v ON v.idea=a.name WHERE a.name=?",(name,))
+        ai_phase=rows[0]['phase'] if rows else None
     return ai_phase not in ('中止','保留')
 
 
@@ -400,6 +431,69 @@ def load_product_reviews(cfg):
                 (key,json.dumps({'fetched':time.time(),'data':data},ensure_ascii=False)))
         return data
     except Exception:return None
+
+
+PRODUCT_CANDIDATE_MANIFEST='447a1b27b95670d0ab480370821833986186fb2e'
+
+
+def sync_review_candidates(cfg,force=False):
+    """Import pinned, hash-verified review builds only; never touch production or grant user OK."""
+    if str(cfg.get('github_repo','')).strip() not in ('','chi-pao/venture-agent-sites'):return []
+    key='review_bundle:'+PRODUCT_CANDIDATE_MANIFEST
+    cached=query('SELECT value FROM agent_settings WHERE key=?',(key,))
+    catalog=None
+    if cached:
+        try:
+            data=json.loads(cached[0]['value'])
+            if not force and isinstance(data.get('catalog'),dict):catalog=data['catalog']
+            elif not force and time.time()-data.get('attempted',0)<60:return []
+        except (ValueError,TypeError):pass
+    base='https://raw.githubusercontent.com/chi-pao/venture-agent-sites/'
+    messages=[]
+    try:
+        if catalog is None:
+            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',(key,json.dumps({'attempted':time.time()})))
+            with urllib.request.urlopen(base+PRODUCT_CANDIDATE_MANIFEST+'/agent/product-candidates.json',timeout=12) as r:raw=r.read(200001)
+            if len(raw)>200000:raise ValueError('候補一覧の容量を超えています')
+            catalog=json.loads(raw)
+        if catalog.get('version')!=1 or not isinstance(catalog.get('products'),list) or len(catalog['products'])>20:raise ValueError('候補一覧の形式が不正です')
+        for entry in catalog['products']:
+            name=entry.get('idea','');digest=entry.get('sha256','');commit=entry.get('commit','');path=entry.get('path','')
+            if not query('SELECT name FROM autonomous_ideas WHERE name=?',(name,)) or not development_allowed(name):continue
+            if not (re.fullmatch(r'[0-9a-f]{64}',digest) and re.fullmatch(r'[0-9a-f]{40}',commit)
+                    and re.fullmatch(r'agent/review-products/[a-z0-9-]+[.]html',path)):raise ValueError('候補の参照先が不正です')
+            if query('SELECT value FROM agent_settings WHERE key=?',('imported_candidate:'+name+':'+digest,)):continue
+            checks=entry.get('checks',{})
+            if not all(isinstance(checks.get(k),str) and len(checks[k])>=15 for k in PRODUCTION_CHECKS):raise ValueError('制作側の検証記録が不足しています')
+            existing=get_product_spec(name) or {}
+            with urllib.request.urlopen(base+commit+'/'+path,timeout=12) as r:raw=r.read(1000001)
+            if len(raw)>1000000 or hashlib.sha256(raw).hexdigest()!=digest:raise ValueError('改善候補の版が検証記録と一致しません')
+            page=raw.decode('utf-8')
+            existing=get_product_spec(name) or {}
+            # A user request remains authoritative. Never erase it to fit a reviewed build.
+            baseline_request='現在の画面は完成度不足。対象者と用途が伝わる冒頭、独自のデザイン、押しやすいスマホ操作、実際に役立つ中心機能、保存と復元を全面的に見直す。説明や色だけの変更では不十分。'
+            requests=existing.get('user_change_requests',[])
+            custom=bool(existing.get('change_request') or any(r.get('request')!=baseline_request for r in requests))
+            if not custom:
+                if existing:execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('spec_before_rebuild:'+name,json.dumps(existing,ensure_ascii=False)))
+                store_product_spec(name,dict(entry['spec'],fulfilled_user_change_requests=existing.get('user_change_requests',[])),source='実装・実操作検証と対応した改善版の要件')
+            else:ensure_product_spec(name,cfg)
+            result='制作側実操作検証済み（制作側検証: 合格） / PC画面・390px画面・保存復元・主要処理を確認 / 収益性未検証 / 発信未許可'
+            if custom:result='改善候補を取込済み / 既存の修正依頼との照合・追加修正が必要。完成候補には未登録'
+            saved=save(0,name,'品質改善候補HTML',page,'html',result)
+            if not custom:
+                record={'policy':PRODUCT_QUALITY_POLICY,'content_sha':digest,'scope_sha':product_scope_sha(name),
+                    'delivery_mode':entry['spec']['delivery_mode'],'reviewer':'Codex実操作検証','checks':checks,'checked':now()}
+                execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('production_acceptance:'+name+':'+digest,json.dumps(record,ensure_ascii=False)))
+                product_development_state(name,'のぼるさん確認待ち',result,0,str(saved))
+            else:product_development_state(name,'修正依頼あり',result,0,str(saved))
+            item=idea_details(name);item['product_name']=entry['product_name']
+            execute('UPDATE autonomous_ideas SET rationale=?,updated=? WHERE name=?',(json.dumps(item,ensure_ascii=False),now(),name))
+            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('imported_candidate:'+name+':'+digest,now()))
+            messages.append(name+'：改善版を取り込みました')
+        execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',(key,json.dumps({'catalog':catalog,'attempted':time.time()},ensure_ascii=False)))
+    except Exception as exc:messages.append('改善版の取込待ち: '+str(exc)[:180])
+    return messages
 
 
 def refresh_product_quality(job,cfg):
@@ -501,6 +595,7 @@ def quality_development_cycle(job,cfg):
     for row in rows:
         if not state()['enabled']:return
         name=row['name']
+        if not development_allowed(name):continue
         prior=get_product_spec(name)
         baseline_changed=bool(prior and prior.get('development_baseline')!=PRODUCT_DEVELOPMENT_BASELINE)
         if baseline_changed:ensure_product_spec(name,cfg)
@@ -508,11 +603,13 @@ def quality_development_cycle(job,cfg):
         current=query('SELECT content_sha FROM autonomous_checks WHERE idea=?',(name,))
         if current and local_product_review(name,current[0]['content_sha']):continue
         same=bool(scope and scope==row['scope_sha'])
-        if same and row['stage']=='のぼるさん確認待ち':
-            verified=query("SELECT path,validation FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-            if (verified and Path(verified[0]['path']).is_file() and 'コード上のAI品質レビュー' in verified[0]['validation']
-                    and '不合格' not in verified[0]['validation'] and '未合格' not in verified[0]['validation']):
+        if same and row['stage'] in ('のぼるさん確認待ち','制作側の実操作・見た目検証待ち'):
+            if candidate_production_acceptance(name):
+                if row['stage']!='のぼるさん確認待ち':product_development_state(name,'のぼるさん確認待ち','制作側の実操作・画面確認済み。ユーザーの判断・発信OKは別です',row['attempts'])
                 waiting['のぼるさん確認待ち']=waiting.get('のぼるさん確認待ち',0)+1
+                continue
+            if row['stage']=='制作側の実操作・見た目検証待ち':
+                waiting['制作側検証待ち']=waiting.get('制作側検証待ち',0)+1
                 continue
         if row['updated'] and row['stage']!='修正依頼あり':
             try:
@@ -534,10 +631,10 @@ def quality_development_cycle(job,cfg):
             page,verdict,passed=build(job,name,cfg,quality_requirements_text(name)+'\n前回の改善結果:'+notes,
                 asset_kind='品質改善候補HTML',existing_page=previous,allow_partial=connected)
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-            stage='画面改善中・接続未完了' if connected else ('のぼるさん確認待ち' if passed else '修正中')
+            stage='画面改善中・接続未完了' if connected else ('制作側の実操作・見た目検証待ち' if passed else '修正中')
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+1,assets[0]['path'] if assets else '')
-            event(job,name+(': 画面・独立機能を改善。接続機能は未完成' if connected else ': 確認用の改善版を作成。発信OK待ち' if passed else ': 品質改善の修正を継続'))
+            event(job,name+(': 画面・独立機能を改善。接続機能は未完成' if connected else ': コード検査を通過。制作側の実操作・画面検証は未完了' if passed else ': 品質改善の修正を継続'))
         except Exception as exc:
             product_development_state(name,'設計・修正待ち',type(exc).__name__+': '+str(exc)[:300],attempts)
         return
@@ -717,7 +814,7 @@ def product_portfolio_snapshot():
             next_action='技術課題を解消して再評価' if technical else '根拠・差別化・利用反応を追加して再評価'
         elif name==current:
             group='作業中';action='今このアプリを処理中';next_action='今回の作成・検査結果を待つ'
-        elif stage=='のぼるさん確認待ち':
+        elif stage=='のぼるさん確認待ち' and candidate_production_acceptance(name):
             group='確認待ち';action='改善版あり・確認待ち';next_action='画面を開いて試す → 修正依頼または発信OK'
         elif phase in ('収益継続','育成継続','改善中') and row['published_url'] and local_product_review(name,
                 next(iter(query('SELECT content_sha FROM autonomous_checks WHERE idea=?',(name,))),{}).get('content_sha','')):
@@ -750,9 +847,7 @@ def business_workflow_status(item):
     if item['group']=='運用中':
         return {'flow_stage':'OK済み版を運用','screening':screening,'flow_next':'集客と実測を確認。変更した版は再確認してから公開'}
     if item['stage']=='のぼるさん確認待ち':
-        assets=query("SELECT validation FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-        reviewed=bool(assets and 'コード上のAI品質レビュー' in assets[0]['validation']
-                      and '不合格' not in assets[0]['validation'] and '未合格' not in assets[0]['validation'])
+        reviewed=bool(candidate_production_acceptance(name))
         if reviewed:
             return {'flow_stage':'完成候補の確認待ち','screening':screening,
                     'flow_next':'実物を試して、継続・修正・中止を判断。公開する場合はこの版への発信OKを別途保存'}
@@ -768,7 +863,7 @@ def render_portfolio_status():
         cols=st.columns(4)
         for col,label in zip(cols,('AI一次選別待ち','AIで保留・中止','作り込み中','完成候補の確認待ち')):
             col.metric(label,sum(x['flow_stage']==label for x in items))
-        st.caption('技術課題による保留と需要の否定は分けます。完成候補はコード検査後の候補であり、実用性の最終確認はこれからです。')
+        st.caption('技術課題による保留と需要の否定は分けます。完成候補は制作側で中心機能・PC/スマホ画面・保存復元を確認した版だけです。AIの自己採点では通過させません。')
     if current:st.info('現在処理中: '+current)
     else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
     columns=st.columns(5)
@@ -812,7 +907,7 @@ def render_portfolio_status():
 
 def render_created_apps(cfg):
     st.subheader('作ったサイト・アプリを見る')
-    st.caption('状態・判断理由・次の行動と、画面を開くボタンを同じカードにまとめています。中止・保留は「表示する状態」で切り替えます。')
+    st.caption('制作側の実操作・画面検証済みの改善版には「改善版を開いて確認する」が表示されます。状態・判断理由・次の行動と、画面を開くボタンを同じカードにまとめています。中止・保留は「表示する状態」で切り替えます。')
     status_by_name=render_portfolio_status()
     rows=query('''SELECT a.name,a.published_url,c.content_sha,c.public_verified,
         COALESCE(v.phase,a.phase) AS business_phase,d.stage AS development_stage
@@ -824,7 +919,7 @@ def render_created_apps(cfg):
         ) ORDER BY a.updated DESC''')
     shown=0
     indexed={row['name']:row for row in rows}
-    for name,summary in sorted(status_by_name.items(),key=lambda pair:(not pair[1]['current'],-(pair[1]['priority'] or 0),pair[0])):
+    for name,summary in sorted(status_by_name.items(),key=lambda pair:(not pair[1]['current'],pair[1]['group']!='確認待ち',-(pair[1]['priority'] or 0),pair[0])):
         row=indexed.get(name,{'name':name,'published_url':'','content_sha':'','public_verified':0,
             'business_phase':summary['phase'],'development_stage':summary['stage']})
         name=row['name'];candidate=None
@@ -885,12 +980,12 @@ def render_created_apps(cfg):
             if candidate:
                 asset,page=candidate
                 improved=asset['kind'] in ('品質改善候補HTML','改善候補HTML')
-                st.caption(('改善候補・完成度は未確認' if improved else '旧試作品・ブラッシュアップ前')+' ／ 作成日時: '+str(asset['created'] or '不明'))
+                st.caption(('制作側検証済み・のぼるさん確認用' if improved and production_acceptance(name,hashlib.sha256(page.encode()).hexdigest()) else '制作側検証未完了・開発途中' if improved else '旧試作品・ブラッシュアップ前')+' ／ 作成日時: '+str(asset['created'] or '不明'))
                 if not improved:st.warning('この画面は以前の試作品です。改善版はまだ作成・確認できていません。')
                 with st.expander('この画面の検査結果を見る'):st.write(asset['validation'])
                 try:
                     preview=ensure_product_preview(name,page,cfg)
-                    st.link_button('改善候補を開いて確認する' if improved else '旧試作品を見る（改善前）',preview['url'],type='primary' if improved else 'secondary')
+                    st.link_button(('改善版を開いて確認する' if production_acceptance(name,hashlib.sha256(page.encode()).hexdigest()) else '開発途中の画面を見る（判定前）') if improved else '旧試作品を見る（改善前）',preview['url'],type='primary' if improved else 'secondary')
                 except (ValueError,OSError) as exc:st.warning('画面の準備待ち: '+str(exc))
             elif row['published_url']:
                 st.caption('現在の公開版。今回ブラッシュアップした版とは限りません。')
@@ -1174,6 +1269,10 @@ def render_product_review_ui(cfg):
         with st.expander('必要な場合だけHTMLを保存'):
             st.download_button('確認用HTMLを保存',selected['page'],file_name='product-review.html',key='product_preview_'+name)
     if local_product_review(name,digest):st.success('この完成条件・この版には、発信OKが記録されています。')
+    if not production_acceptance(name,digest):
+        st.warning('この版は制作側の実操作・見た目検証が未完了です。途中画面の閲覧や修正依頼はできますが、完成候補の判定・発信OKはまだお願いしません。')
+        return
+    st.success('この版の対象者・主要操作・PC/スマホ画面・保存復元を制作側で検証済みです。収益性や利用者の評価は別途検証します。')
     with st.form('product_approval_form_'+name+'_'+digest[:12]+'_'+scope[:12]):
         checks={key:st.checkbox(label,value=False,key='release_'+name+'_'+digest[:12]+'_'+scope[:12]+'_'+key) for key,label in PRODUCT_RELEASE_CHECKS.items()}
         evidence=st.text_area('試した操作と確認結果（20文字以上）',placeholder='例：スマホで入力から保存・再表示まで試し、結果と使い方を確認しました。')
@@ -2494,6 +2593,7 @@ def cycle(cfg):
     job=execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(now(),'開始待ち',''))
     try:
         event(job,'継続運転サイクル開始','実行中')
+        for message in sync_review_candidates(cfg):event(job,message)
         reconcile_publications(job,cfg=cfg)
         refresh_product_quality(job,cfg)
         # Re-evaluate viability before spending this cycle on product code.
@@ -2592,7 +2692,7 @@ def cycle(cfg):
                 else:
                     pubstatus='のぼるさんの発信OK待ち。公開とSNS紹介はまだ実行していません'
                     assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='試作品HTML' ORDER BY id DESC LIMIT 1",(name,))
-                    product_development_state(name,'のぼるさん確認待ち',verdict,1,assets[0]['path'] if assets else '')
+                    product_development_state(name,'制作側の実操作・見た目検証待ち',verdict+' / 制作側の実操作・画面確認は未完了',1,assets[0]['path'] if assets else '')
                 event(job,name+': '+pubstatus)
             else: event(job,name+': 検査未合格につき公開保留')
             with db() as c:
@@ -4265,10 +4365,11 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.9 ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    st.caption('表示版: 2026.10.22.10 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
+    for message in sync_review_candidates(cfg):st.info(message)
     with st.sidebar:
         st.header('自動運転設定')
         cfg['model']=st.text_input('Ollamaモデル',value=cfg['model'])
