@@ -855,23 +855,77 @@ def business_workflow_status(item):
     return {'flow_stage':'作り込み中','screening':screening,'flow_next':item['next_action']}
 
 
-def render_portfolio_status():
+def portfolio_overview_state(item):
+    """Show scheduling, product QA and viability separately; never infer progress from cycle count."""
+    if item['group'] in ('中止','保留'):
+        return '中止・保留',('開発停止' if item['group']=='中止' else '技術課題で保留' if item['technical'] else '見直し待ち（保留）')
+    if item['current']:return '作り込み・確認','今、改善処理中'
+    if item['group']=='確認待ち':return '作り込み・確認','改善版あり・実物を確認できます'
+    if item['group']=='運用中':return '作り込み・確認','OK済み版を運用中'
+    if item['stage']=='制作側の実操作・見た目検証待ち':return '作り込み・確認','制作側の動作・見た目確認待ち'
+    if item['stage']=='画面改善中・接続未完了' or '接続' in item['stage']:
+        return '作り込み・確認','機能の接続・実装が未完成'
+    if item['stage']!='開発状態未確認':return '作り込み・確認','作り込み対象・順番に改善'
+    return 'AIの選別待ち','事業案の見込みを整理中'
+
+
+def render_portfolio_overview(items,cfg):
+    st.write('**まずここを見る：どのアプリを進め、何を止めたか**')
+    st.caption('「作り込み対象」は改善する対象です。「今、改善処理中」と表示されたものだけが現在の実行対象です。')
+    buckets={label:[] for label in ('作り込み・確認','AIの選別待ち','中止・保留')}
+    for item in items:
+        category,label=portfolio_overview_state(item)
+        buckets[category].append((item,label))
+    tabs=st.tabs([label+'（'+str(len(buckets[label]))+'件）' for label in buckets])
+    for tab,(category,entries) in zip(tabs,buckets.items()):
+        with tab:
+            if not entries:
+                st.info('中止・保留の判断はまだ登録されていません。' if category=='中止・保留' else 'この状態の事業はありません。')
+                continue
+            if category=='中止・保留':st.caption('中止は追加開発を停止、保留は見直し待ちです。理由を残し、明示的な継続指定で再開できます。')
+            entries=sorted(entries,key=lambda pair:(not pair[0]['current'],pair[0]['group']!='確認待ち',-(pair[0]['priority'] or 0),pair[0]['name']))
+            st.dataframe([{'アプリ名':x['name'],'今の状態':label,'継続・停止の判断':x['reason'],
+                '次の作業':('動作・画面・保存復元の制作側検証。検証済みになるまで完成候補にしません' if x['stage']=='制作側の実操作・見た目検証待ち' else x['next_action'])} for x,label in entries],hide_index=True,width='stretch')
+            key='overview_detail_'+category
+            name=st.selectbox('名前を選ぶと、理由・改善内容・確認ボタンを表示します',[x['name'] for x,label in entries],key=key)
+            item,label=next((x,label) for x,label in entries if x['name']==name)
+            spec=get_product_spec(name) or {}
+            st.write('**対象者:** '+str(spec.get('audience') or 'AIが整理中'))
+            st.write('**今の状態:** '+label)
+            st.write('**継続・停止の理由:** '+item['reason'])
+            st.write('**直近の作業結果・残っている課題:** '+item['details'])
+            if category=='作り込み・確認' and candidate_production_acceptance(name):
+                assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
+                if assets:
+                    try:
+                        page=Path(assets[0]['path']).read_text(encoding='utf-8')
+                        preview=ensure_product_preview(name,page,cfg)
+                        st.link_button('選んだアプリの改善版を開く',preview['url'],type='primary')
+                        st.write('**のぼるさんがすること:** 実物を使ってみて、変更希望を下へ入力してください。公開・SNSの許可は「公開と運用」の「のぼるさんの確認・発信OK」で行います。')
+                    except (OSError,ValueError) as exc:st.warning('確認画面の準備待ち: '+str(exc))
+            elif category=='作り込み・確認':
+                st.info('まだ完成候補の判断はお願いしません。制作側が上記の課題を進める段階です。')
+            if spec and category=='作り込み・確認':
+                with st.form('overview_changes_'+hashlib.sha256(name.encode()).hexdigest()[:16]):
+                    change=st.text_area('このアプリの変更希望',key='overview_change_text_'+name)
+                    if st.form_submit_button('変更希望を保存して、改善を依頼する'):
+                        try:request_product_changes(name,change);st.success('変更希望を保存しました。新しい版は制作側で再検証します。');st.rerun()
+                        except ValueError as exc:st.warning(str(exc))
+            st.caption('判断の更新: '+item['judged_at']+' ／ 開発状況の更新: '+item['developed_at'])
+
+
+def render_portfolio_status(cfg=None):
     items,current=product_portfolio_snapshot()
     for item in items:item.update(business_workflow_status(item))
+    render_portfolio_overview(items,cfg or {})
     st.write('**AI一次選別 → 実用的な形へ作り込み → のぼるさんが実物を確認 → その版へのOK後に告知・運営**')
-    with st.expander('この流れの進み具合を見る',expanded=True):
+    with st.expander('件数・全体の進み具合を見る',expanded=False):
         cols=st.columns(4)
         for col,label in zip(cols,('AI一次選別待ち','AIで保留・中止','作り込み中','完成候補の確認待ち')):
             col.metric(label,sum(x['flow_stage']==label for x in items))
         st.caption('技術課題による保留と需要の否定は分けます。完成候補は制作側で中心機能・PC/スマホ画面・保存復元を確認した版だけです。AIの自己採点では通過させません。')
     if current:st.info('現在処理中: '+current)
     else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
-    columns=st.columns(5)
-    for col,label,count in zip(columns,('改善・接続','確認待ち','運用中','保留','中止'),
-        (sum(x['group'] in ('作業中','改善・接続') for x in items),
-         sum(x['group']=='確認待ち' for x in items),sum(x['group']=='運用中' for x in items),
-         sum(x['group']=='保留' for x in items),sum(x['group']=='中止' for x in items))):
-        col.metric(label,count)
     st.caption('育成優先点は運営判断の点数で、成功確率ではありません。好反応・売上・利益は分けて表示します。保留は「儲からないと確定」ではありません。')
     st.caption('ご自身で選ぶときは「自分が未判断」でAIの保留・中止案も比較できます。未判断は従来のAI判断で運転し、保存した継続・保留・中止はAI判断より優先します。')
     ranked=[x for x in items if x['group'] not in ('中止','保留') and x['priority'] is not None]
@@ -879,8 +933,9 @@ def render_portfolio_status():
         top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
         st.write('**育成判断の最上位:** '+top['name']+'（'+str(top['priority'])+'点'+('・同点'+str(ties)+'件' if ties>1 else '')+'）')
         st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
-    selection=st.selectbox('表示する状態',['開発・育成中','完成候補の確認待ち','AI一次選別待ち','AIで保留・中止','作り込み中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
+    selection=st.selectbox('表示する状態',['作り込み・確認対象','開発・育成中','完成候補の確認待ち','AI一次選別待ち','AIで保留・中止','作り込み中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
     visible=[x for x in items if selection=='すべて' or
+        (selection=='作り込み・確認対象' and portfolio_overview_state(x)[0]=='作り込み・確認') or
         (selection=='開発・育成中' and x['group'] not in ('中止','保留')) or
         (selection=='今の作業中' and x['current']) or
         (selection=='自分が未判断' and x['owner_decision']=='未判断') or
@@ -906,9 +961,9 @@ def render_portfolio_status():
 
 
 def render_created_apps(cfg):
-    st.subheader('作ったサイト・アプリを見る')
-    st.caption('制作側の実操作・画面検証済みの改善版には「改善版を開いて確認する」が表示されます。状態・判断理由・次の行動と、画面を開くボタンを同じカードにまとめています。中止・保留は「表示する状態」で切り替えます。')
-    status_by_name=render_portfolio_status()
+    st.subheader('アプリの状況と改善版の確認')
+    st.caption('最初の一覧でアプリ名と状態を確認してください。名前を選ぶと、判断理由・残っている課題・改善版の確認ボタンが表示されます。止めた案は「中止・保留」にまとめています。')
+    status_by_name=render_portfolio_status(cfg)
     rows=query('''SELECT a.name,a.published_url,c.content_sha,c.public_verified,
         COALESCE(v.phase,a.phase) AS business_phase,d.stage AS development_stage
         FROM autonomous_ideas a LEFT JOIN autonomous_checks c ON c.idea=a.name
@@ -4365,7 +4420,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.10 ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    st.caption('表示版: 2026.10.23.1 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
