@@ -98,6 +98,7 @@ def init():
     init_revenue_research()
     init_product_quality()
     init_media_businesses()
+    init_project_framework()
     restore_bluesky_credentials()
 
 
@@ -118,6 +119,126 @@ def config():
     if not str(c.get('public_base_url','')).strip():
         c['public_base_url']=known_public_base(c)
     return c
+
+
+# Project identity, sector folders and reusable measured learning are shared infrastructure.
+SECTORS={'real_estate':'不動産','business_ops':'業務効率・事業者向け','education':'学習・教育',
+    'travel_lifestyle':'旅行・暮らし','family_health':'家族・健康','media':'動画・コンテンツ','other':'その他・未分類'}
+VALUE_CACHE_POLICY='2026-10-23-evidence-cache-1'
+
+
+def classify_sector(name,item=None):
+    item=item or {}
+    text=name+' '+str(item.get('category',''))+' '+str(item.get('target_customer',''))
+    rules=(('real_estate',('不動産','物件','賃貸','修繕','住宅')),
+        ('media',('動画','YouTube','TikTok','ティックトック','ユーチューブ','note','有料記事','コンテンツ')),
+        ('education',('授業','学習','スクール','学校','講師','学生')),
+        ('business_ops',('会計','CSV','転記','照合','業務','在宅ワーク','EC','返品','会議','事業者','マーケティング')),
+        ('travel_lifestyle',('旅行','スケジュール','書籍','収納','暮らし','趣味','ゲーム')),
+        ('family_health',('家族','子育て','健康','料理','レシピ','食事','マインドフル')))
+    return next((sector for sector,words in rules if any(w.casefold() in text.casefold() for w in words)),'other')
+
+
+def project_registry(name):
+    rows=query('SELECT * FROM venture_projects WHERE idea=?',(name,))
+    if rows:return rows[0]
+    sector=classify_sector(name,idea_details(name))
+    execute('INSERT OR IGNORE INTO venture_projects(idea,project_id,sector,source,updated) VALUES(?,?,?,?,?)',
+        (name,hashlib.sha256(name.encode()).hexdigest()[:16],sector,'自動分類',now()))
+    return query('SELECT * FROM venture_projects WHERE idea=?',(name,))[0]
+
+
+def set_project_sector(name,sector):
+    if sector not in SECTORS:raise ValueError('分野を選択してください')
+    if not query('SELECT name FROM autonomous_ideas WHERE name=?',(name,)):raise ValueError('登録された事業ではありません')
+    project_registry(name)
+    execute('UPDATE venture_projects SET sector=?,source=?,updated=? WHERE idea=?',(sector,'ユーザー指定',now(),name))
+    sync_framework_indexes()
+
+
+def write_framework_json(path,value):
+    encoded=json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n'
+    path.parent.mkdir(parents=True,exist_ok=True)
+    if path.is_file() and path.read_text(encoding='utf-8')==encoded:return False
+    pending=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+    try:
+        pending.write_text(encoded,encoding='utf-8');os.replace(pending,path)
+    finally:
+        if pending.exists():pending.unlink()
+    return True
+
+
+def sync_framework_indexes():
+    # Existing asset paths remain authoritative: no destructive file migration.
+    rows=query('''SELECT p.idea,p.project_id,p.sector,p.source,COALESCE(v.phase,a.phase) AS ai_phase,
+        COALESCE(o.decision,'未判断') AS owner_decision FROM venture_projects p
+        JOIN autonomous_ideas a ON a.name=p.idea LEFT JOIN venture_value_state v ON v.idea=p.idea
+        LEFT JOIN venture_owner_decisions o ON o.idea=p.idea ORDER BY p.sector,p.idea''')
+    write_framework_json(OUT/'project-index.json',{'version':1,'projects':rows,'legacy_assets':'既存成果物はDBに保存された元のパスから参照'})
+    write_framework_json(OUT/'knowledge'/'common'/'quality-baseline.json',
+        {'policy':PRODUCT_QUALITY_POLICY,'requirements':PRODUCT_BASELINE_REQUIREMENTS,'review_checks':PRODUCT_RELEASE_CHECKS,
+         'meaning':'全製品の品質基準。分野別の実測や需要・収益の証拠とは別。'})
+    for sector,label in SECTORS.items():
+        folder=OUT/'sectors'/sector/'projects';folder.mkdir(parents=True,exist_ok=True)
+        for row in rows:
+            if row['sector']==sector:(folder/row['project_id']).mkdir(exist_ok=True)
+        write_framework_json(OUT/'sectors'/sector/'index.json',{'sector':label,'projects':[r for r in rows if r['sector']==sector]})
+        learned=query('''SELECT l.idea,l.origin,l.outcome,l.evidence_key FROM venture_value_learning l
+            JOIN venture_projects p ON p.idea=l.idea WHERE p.sector=? ORDER BY l.idea''',(sector,))
+        write_framework_json(OUT/'knowledge'/sector/'measured-index.json',
+            {'sector':label,'meaning':'実測に基づく参照事例。モデル本体の再訓練や成功保証ではない','examples':learned})
+
+
+def init_project_framework():
+    with db() as c:
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_projects(idea TEXT PRIMARY KEY,project_id TEXT UNIQUE NOT NULL,
+            sector TEXT NOT NULL,source TEXT NOT NULL,updated TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS venture_value_cache(idea TEXT PRIMARY KEY,input_sha TEXT NOT NULL,
+            policy TEXT NOT NULL,result TEXT NOT NULL,checked TEXT NOT NULL)''')
+        for index,table,columns in (('idx_assets_project_kind','agent_assets','idea,kind,id'),
+            ('idx_metrics_project_time','autonomous_metrics','idea,measured'),
+            ('idx_feedback_project_time','venture_value_feedback','idea,measured'),
+            ('idx_campaign_project_status','venture_sns_campaigns','idea,status')):
+            c.execute('CREATE INDEX IF NOT EXISTS '+index+' ON '+table+'('+columns+')')
+    for row in query('SELECT name,rationale FROM autonomous_ideas'):
+        project_registry(row['name'])
+    sync_framework_indexes()
+
+
+def value_review_fingerprint(name,cfg):
+    # Re-evaluate on real input changes and each day, without invalidating on our own timestamp writes.
+    fields={'idea':query('SELECT rationale,phase,attempts,published_url FROM autonomous_ideas WHERE name=?',(name,)),
+        'state':query('SELECT started,horizon_days,bad_windows,phase,reason,priority FROM venture_value_state WHERE idea=?',(name,)),
+        'scope':product_scope_sha(name),'feedback':latest_value_feedback(name),'metrics':latest_metrics(name),
+        'acquisition':acquisition_state(name),'day':policy_clock().date().isoformat(),
+        'config':{k:cfg.get(k) for k in ('learning_horizon_days','value_review_interval_days')},
+        'policy':VALUE_CACHE_POLICY}
+    return hashlib.sha256(json.dumps(fields,ensure_ascii=False,sort_keys=True,default=str).encode()).hexdigest()
+
+
+def cached_value_review(name,cfg):
+    digest=value_review_fingerprint(name,cfg)
+    rows=query('SELECT * FROM venture_value_cache WHERE idea=?',(name,))
+    if rows and rows[0]['policy']==VALUE_CACHE_POLICY and rows[0]['input_sha']==digest:
+        try:return json.loads(rows[0]['result']),True
+        except (ValueError,TypeError):pass
+    result=evaluate_value(name,cfg,persist=True)
+    learn_from_value(result)
+    # Evaluation may start observation or change phase; cache its final input state.
+    digest=value_review_fingerprint(name,cfg)
+    execute('INSERT OR REPLACE INTO venture_value_cache VALUES(?,?,?,?,?)',
+        (name,digest,VALUE_CACHE_POLICY,json.dumps(result,ensure_ascii=False),now()))
+    return result,False
+
+
+def monetization_checkpoint(item):
+    if item['group'] in ('保留','中止'):return '追加開発を休止し、判断理由・再開条件を見直す'
+    if item['sales'] and item['profit'] is not None and item['profit']>0:return '実利益を確認済み。継続・拡大の費用対効果を判断する'
+    if item['sales']:return '実売上あり。費用・返金・継続利用から採算を確認する'
+    if item['samples']>=3 and '好反応' in item['evidence']:return '利用価値の反応あり。具体的な価格と支払意思を検証する'
+    if candidate_production_acceptance(item['name']):return '使える改善版を確認し、OK後の集客と実利用の検証へ進む'
+    return 'まず主要機能と操作・画面の制作側検証を終える'
+
 
 
 PRODUCT_QUALITY_POLICY='2026-10-22-production-verified-3'
@@ -244,7 +365,8 @@ def quality_requirements_text(name):
     spec=get_product_spec(name)
     if not spec:return '完成条件の設計待ち。発信できません。'
     return json.dumps(dict(spec,baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS,
-        common_business_review=common_business_basis(name)),ensure_ascii=False,indent=2)
+        common_business_review=common_business_basis(name),sector_learning=value_learning_context(name),
+        first_use_standard='対象者の言葉で価値と使い方を示し、最初に何をすればよいかと得られる結果を明確にする。用途に合うデザイン・スマホ操作・実用的な機能は最低条件。適する場合は架空と分かるサンプルで体験できる導線を用意する。管理の簡素化を理由に機能や品質条件を削らない。'),ensure_ascii=False,indent=2)
 
 
 def common_business_basis(name,feedback=None,metrics=None):
@@ -890,7 +1012,14 @@ def render_portfolio_overview(items,cfg):
             name=st.selectbox('名前を選ぶと、理由・改善内容・確認ボタンを表示します',[x['name'] for x,label in entries],key=key)
             item,label=next((x,label) for x,label in entries if x['name']==name)
             spec=get_product_spec(name) or {}
+            project=project_registry(name)
+            st.caption('分野: '+SECTORS[project['sector']]+' ／ 管理ID: '+project['project_id'])
             st.write('**対象者:** '+str(spec.get('audience') or 'AIが整理中'))
+            st.write('**次の事業判断:** '+monetization_checkpoint(item))
+            with st.expander('分野の振り分けを変更する'):
+                sector=st.selectbox('移動先の分野',list(SECTORS),index=list(SECTORS).index(project['sector']),format_func=lambda k:SECTORS[k],key='sector_move_'+name)
+                if st.button('この分野に振り分ける',key='sector_apply_'+name):
+                    set_project_sector(name,sector);st.rerun()
             st.write('**今の状態:** '+label)
             st.write('**継続・停止の理由:** '+item['reason'])
             st.write('**直近の作業結果・残っている課題:** '+item['details'])
@@ -916,6 +1045,8 @@ def render_portfolio_overview(items,cfg):
 
 def render_portfolio_status(cfg=None):
     items,current=product_portfolio_snapshot()
+    chosen=(cfg or {}).get('selected_sector','すべて')
+    if chosen!='すべて':items=[x for x in items if project_registry(x['name'])['sector']==chosen]
     for item in items:item.update(business_workflow_status(item))
     render_portfolio_overview(items,cfg or {})
     st.write('**AI一次選別 → 実用的な形へ作り込み → のぼるさんが実物を確認 → その版へのOK後に告知・運営**')
@@ -962,8 +1093,21 @@ def render_portfolio_status(cfg=None):
 
 def render_created_apps(cfg):
     st.subheader('アプリの状況と改善版の確認')
+    sectors=['すべて']+list(SECTORS)
+    selected_sector=st.selectbox('分野フォルダー',sectors,format_func=lambda k:SECTORS.get(k,k),key='portfolio_sector')
+    if selected_sector=='media':st.info('動画の企画・確認・実績は「AI動画・投稿事業」タブで管理します。')
+    with st.expander('分野別の整理・学習の状況'):
+        stats=query("SELECT value FROM agent_settings WHERE key='framework_review_stats'")
+        if stats:
+            try:
+                progress=json.loads(stats[0]['value'])
+                st.write('前回の判断: 新しく評価 '+str(progress['evaluated'])+'件 ／ 変更のない判断を再利用 '+str(progress['reused'])+'件')
+            except (ValueError,TypeError,KeyError):pass
+        st.caption('反応・売上・要件・判断材料が変わった事業と、日次の見直しを優先。同じ実測を何度も新しい学習として数えません。')
+        st.write('成果物: 分野 → アプリ別 ／ 実測からの参照知識: 分野別 ／ 既存の履歴は元の保存先も参照します。')
+        st.code(str(OUT/'sectors'),language=None)
     st.caption('最初の一覧でアプリ名と状態を確認してください。名前を選ぶと、判断理由・残っている課題・改善版の確認ボタンが表示されます。止めた案は「中止・保留」にまとめています。')
-    status_by_name=render_portfolio_status(cfg)
+    status_by_name=render_portfolio_status(dict(cfg,selected_sector=selected_sector))
     rows=query('''SELECT a.name,a.published_url,c.content_sha,c.public_verified,
         COALESCE(v.phase,a.phase) AS business_phase,d.stage AS development_stage
         FROM autonomous_ideas a LEFT JOIN autonomous_checks c ON c.idea=a.name
@@ -1397,7 +1541,15 @@ def event(job,msg,status=None):
 def save(job,name,kind,data,ext='md',validation='未検証'):
     # Stable IDs keep renamed/similar business names from colliding; old DB paths remain valid.
     project_id=hashlib.sha256(name.encode('utf-8')).hexdigest()[:16]
-    folder=OUT/'projects'/project_id/f'job_{job:05d}'
+    if query('SELECT name FROM autonomous_ideas WHERE name=?',(name,)):
+        project=project_registry(name)
+        area=('02_builds' if ext=='html' else '01_plans' if any(w in kind for w in ('計画','要件','設計'))
+            else '03_marketing' if any(w in kind for w in ('集客','SNS','紹介','原稿'))
+            else '04_reviews' if any(w in kind for w in ('検証','評価','判断','実測','レビュー')) else '05_notes')
+        folder=OUT/'sectors'/project['sector']/'projects'/project_id/area/f'job_{job:05d}'
+    else:
+        area='media' if any(w in kind+name for w in ('動画','台本','ショート')) else 'reports'
+        folder=OUT/'shared'/area/project_id/f'job_{job:05d}'
     folder.mkdir(parents=True,exist_ok=True)
     with db() as c:
         cur=c.execute('INSERT INTO agent_assets(job_id,idea,kind,path,validation,created) VALUES(?,?,?,?,?,?)',
@@ -2915,9 +3067,9 @@ def value_profile(item):
             'cost': bounded_number(item.get('low_cost'), 3)}
 
 
-def value_learning_summary():
+def value_learning_summary(sector=None):
     result = []
-    rows = query('SELECT * FROM venture_value_learning')
+    rows = query('SELECT l.* FROM venture_value_learning l JOIN venture_projects p ON p.idea=l.idea WHERE p.sector=?',(sector,)) if sector else query('SELECT * FROM venture_value_learning')
     for origin in VALUE_ORIGINS:
         examples = [r for r in rows if r['origin'] == origin]
         weight = sum(r['weight'] for r in examples)
@@ -2927,17 +3079,22 @@ def value_learning_summary():
     return result
 
 
-def value_learning_context():
-    examples = query('SELECT idea,origin,outcome,evidence FROM venture_value_learning ORDER BY updated DESC LIMIT 12')
-    return ('利用者の実測だけから更新した過去の経験。AIの仮説点・公開見出しは学習成果に含めない。'
-            '補正点は最大5点に制限し、未検証の分野や面白い案も探索する。\n'
-            + json.dumps({'起点別の経験': value_learning_summary(), '実測事例': examples}, ensure_ascii=False))[:7500]
+def value_learning_context(name=None):
+    sector=project_registry(name)['sector'] if name else None
+    if sector:
+        examples=query('SELECT l.idea,l.origin,l.outcome,l.evidence FROM venture_value_learning l JOIN venture_projects p ON p.idea=l.idea WHERE p.sector=? ORDER BY l.updated DESC LIMIT 6',(sector,))
+    else:examples=query('SELECT idea,origin,outcome,evidence FROM venture_value_learning ORDER BY updated DESC LIMIT 12')
+    return ('実利用の実測だけを参照する。AIの仮説点・公開見出しは学習成果ではない。'
+        '他分野での効果をこの製品の実績とは扱わない。事例がなければ未測定。'
+        +json.dumps({'分野':SECTORS.get(sector,'全体の探索用'),'起点別の経験':value_learning_summary(sector),'実測事例':examples},ensure_ascii=False))[:4000 if name else 7500]
 
 
 def value_priority(item, evidence_count=0, competitor_count=0):
     v = value_profile(item)
     base = v['benefit'] * 6 + v['difference'] * 5 + v['revenue'] * 4 + v['reach'] * 2 + v['cost'] * 3
-    boost = next((x['補正点'] for x in value_learning_summary() if x['起点'] == v['origin']), 0)
+    registered=query('SELECT sector FROM venture_projects WHERE idea=?',(str(item.get('name','')),))
+    sector=registered[0]['sector'] if registered else classify_sector(str(item.get('name','')),item)
+    boost = next((x['補正点'] for x in value_learning_summary(sector) if x['起点'] == v['origin']), 0)
     return round(max(0, min(100, base + boost + min(evidence_count, 3) + min(competitor_count, 2))))
 
 
@@ -3170,6 +3327,8 @@ def learn_from_value(result):
     if result['phase'] == '中止': reward = 0
     weight = min(3, max(samples / 5, min(sales, 3)))
     if not weight: return
+    previous=query('SELECT evidence_key,origin,reward,weight,outcome FROM venture_value_learning WHERE idea=?',(result['name'],))
+    if previous and all(previous[0][k]==v for k,v in {'evidence_key':result['key'],'origin':result['origin'],'reward':reward,'weight':weight,'outcome':result['phase']}.items()):return
     execute('''INSERT INTO venture_value_learning(idea,origin,evidence_key,reward,weight,outcome,evidence,updated)
         VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(idea) DO UPDATE SET origin=excluded.origin,
         evidence_key=excluded.evidence_key,reward=excluded.reward,weight=excluded.weight,
@@ -3179,13 +3338,17 @@ def learn_from_value(result):
 
 
 def review_value_portfolio(cfg):
-    rows = query('SELECT name FROM autonomous_ideas WHERE attempts>0 ORDER BY updated DESC')
-    result = []
+    rows=query('SELECT name FROM autonomous_ideas WHERE attempts>0 ORDER BY updated DESC')
+    result=[];reused=0
     for row in rows:
-        decision = evaluate_value(row['name'], cfg, persist=True)
-        learn_from_value(decision)
-        result.append(dict(decision, status=decision['phase']))
-    return sorted(result, key=lambda x: x['priority'], reverse=True)
+        project_registry(row['name'])
+        decision,hit=cached_value_review(row['name'],cfg)
+        reused+=int(hit)
+        result.append(dict(decision,status=decision['phase']))
+    execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
+        ('framework_review_stats',json.dumps({'checked':now(),'evaluated':len(rows)-reused,'reused':reused})))
+    sync_framework_indexes()
+    return sorted(result,key=lambda x:x['priority'],reverse=True)
 
 
 def value_work_capacity(cfg):
@@ -4420,7 +4583,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.23.1 ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    st.caption('表示版: 2026.10.23.2 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
