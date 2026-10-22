@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_c072d1395f2c9975a2f83585:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシピシェアプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { margin: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>レシピシェアプラットフォーム</h1>
+        <form id="recipeForm">
+            <label for="recipeName">レシピ名:</label>
+            <input type="text" id="recipeName" required>
+            <label for="ingredients">材料:</label>
+            <textarea id="ingredients" rows="4" required></textarea>
+            <label for="instructions">手順:</label>
+            <textarea id="instructions" rows="6" required></textarea>
+            <button type="submit">保存</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const recipeName = document.getElementById('recipeName').value;
+            const ingredients = document.getElementById('ingredients').value;
+            const instructions = document.getElementById('instructions').value;
+            const result = document.getElementById('result');
+
+            result.innerHTML = `
+                <h2>${recipeName}</h2>
+                <p><strong>材料:</strong><br>${ingredients}</p>
+                <p><strong>手順:</strong><br>${instructions}</p>
+            `;
+
+            // レシピの保存（localStorage）
+            localStorage.setItem(recipeName, JSON.stringify({ ingredients, instructions }));
+        });
+
+        // 保存されたレシピを表示
+        const savedRecipes = JSON.parse(localStorage.getItem('recipes')) || [];
+        savedRecipes.forEach(recipe => {
+            const result = document.getElementById('result');
+            result.innerHTML += `
+                <h2>${recipe.recipeName}</h2>
+                <p><strong>材料:</strong><br>${recipe.ingredients}</p>
+                <p><strong>手順:</strong><br>${recipe.instructions}</p>
+            `;
+        });
+    </script>
+</body>
+</html>
