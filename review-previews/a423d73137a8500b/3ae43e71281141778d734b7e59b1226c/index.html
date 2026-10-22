@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_2863bcacd9a592cb09da53fc:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>業務効率化ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>業務効率化ツール</h1>
+        <form id="efficiencyForm">
+            <label for="inputValue">入力値:</label>
+            <input type="number" id="inputValue" required>
+            <button type="button" id="calculateButton">計算</button>
+        </form>
+        <div id="result" style="display: none;">結果が表示されます。</div>
+        <button type="button" id="exportButton">CSV出力</button>
+    </div>
+    <script>
+        document.getElementById('calculateButton').addEventListener('click', function() {
+            const inputValue = document.getElementById('inputValue').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = `入力値: ${inputValue} の平方は ${inputValue * inputValue} です。`;
+            saveData();
+        });
+
+        function saveData() {
+            const inputValue = document.getElementById('inputValue').value;
+            const resultDiv = document.getElementById('result').textContent;
+            localStorage.setItem('inputValue', inputValue);
+            localStorage.setItem('result', resultDiv);
+            alert('データが保存されました。');
+        }
+
+        function exportData() {
+            const inputValue = localStorage.getItem('inputValue');
+            const result = localStorage.getItem('result');
+            const csvContent = `データ,結果\n${inputValue},${result}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', 'output.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        document.getElementById('exportButton').addEventListener('click', function() {
+            exportData();
+        });
+    </script>
+</body>
+</html>
