@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_5538b8b1fb16f405ba3fa9b2:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会議計画助手</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, button { margin-top: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>会議計画助手</h1>
+        <form id="meetingForm">
+            <label for="meetingDate">会議日時:</label>
+            <input type="datetime-local" id="meetingDate" required>
+            <label for="meetingDuration">会議時間:</label>
+            <input type="number" id="meetingDuration" placeholder="分" required>
+            <label for="meetingTitle">会議タイトル:</label>
+            <input type="text" id="meetingTitle" required>
+            <label for="participants">参加者:</label>
+            <input type="text" id="participants" placeholder="カンマで区切る" required>
+            <button type="button" onclick="calculateMeeting()">会議情報を計算</button>
+        </form>
+        <div class="result" id="result"></div>
+        <button type="button" onclick="downloadCSV()">CSV形式でダウンロード</button>
+    </div>
+
+    <script>
+        function calculateMeeting() {
+            const date = document.getElementById('meetingDate').value;
+            const duration = parseInt(document.getElementById('meetingDuration').value, 10);
+            const title = document.getElementById('meetingTitle').value;
+            const participants = document.getElementById('participants').value.split(',').map(p => p.trim());
+
+            const result = `会議日時: ${date}\n会議時間: ${duration}分\n会議タイトル: ${title}\n参加者: ${participants.join(', ')}`;
+
+            document.getElementById('result').innerText = result;
+        }
+
+        function downloadCSV() {
+            const result = document.getElementById('result').innerText;
+            const blob = new Blob([result], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'meeting_plan.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
