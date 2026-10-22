@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_938607e7128abf7e3cc2fbff:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシピ検索アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>レシピ検索アプリ</h1>
+        <form id="recipeForm">
+            <label for="ingredients">使用する食材:</label>
+            <input type="text" id="ingredients" name="ingredients" placeholder="例: トマト, にんじん, 人参">
+            <br>
+            <label for="diet">料理目的:</label>
+            <select id="diet" name="diet">
+                <option value="none">選択してください</option>
+                <option value="健康">健康</option>
+                <option value="ダイエット">ダイエット</option>
+                <option value="おつまみ">おつまみ</option>
+            </select>
+            <br>
+            <button type="submit">レシピを検索</button>
+        </form>
+        <div id="result" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const ingredients = document.getElementById('ingredients').value;
+            const diet = document.getElementById('diet').value;
+            const resultDiv = document.getElementById('result');
+
+            // レシピ検索処理
+            let recipe = searchRecipe(ingredients, diet);
+            resultDiv.textContent = `検索結果: ${recipe}`;
+
+            // レシピ保存処理
+            saveRecipe(ingredients, diet, recipe);
+        });
+
+        function searchRecipe(ingredients, diet) {
+            // ここではダミーデータを使用
+            const recipes = {
+                "トマト,にんじん,人参": "トマトと野菜のサラダ",
+                "鶏肉,卵,玉ねぎ": "鶏肉と卵の炒め物",
+                "豆腐,にんじん,人参": "豆腐と野菜の煮物"
+            };
+
+            return recipes[ingredients] || "該当するレシピが見つかりませんでした。";
+        }
+
+        function saveRecipe(ingredients, diet, recipe) {
+            const savedRecipes = JSON.parse(localStorage.getItem('recipes')) || [];
+            savedRecipes.push({ ingredients, diet, recipe });
+            localStorage.setItem('recipes', JSON.stringify(savedRecipes));
+        }
+
+        // CSV出力処理
+        document.getElementById('recipeForm').addEventListener('submit', function() {
+            const recipes = JSON.parse(localStorage.getItem('recipes')) || [];
+            const csvContent = "data:text/csv;charset=utf-8," + recipes.map(recipe => `${recipe.ingredients},${recipe.diet},${recipe.recipe}`).join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'recipes.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+</body>
+</html>
