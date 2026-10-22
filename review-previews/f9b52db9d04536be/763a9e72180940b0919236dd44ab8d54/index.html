@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_297d52fe74221f685427435f:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>データ変換ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, button { margin: 10px 0; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>データ変換ツール</h1>
+        <form>
+            <label for="inputData">入力データ (例: 1000円, 2000円, 3000円)</label>
+            <input type="text" id="inputData" required>
+            <button type="button" onclick="transformData()">変換</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function transformData() {
+            const inputData = document.getElementById('inputData').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = '';
+
+            // 入力データをカンマ区切りで分割
+            const inputValues = inputData.split(', ');
+            const transformedValues = inputValues.map(value => {
+                const amount = parseFloat(value.replace('円', '').replace(',', '.'));
+                return amount * 1.1; // 例: 10%の増加
+            });
+
+            // 結果を表示
+            transformedValues.forEach((value, index) => {
+                resultDiv.innerHTML += `${inputValues[index]}円 → ${value.toFixed(2)}円<br>`;
+            });
+
+            // データをローカルストレージに保存
+            localStorage.setItem('transformedData', JSON.stringify(transformedValues));
+
+            // CSV形式でダウンロード
+            const csvContent = transformedValues.map(value => value.toFixed(2) + '円').join(', ');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transformed_data.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
