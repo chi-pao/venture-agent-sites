@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_430365cdc94573ae388af0d9:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マインドフルネスアプリ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>マインドフルネスアプリ</h1>
+    <form id="inputForm">
+        <label for="stressLevel">ストレスレベル（1-10）:</label>
+        <input type="number" id="stressLevel" min="1" max="10" required>
+        <button type="button" id="submitBtn">結果を見る</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('submitBtn').addEventListener('click', function() {
+            const stressLevel = document.getElementById('stressLevel').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = `ストレスレベル: ${stressLevel} の場合、改善アドバイスは「深呼吸を試してみてください」です。`;
+            resultDiv.style.display = 'block';
+        });
+    </script>
+</body>
+</html>
