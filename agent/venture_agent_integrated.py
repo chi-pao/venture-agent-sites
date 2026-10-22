@@ -509,8 +509,11 @@ def quality_development_cycle(job,cfg):
         if current and local_product_review(name,current[0]['content_sha']):continue
         same=bool(scope and scope==row['scope_sha'])
         if same and row['stage']=='のぼるさん確認待ち':
-            waiting['のぼるさん確認待ち']=waiting.get('のぼるさん確認待ち',0)+1
-            continue
+            verified=query("SELECT path,validation FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
+            if (verified and Path(verified[0]['path']).is_file() and 'コード上のAI品質レビュー' in verified[0]['validation']
+                    and '不合格' not in verified[0]['validation'] and '未合格' not in verified[0]['validation']):
+                waiting['のぼるさん確認待ち']=waiting.get('のぼるさん確認待ち',0)+1
+                continue
         if row['updated'] and row['stage']!='修正依頼あり':
             try:
                 retry_seconds=10800 if int(row['attempts'] or 0)>=3 else 1800
@@ -733,8 +736,39 @@ def product_portfolio_snapshot():
     return result,current
 
 
+def business_workflow_status(item):
+    name=item['name'];basis=common_business_basis(name)
+    if item['owner_decision'] in ('中止','保留'):
+        return {'flow_stage':'のぼるさんの判断で休止','screening':'ユーザー判断を優先','flow_next':'判断理由を保持。継続を選べば再開できます'}
+    if item['owner_decision']!='継続' and item['ai_phase'] in ('中止','保留'):
+        return {'flow_stage':'接続・技術課題で保留' if item['technical'] else 'AIで保留・中止',
+                'screening':'需要・収益性の否定とは別' if item['technical'] else 'AIの判断理由を確認',
+                'flow_next':item['ai_reason']}
+    screening='ユーザー指定で開発を継続' if item['owner_decision']=='継続' else 'AIの育成判断（見込みは仮説）'
+    if item['owner_decision']!='継続' and (item['judged_at']=='未判定' or not basis['hypothesis_ready']):
+        return {'flow_stage':'AI一次選別待ち','screening':'情報整理中・まだ通過とは扱わない','flow_next':basis['next_validation']}
+    if item['group']=='運用中':
+        return {'flow_stage':'OK済み版を運用','screening':screening,'flow_next':'集客と実測を確認。変更した版は再確認してから公開'}
+    if item['stage']=='のぼるさん確認待ち':
+        assets=query("SELECT validation FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
+        reviewed=bool(assets and 'コード上のAI品質レビュー' in assets[0]['validation']
+                      and '不合格' not in assets[0]['validation'] and '未合格' not in assets[0]['validation'])
+        if reviewed:
+            return {'flow_stage':'完成候補の確認待ち','screening':screening,
+                    'flow_next':'実物を試して、継続・修正・中止を判断。公開する場合はこの版への発信OKを別途保存'}
+        return {'flow_stage':'作り込み中','screening':screening,'flow_next':'旧基準の確認候補。新しい品質基準で再確認・改修が必要'}
+    return {'flow_stage':'作り込み中','screening':screening,'flow_next':item['next_action']}
+
+
 def render_portfolio_status():
     items,current=product_portfolio_snapshot()
+    for item in items:item.update(business_workflow_status(item))
+    st.write('**AI一次選別 → 実用的な形へ作り込み → のぼるさんが実物を確認 → その版へのOK後に告知・運営**')
+    with st.expander('この流れの進み具合を見る',expanded=True):
+        cols=st.columns(4)
+        for col,label in zip(cols,('AI一次選別待ち','AIで保留・中止','作り込み中','完成候補の確認待ち')):
+            col.metric(label,sum(x['flow_stage']==label for x in items))
+        st.caption('技術課題による保留と需要の否定は分けます。完成候補はコード検査後の候補であり、実用性の最終確認はこれからです。')
     if current:st.info('現在処理中: '+current)
     else:st.caption('現在の作業対象はログから確認できません。待機中または全体処理中の場合もあります。')
     columns=st.columns(5)
@@ -750,12 +784,12 @@ def render_portfolio_status():
         top=ranked[0];ties=sum(x['priority']==top['priority'] for x in ranked)
         st.write('**育成判断の最上位:** '+top['name']+'（'+str(top['priority'])+'点'+('・同点'+str(ties)+'件' if ties>1 else '')+'）')
         st.caption(top['evidence']+' / '+top['reason']+'。実際の改善作業は修正依頼・待ち時間・確認状況も考慮して巡回します。')
-    selection=st.selectbox('表示する状態',['開発・育成中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
+    selection=st.selectbox('表示する状態',['開発・育成中','完成候補の確認待ち','AI一次選別待ち','AIで保留・中止','作り込み中','すべて','自分が未判断','自分が継続を選んだ事業','今の作業中','改善・接続','確認待ち','運用中','保留','中止'],key='portfolio_status_filter')
     visible=[x for x in items if selection=='すべて' or
         (selection=='開発・育成中' and x['group'] not in ('中止','保留')) or
         (selection=='今の作業中' and x['current']) or
         (selection=='自分が未判断' and x['owner_decision']=='未判断') or
-        (selection=='自分が継続を選んだ事業' and x['owner_decision']=='継続') or x['group']==selection]
+        (selection=='自分が継続を選んだ事業' and x['owner_decision']=='継続') or x['group']==selection or x['flow_stage']==selection]
     table=[{'事業':x['name'],'今の扱い':x['action'],'開発状態':x['stage'],
             '継続判断':x['phase'],'育成優先点':x['priority'],'根拠の強さ':x['evidence'],
             '判断理由':x['reason'],'次にすること':x['next_action']} for x in visible]
@@ -811,12 +845,15 @@ def render_created_apps(cfg):
                    '改善・接続':'🛠 ブラッシュアップ対象','保留':'⏸ 保留','中止':'⏹ 開発を中止'}[summary['group']]
             st.write('**'+label+'**')
             st.write('**'+str(idea_details(name).get('product_name') or name)+'**')
+            st.write('**今の段階:** '+summary['flow_stage'])
+            st.caption(summary['screening'])
             st.write('**育成優先点:** '+('未判定' if summary['priority'] is None else str(summary['priority'])+'点')+' ／ '+summary['evidence'])
             st.write('**のぼるさんの判断:** '+summary['owner_decision'])
             st.caption('AIの評価: '+summary['ai_phase']+' ／ '+summary['ai_reason'])
             st.write('**判断理由:** '+summary['reason'])
             st.write('**改善状況:** '+summary['stage'])
             st.write('**次にすること:** '+summary['next_action'])
+            st.write('**この段階からの進め方:** '+summary['flow_next'])
             with st.expander('自分で継続・保留・中止を決める'):
                 st.caption('開発はこの判断を優先します。AI評価・実測は別に保持します。継続を選んでも公開・SNS発信の許可にはなりません。保留・中止後も再開できます。')
                 with st.form('owner_decision_'+hashlib.sha256(name.encode()).hexdigest()[:16]):
@@ -2459,6 +2496,8 @@ def cycle(cfg):
         event(job,'継続運転サイクル開始','実行中')
         reconcile_publications(job,cfg=cfg)
         refresh_product_quality(job,cfg)
+        # Re-evaluate viability before spending this cycle on product code.
+        review_value_portfolio(cfg)
         quality_development_cycle(job,cfg)
         media_editorial_cycle(job,cfg)
         sync_external_metrics(job,cfg)
@@ -2871,6 +2910,13 @@ def evaluate_value(name, cfg, persist=False):
     sales = metrics['sales'] or 0
     potential = (v['benefit'] >= 3 and v['difference'] >= 2 and v['revenue'] >= 2
                  and basis['hypothesis_ready'])
+    rated_keys=('differentiation_score','monetization_score')
+    explicitly_rated=(all(isinstance(item.get(k),(int,float)) and not isinstance(item.get(k),bool)
+        and 0<=item[k]<=5 for k in rated_keys)
+        and any(isinstance(item.get(k),(int,float)) and not isinstance(item.get(k),bool) and 0<=item[k]<=5
+                for k in ('helpfulness_score','convenience_score','enjoyment_score','time_saving_score','demand')))
+    weak_hypothesis=(basis['hypothesis_ready'] and explicitly_rated and
+        (v['benefit']<3 or v['difference']<2 or v['revenue']<2))
     disproved = (samples >= 5 and int(feedback.get('negative_users', 0)) >= max(3, samples * .6)
                  and (feedback.get('differentiation') == '既存で十分' or feedback.get('revenue_rejected')
                       or int(feedback.get('negative_users',0)) >= samples * .8)
@@ -2908,6 +2954,13 @@ def evaluate_value(name, cfg, persist=False):
     elif disproved and elapsed >= horizon:
         phase, priority = '仮説改善', 45
         reason = '否定的な反応を確認。課題・価値提案を1つ改善し、14日以上空けて新しい利用者でもう一度確認する'
+    elif weak_hypothesis and not value_signal:
+        phase,priority='保留',20
+        weak=[]
+        if v['benefit']<3:weak.append('利用価値')
+        if v['difference']<2:weak.append('差別化')
+        if v['revenue']<2:weak.append('収益経路')
+        reason='AI一次選別の仮説評価で'+'・'.join(weak)+'が弱いため開発を保留。需要否定の実測ではないため、仮説の変更やユーザー判断で再評価できる'
     elif not basis['hypothesis_ready']:
         phase,priority='計画整理待ち',50
         reason='共通基準で未整理: '+'・'.join(basis['missing'])+'。収益化不可とは判断せず、仮説を具体化する'
@@ -4212,7 +4265,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.22.8 ／ 全事業共通の判断軸・仮説と実測を分離')
+    st.caption('表示版: 2026.10.22.9 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
     st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
     s=state(); cfg=config()
