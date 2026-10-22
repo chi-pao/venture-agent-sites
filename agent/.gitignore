@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+*.db-*
+*.log
+.env
+code/
+backups/
+venture_outputs/
+venture_agent_autonomous/
