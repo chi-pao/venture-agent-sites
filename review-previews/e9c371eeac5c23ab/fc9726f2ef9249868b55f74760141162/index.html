@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_14905dda8cb742a54b8e31fd:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン英会話レッスンプラットフォーム</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .input-section { margin-bottom: 20px; }
+        .result-section { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン英会話レッスンプラットフォーム</h1>
+        <div class="input-section">
+            <label for="inputText">入力文:</label>
+            <textarea id="inputText" rows="4" cols="50"></textarea>
+        </div>
+        <div class="input-section">
+            <label for="inputNumber">数字:</label>
+            <input type="number" id="inputNumber" min="0" max="1000">
+        </div>
+        <button id="processButton">結果を見る</button>
+        <div class="result-section" id="resultSection">
+            <h2>結果:</h2>
+            <p id="resultText"></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('processButton').addEventListener('click', function() {
+            const inputText = document.getElementById('inputText').value;
+            const inputNumber = document.getElementById('inputNumber').value;
+            const resultText = document.getElementById('resultText');
+
+            // 入力値の検証
+            if (inputText.trim() === '' || inputNumber === '') {
+                resultText.textContent = '入力が不足しています。';
+                return;
+            }
+
+            // 入力値の加工
+            const processedText = inputText.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            const processedNumber = parseInt(inputNumber, 10);
+
+            // 結果の表示
+            resultText.textContent = `入力文: ${processedText}\n数字: ${processedNumber}`;
+
+            // データの保存
+            localStorage.setItem('inputText', inputText);
+            localStorage.setItem('inputNumber', inputNumber);
+
+            // CSV出力
+            const csvData = `入力文: ${processedText}\n数字: ${processedNumber}\n`;
+            const csvBlob = new Blob([csvData], { type: 'text/csv' });
+            const csvUrl = URL.createObjectURL(csvBlob);
+            const a = document.createElement('a');
+            a.href = csvUrl;
+            a.download = 'result.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+    </script>
+</body>
+</html>
