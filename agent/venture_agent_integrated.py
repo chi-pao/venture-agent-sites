@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.6'
+APP_VERSION='2026.10.24.7'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -494,19 +494,24 @@ def ensure_competitive_brief(name,cfg):
         'research_gaps:[直接競合の不足・未操作の画面・機能の不明点]。公式本文を取得しただけで実画面や実操作を確認済みとは書かない。2件以上の資料と具体的な比較を示す。'
         '\n方針:'+json.dumps(context,ensure_ascii=False)+'\n製品:'+json.dumps(spec,ensure_ascii=False)
         +'\n取得資料:'+json.dumps(valid,ensure_ascii=False))
-    item=ai_json(prompt,cfg,3600);comparisons=item.get('comparisons',[])
-    if not isinstance(comparisons,list) or not comparisons:raise AutoQAPlanError('競合と同じ作業を比較する根拠が不足しています')
     sources={r['url']:r for r in valid}
-    for part in comparisons:
-        quote=part.get('source_quote','');reference=sources.get(part.get('source_url'))
-        if not reference or not isinstance(quote,str) or not 12<=len(quote)<=180 or quote not in reference['text']:raise AutoQAPlanError('競合の説明が公式の取得本文と一致しません')
-        if any(len(str(part.get(k,'')))<15 for k in ('relevance','comparison')):raise AutoQAPlanError('競合との同じ作業の比較が不十分です')
-    if any(len(str(item.get(k,'')))<15 for k in ('target_task','proposed_advantage')):raise AutoQAPlanError('対象者の作業と選ぶ理由の仮説を具体化します')
-    index=item.get('own_acceptance_index')
-    if type(index) is not int or not 0<=index<len(spec['acceptance']):raise ValueError('差別化を実現する機能の完成条件が不足しています。要件から改善してください')
-    if any(len(str(item.get('benchmark',{}).get(k,'')))<15 for k in ('scenario','measure','continue_if','reconsider_if')):raise AutoQAPlanError('既存との比較方法・継続条件が不十分です')
-    validate_competitive_design(item,sources)
-    if len({p.get('source_url') for p in comparisons})<2:raise AutoQAPlanError('同じ作業を異なる比較先2件以上と比較してください')
+    def validate_comparison(item):
+        comparisons=item.get('comparisons',[])
+        if not isinstance(comparisons,list) or not comparisons:raise AutoQAPlanError('競合と同じ作業を比較する根拠が不足しています')
+        for part in comparisons:
+            if not isinstance(part,dict):raise AutoQAPlanError('comparisonsの各項目をsource_urlとsource_quoteを持つオブジェクトにしてください')
+            quote=part.get('source_quote','');reference=sources.get(part.get('source_url'))
+            if not reference or not isinstance(quote,str) or not 12<=len(quote)<=180 or quote not in reference['text']:raise AutoQAPlanError('競合の説明が公式の取得本文と一致しません: '+str(part.get('source_url'))+'。取得資料から12〜180字をそのまま抜き出し、言い換えないでください')
+            if any(len(str(part.get(k,'')))<15 for k in ('relevance','comparison')):raise AutoQAPlanError('競合との同じ作業の比較が不十分です')
+        if any(len(str(item.get(k,'')))<15 for k in ('target_task','proposed_advantage')):raise AutoQAPlanError('対象者の作業と選ぶ理由の仮説を具体化します')
+        index=item.get('own_acceptance_index')
+        if type(index) is not int or not 0<=index<len(spec['acceptance']):raise ValueError('差別化を実現する機能の完成条件が不足しています。要件から改善してください')
+        if not isinstance(item.get('benchmark'),dict):raise AutoQAPlanError('benchmarkに比較する条件と測り方を具体化してください')
+        if any(len(str(item.get('benchmark',{}).get(k,'')))<15 for k in ('scenario','measure','continue_if','reconsider_if')):raise AutoQAPlanError('既存との比較方法・継続条件が不十分です')
+        validate_competitive_design(item,sources)
+        if len({p.get('source_url') for p in comparisons})<2:raise AutoQAPlanError('同じ作業を異なる比較先2件以上と比較してください')
+        return item
+    item=ai_json(prompt,cfg,3600,validator=validate_comparison)
     item.update(policy=COMPETITIVE_POLICY,scope_sha=product_scope_sha(name),checked=now(),measured_advantage=False,
         sources=[{k:r.get(k) for k in ('url','checked_at','content_sha')} for r in valid])
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('competitive_brief:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
@@ -1402,7 +1407,7 @@ def quality_development_cycle(job,cfg):
             stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else qa_stage
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+1,assets[0]['path'] if assets else '')
-            event(job,name+(': 画面・独立機能を改善。接続機能は未完成' if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
+            event(job,name+((': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
         except Exception as exc:
             detail=type(exc).__name__+': '+str(exc)[:300]
             product_development_state(name,'設計・修正待ち',detail,attempts)
@@ -3386,10 +3391,11 @@ def apply_product_edits(source,proposal):
     if not isinstance(edits,list) or not 1<=len(edits)<=8:raise ValueError('局所修正は1〜8件の置換で指定してください')
     result=source
     for edit in edits:
+        if not isinstance(edit,dict):raise ValueError('各置換をoldとnewを持つオブジェクトにしてください')
         old=edit.get('old');new=edit.get('new')
         if not isinstance(old,str) or not 8<=len(old)<=18000 or not isinstance(new,str) or len(new)>20000:
             raise ValueError('置換元・置換後の長さや形式が不正です')
-        if old==new or result.count(old)!=1:raise ValueError('置換元が一意に一致しません。現在のコードに合わせて再作成します')
+        if old==new or result.count(old)!=1:raise ValueError('置換元が一意に一致しません（一致数: '+str(result.count(old))+'）。現在のコードから正確に抜き出して再作成します')
         result=result.replace(old,new,1)
     if len(result)<len(source)*.8:raise ValueError('既存機能を大きく削除する変更は採用しません')
     if result==source:raise ValueError('修正差分がありません')
@@ -3478,7 +3484,10 @@ def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
         '不合格理由の参照ID・問題箇所が現在のコードに存在しない場合は、古い失敗候補の記録です。問題のコードを新設せず、現在の不足を一つ改善する。問題が指定されていればその解消に集中。品質改善の場合は対象者に最も役立つ不足を一つ実装し、既存機能を保つ。'
         '\n不合格・改善課題:'+problem[:2200]+'\n再診断:'+diagnosis[:2200]
         +'\n完成条件:'+json.dumps(compact,ensure_ascii=False)[:5000]+'\n修正対象コード（部分表示でもoldは元コードに正確に一致させる）:\n'+context)
-    proposal=ai_json(prompt,cfg,4200)
+    def validate_edits(proposal):
+        apply_product_edits(source,proposal)
+        return proposal
+    proposal=ai_json(prompt,cfg,4200,validator=validate_edits)
     return apply_product_edits(source,proposal),str(proposal.get('reason','局所修正'))[:600]
 
 
@@ -3561,7 +3570,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 page,repair_reason=incremental_product_repair(job,name,previous_page,last or plan[-1800:],cfg,diagnose=diagnose_next)
                 event(job,name+': 修正差分を適用: '+repair_reason[:180])
             except (ValueError,TypeError,KeyError) as exc:
-                last='局所修正を適用できません: '+str(exc)[:600]
+                last='局所修正を適用できません: '+str(exc)[:600]+' / 未解決の検査理由: '+last[:700]
                 repair_state=dict(signature=last,repeat=int(repair_state.get('repeat',0))+1,checked=now())
                 execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
                 diagnose_next=True;event(job,name+': '+last)
@@ -3605,10 +3614,13 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 layout_ok,layout_detail=review_connected_layout(job,name,page,cfg)
                 verdict+=' / '+layout_detail
                 if not layout_ok:errors.append('画面品質が不足')
-            except (AutoQAEnvironmentError,OSError,TimeoutError) as exc:
+            except (AutoQAEnvironmentError,AutoQAPlanError,OSError,TimeoutError) as exc:
                 verdict+=' / 画面検証の準備待ち: '+str(exc)[:300]
                 save(job,name,asset_kind,page,'html',verdict)
                 return page,verdict,False
+            except ValueError as exc:
+                errors.append('画面品質が不足')
+                verdict+=' / 画面検査: 要改善 / '+str(exc)[:1200]
         if not errors and browser_ok:
             save(job, name, asset_kind, page, 'html', verdict)
             if not partial:

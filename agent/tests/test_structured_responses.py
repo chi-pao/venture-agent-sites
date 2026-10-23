@@ -100,4 +100,47 @@ class StructuredResponseTests(unittest.TestCase):
   schema=json.loads(request.call_args.args[0].data)['format']
   self.assertIn('must_have',schema['required']);self.assertEqual(schema['properties']['acceptance']['minItems'],3)
 
+ def test_layout_exception_returns_to_repair_in_same_build_without_release(self):
+  name='小さい操作部品を直す試作';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  spec=app.get_product_spec(name);app.store_product_spec(name,dict(spec,delivery_mode='connected',dependencies=['共有サーバー']))
+  source='<html><body>'+('existing-function;'*100)+'</body></html>'
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'incremental_product_repair',side_effect=lambda *a,**k:(a[2].replace('existing-function;','improved-function;',1), '部品サイズの修正')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査合格')),patch.object(app,'review_connected_layout',side_effect=[ValueError('1280pxの接続待ち画面に改善が必要: smallControls inputValue calculate'),(True,'画面検査: 合格（API実動作は別）')]),patch.object(app,'event'):
+   page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=2),'操作部品の改善',existing_page=source,allow_partial=True)
+  self.assertEqual(repair.call_count,2);self.assertIn('smallControls',repair.call_args.args[3]);self.assertIn('画面検査: 合格',detail)
+  self.assertFalse(ready);self.assertFalse(app.candidate_production_acceptance(name));self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
+ def comparison_fixture(self,name):
+  baseline.FrameworkTests.add(self,name);sources,patterns=baseline.DesignEvidenceTests.fixture(self)
+  comparisons=[dict(source_url=u,source_quote=r['text'],relevance='利用者の予定と結果を同じ作業で整理する方法です。',comparison='同じ入力の保存と再表示の手順を比較し不明点を区別する。') for u,r in sources.items()]
+  item=dict(comparisons=comparisons,target_task='具体的な予定を入力して保存し結果を比較する。',proposed_advantage='未確認の予定を区別し入力の迷いを減らす仮説。',own_acceptance_index=0,benchmark={k:'同じ入力を使って完了率と時間と迷いを測定する。' for k in ('scenario','measure','continue_if','reconsider_if')},design_patterns=patterns)
+  references=[dict(r,status='本文取得',url=u,checked_at=app.now(),content_sha='a'*64) for u,r in sources.items()]
+  return item,references
+ def test_mismatched_competitor_quote_is_repaired_using_retrieved_text(self):
+  import copy
+  name='引用の不一致を直す比較';valid,refs=self.comparison_fixture(name);bad=copy.deepcopy(valid);bad['comparisons'][0]['source_quote']='公式本文にない作り話なので比較の根拠には使えません。'
+  with patch.object(app,'competitive_reference_candidates',return_value=[r['url'] for r in refs]),patch.object(app,'read_research_reference',side_effect=refs),patch.object(app,'ai',side_effect=[json.dumps(bad),json.dumps(valid)]) as model:
+   brief=app.ensure_competitive_brief(name,dict(app.DEFAULT))
+  self.assertEqual(model.call_count,2);self.assertIn('公式の取得本文と一致しません',model.call_args.args[0]);self.assertTrue(app.competitive_design_ready(brief));self.assertFalse(brief['measured_advantage'])
+ def test_persistent_invented_comparison_is_not_cached_as_valid(self):
+  name='不一致が残る比較';bad,refs=self.comparison_fixture(name);bad['comparisons'][0]['source_quote']='公式本文にない作り話なので比較の根拠には使えません。'
+  with patch.object(app,'competitive_reference_candidates',return_value=[r['url'] for r in refs]),patch.object(app,'read_research_reference',side_effect=refs),patch.object(app,'ai',return_value=json.dumps(bad)) as model:
+   with self.assertRaises(app.AutoQAPlanError):app.ensure_competitive_brief(name,dict(app.DEFAULT))
+  self.assertEqual(model.call_count,3);self.assertIsNone(app.competitive_context(name)['brief'])
+
+ def test_invalid_edit_anchor_is_repaired_against_same_original_code(self):
+  name='置換元の修正';baseline.FrameworkTests.add(self,name)
+  source='<html><body><div id="value">original-value</div>'+('preserve-existing;'*100)+'</body></html>'
+  bad={'reason':'該当しない置換案','edits':[{'old':'missing-original-value','new':'new-value'}]}
+  valid={'reason':'一致する置換元に修正','edits':[{'old':'original-value','new':'improved-value'}]}
+  with patch.object(app,'ai',side_effect=[json.dumps(bad),json.dumps(valid)]) as model:
+   page,reason=app.incremental_product_repair(1,name,source,'JavaScriptエラーを修正',dict(app.DEFAULT))
+  self.assertEqual(model.call_count,2);self.assertIn('一致数: 0',model.call_args.args[0]);self.assertIn(source,model.call_args.args[0])
+  self.assertEqual(page,source.replace('original-value','improved-value'));self.assertNotIn('missing-original-value',page)
+ def test_unresolved_connected_work_does_not_log_successful_improvement(self):
+  name='改善未完了の表示';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  app.store_product_spec(name,dict(app.get_product_spec(name),delivery_mode='connected',dependencies=['共有サーバー']))
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  with patch.object(app,'build',return_value=('draft','JavaScriptエラー: Unexpected token .',False)):
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  history=app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details'];self.assertIn('改善は未完了',history);self.assertNotIn('画面・独立機能を改善。',history)
+
 if __name__=='__main__':unittest.main()
