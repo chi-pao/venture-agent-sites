@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顧客エンゲージメント計算ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>顧客エンゲージメント計算ツール</h1>
+        <form>
+            <label for="inputValue">入力値:</label>
+            <input type="text" id="inputValue" placeholder="入力してください">
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function calculate() {
+            const inputValue = document.getElementById('inputValue').value;
+            const resultDiv = document.getElementById('result');
+
+            if (inputValue) {
+                const result = parseInt(inputValue) * 2; if (inputValue === '特定の入力値') { result = '動的な結果: ' + inputValue; } // 簡単な計算例
+                resultDiv.textContent = `結果: ${result}`;
+                localStorage.setItem('lastInput', inputValue);
+                localStorage.setItem('lastResult', result);
+                downloadCSV(result);
+            } else {
+                resultDiv.textContent = '入力値を入力してください。';
+            }
+        }
+
+        function downloadCSV(result) {
+            const csvContent = `結果：${result}\n`;
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'result.csv';
+            a.click();
+        }
+
+        window.onload = function() {
+            const lastInput = localStorage.getItem('lastInput');
+            const lastResult = localStorage.getItem('lastResult');
+            if (lastInput && lastResult) {
+                document.getElementById('inputValue').value = lastInput;
+                document.getElementById('result').textContent = `結果: ${lastResult}`;
+            }
+        };
+    </script>
+</body>
+</html>

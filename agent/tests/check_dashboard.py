@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as directory:
  with patch.object(urllib.request,'urlopen',side_effect=urllib.error.URLError('offline UI fixture')):
   at=AppTest.from_file(str(source),default_timeout=40).run()
   assert not at.exception,[x.message for x in at.exception]
-  assert any('2026.10.24.7' in x.value for x in at.caption)
+  assert any('2026.10.24.8' in x.value for x in at.caption)
   assert not at.tabs
   api=next(x.value for x in at.dataframe if '対象アプリ' in x.value.columns)
   assert set(api['対象アプリ'])=={'友人間旅行計画アプリ','検索連携試作'},api

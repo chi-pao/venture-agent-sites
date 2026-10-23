@@ -1,5 +1,6 @@
 """Structured model answers must recover formatting without fabricating valid plans."""
 import io,json,unittest
+from pathlib import Path
 from unittest.mock import patch
 import test_system_baseline as baseline
 app=baseline.app
@@ -142,5 +143,55 @@ class StructuredResponseTests(unittest.TestCase):
   with patch.object(app,'build',return_value=('draft','JavaScriptエラー: Unexpected token .',False)):
    app.quality_development_cycle(job,dict(app.DEFAULT))
   history=app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details'];self.assertIn('改善は未完了',history);self.assertNotIn('画面・独立機能を改善。',history)
+
+ def stub_fixture(self):
+  return (Path(__file__).parent/'fixtures'/'legacy_customer_stub.html').read_text()
+ def test_actual_uploaded_legacy_stub_is_not_a_basis_for_incremental_work(self):
+  name='顧客エンゲージメント管理';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  app.store_product_spec(name,dict(app.get_product_spec(name),delivery_mode='connected',dependencies=['顧客データ共有']))
+  old=self.stub_fixture();self.assertTrue(app.legacy_placeholder_reason(name,old))
+  old_path=self.root/'old.html';old_path.write_text(old)
+  replacement='<!doctype html><html><body><h1>顧客の対応履歴を記録する</h1><input id="customer"><button>記録を保存</button></body></html>'
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'ai',return_value=replacement) as model,patch.object(app,'incremental_product_repair') as incremental,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査')),patch.object(app,'review_connected_layout',return_value=(True,'画面検査: 合格（接続機能は未確認）')),patch.object(app,'event') as events:
+   page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=1),'顧客対応を記録する',existing_page=old,allow_partial=True)
+  self.assertEqual(model.call_count,1);incremental.assert_not_called();self.assertEqual(page,replacement)
+  self.assertEqual(old_path.read_text(),old);self.assertFalse(ready);self.assertFalse(app.candidate_production_acceptance(name))
+  self.assertTrue(any('旧版を保持' in str(call) for call in events.call_args_list))
+ def test_explicit_doubling_tool_is_not_automatically_rebuilt(self):
+  name='二倍計算の練習';baseline.FrameworkTests.add(self,name)
+  app.store_product_spec(name,dict(app.get_product_spec(name),requested_outcome='数を2倍する計算を練習して結果を保存する'))
+  self.assertEqual(app.legacy_placeholder_reason(name,self.stub_fixture()),'')
+ def test_regenerating_the_same_stub_is_rejected_without_claiming_completion(self):
+  name='顧客対応の整理';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  app.store_product_spec(name,dict(app.get_product_spec(name),delivery_mode='connected',dependencies=['顧客データ共有']))
+  old=self.stub_fixture()
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'ai',return_value=old) as model,patch.object(app,'validate_html',return_value=[]),patch.object(app,'event'):
+   page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=2),'顧客対応を整理する',existing_page=old,allow_partial=True)
+  self.assertEqual(model.call_count,2);self.assertIn('中心機能がない',detail);self.assertFalse(ready)
+
+ def test_reference_ids_resolve_only_to_actual_retrieved_quotes(self):
+  item,refs=self.comparison_fixture('参照IDから引用を取得する比較')
+  catalog,lookup=app.comparison_reference_catalog(refs)
+  for group in ('comparisons','design_patterns'):
+   for part,reference in zip(item[group],catalog):
+    part.pop('source_quote',None);part['source_ref']=reference['excerpts'][0]['id']
+  with patch.object(app,'competitive_reference_candidates',return_value=[r['url'] for r in refs]),patch.object(app,'read_research_reference',side_effect=refs),patch.object(app,'ai',return_value=json.dumps(item)):
+   brief=app.ensure_competitive_brief('参照IDから引用を取得する比較',dict(app.DEFAULT))
+  self.assertTrue(app.competitive_design_ready(brief))
+  for part in brief['comparisons']:
+   self.assertEqual(part['source_quote'],lookup[part['source_ref']]['text'])
+  item['comparisons'][0]['source_ref']='invented-id'
+  with self.assertRaises(app.AutoQAPlanError):app.resolve_comparison_references(item,lookup)
+ def test_repeated_patch_failure_switches_strategy_without_destroying_source(self):
+  name='部分修正の方式を切り替える';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  app.store_product_spec(name,dict(app.get_product_spec(name),delivery_mode='connected',dependencies=['共有サーバー']))
+  source='<html><body>'+('keep-working;'*100)+'</body></html>';fresh='<html><body><h1>新しい具体的な作業画面</h1></body></html>'
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'incremental_product_repair',side_effect=ValueError('oldが一致しない')) as repair,patch.object(app,'ai',return_value=fresh) as model,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査')),patch.object(app,'review_connected_layout',return_value=(True,'画面検査: 合格（機能未確認）')),patch.object(app,'event'):
+   page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=3),'作業機能を改善',existing_page=source,allow_partial=True)
+  self.assertEqual(repair.call_count,2);self.assertEqual(model.call_count,1);self.assertEqual(page,fresh);self.assertFalse(ready)
+ def test_numeric_smoke_values_respect_limits_and_steps(self):
+  self.assertEqual(app.smoke_number_value('1','5',None,1),'1');self.assertEqual(app.smoke_number_value('1','5',None,2),'5')
+  self.assertEqual(app.smoke_number_value('2','10','3',2),'8')
+  self.assertNotEqual(app.smoke_number_value(None,None,None,1),app.smoke_number_value(None,None,None,2))
 
 if __name__=='__main__':unittest.main()
