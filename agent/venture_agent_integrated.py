@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.8'
+APP_VERSION='2026.10.24.9'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -2331,6 +2331,9 @@ def ai(prompt,cfg,tokens=2200):
 def local_ai_request(prompt,cfg,tokens=2200):
     body={'model':cfg['model'],'prompt':prompt,'stream':False,
           'options':{'temperature':0.2,'num_predict':tokens,'num_ctx':max(8192,min(32768,int(cfg.get('ai_context',16384))))}}
+    if '_temperature' in cfg:body['options']['temperature']=cfg['_temperature']
+    if '_seed' in cfg:body['options']['seed']=cfg['_seed']
+    if '_keep_alive' in cfg:body['keep_alive']=cfg['_keep_alive']
     if cfg.get('_json_response'):body['format']=cfg['_json_response'] if isinstance(cfg['_json_response'],dict) else 'json'
     payload=json.dumps(body).encode('utf-8')
     req=urllib.request.Request(cfg['url'].rstrip('/')+'/api/generate',data=payload,
@@ -3390,7 +3393,7 @@ def auto_improve_existing(job,cfg):
             + '\n利用者の声:' + str(feedback.get('notes') or '未確認')[:1200]
             + '\n改善対象HTML:\n' + previous[:27000])
         try:
-            candidate=extract_html(ai(prompt,cfg,6500))
+            candidate=extract_html(ai(prompt,coding_config(cfg),6500))
             errors=validate_html(candidate,row['name'])
             ok,detail=(False,'静的検査不合格') if errors else browser_test(candidate)
             digest=hashlib.sha256(candidate.encode()).hexdigest()
@@ -3549,6 +3552,7 @@ def preserve_checkpoint_features(checkpoint,candidate):
 
 
 def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
+    cfg=coding_config(cfg)
     spec=get_product_spec(name) or {}
     compact={k:spec.get(k) for k in ('audience','requested_outcome','must_have','acceptance','user_change_requests')}
     compact['design_blueprint']=get_product_blueprint(name)
@@ -3675,7 +3679,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 continue
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
-            page=extract_html(ai(prompt,cfg,9000))
+            page=extract_html(ai(prompt,coding_config(cfg),9000))
         errors = validate_html(page, name)+preserve_checkpoint_features(checkpoint,page)
         placeholder=legacy_placeholder_reason(name,page)
         if placeholder:errors.append('用途に合う中心機能がない旧サンプル: '+placeholder)
@@ -3941,6 +3945,7 @@ def running_pid():
 
 def start(cfg):
     with THREAD_GUARD:
+        if benchmark_active():return '制作AIの比較中です。比較終了後に開始してください'
         if running_pid(): return '既に起動しています'
         STOP.unlink(missing_ok=True)
         LOCK.write_text(json.dumps({'pid':os.getpid(),'started':now()}),encoding='utf-8')
@@ -5746,6 +5751,241 @@ def render_simple_development_board(cfg):
     render_connection_followup(cfg)
 
 
+MODEL_BENCHMARK_POLICY='2026-10-24-local-code-comparison-1'
+MODEL_BENCHMARK_REQUIREMENTS='''同じ小規模タスク管理アプリの必須仕様。日本語・スマホ対応の単一HTML/CSS/JSだけを返す。
+個人の作業を登録・一覧・保存・CSV出力できる。外部API/CDNなし。冒頭に対象者と使い方を明記。
+input#taskName（文字列・必須）、input#priority（number、min=1,max=5、必須）、input#dueDate（date、必須）、button#addTaskで追加。
+表のtbody#tasksに各タスクをtr1件・td3列（タスク名、優先度、期限）の順で表示。span#taskCountは件数の数字だけ。
+空の名前・1〜5以外の優先度は追加しない。追加済み全件をlocalStorageに保存し、再読込で一覧を復元。
+button#downloadCsvで全件のUTF-8 CSV（見出しはタスク名,優先度,期限）をダウンロード。
+入力を変えれば登録内容・件数が変わる。固定文や入力の2倍だけのサンプルは禁止。
+PC1280px・スマホ390pxで横はみ出しなし。入力とボタンは高さ36px以上、本文12px以上。安定したidとラベルを付ける。
+この小課題は能力比較用であり、AI推論や外部接続機能は表示しない。DOCTYPEから閉じHTMLまでコードだけを返す。'''
+
+
+def coding_config(cfg):
+    return dict(cfg,model=cfg.get('code_model') or cfg['model'])
+
+
+def benchmark_tasks():
+    # The repair source contains the two actual failure classes found in the supplied project stub.
+    broken='''<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>作業の登録</title></head><body><h1>個人の作業記録</h1><form id="projectForm"><label for="taskName">タスク名</label><input id="taskName" required><label for="priority">優先度</label><input id="priority" type="number" min="1" max="5" required><label for="dueDate">期限</label><input id="dueDate" type="date" required><button id="addTask">追加</button></form><span id="taskCount">0</span><table><tbody id="tasks"></tbody></table><div id="result"></div><button id="downloadCsv">CSV</button><script>document.getElementById('projectForm').onsubmit=function(e){e.preventDefault();const taskName=document.getElementById('taskName').value;document.getElementById('result').innerHTML='<p>'+taskName+'</p>'; <p>タスク名: ${taskName}</p> `;};document.getElementById('downloadCsv').onclick=function(){const csv='タスク名,優先度,期限\\n';csv+='記録';};</script></body></html>'''
+    return [('new','新規作成',MODEL_BENCHMARK_REQUIREMENTS),('repair','不具合の修正',MODEL_BENCHMARK_REQUIREMENTS+'\n次の壊れたコードを修理し、必須仕様を満たす完全なHTMLを返す。JS内のHTMLタグとconstへの再代入を直し、一覧・保存・CSVを実装する。\n対象コード:\n'+broken)]
+
+
+def benchmark_state():
+    rows=query("SELECT value FROM agent_settings WHERE key='model_benchmark'")
+    try:return json.loads(rows[0]['value']) if rows else {}
+    except (ValueError,TypeError):return {}
+
+
+def save_benchmark_state(report):
+    execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('model_benchmark',json.dumps(report,ensure_ascii=False)))
+
+
+def benchmark_active():
+    rows=query("SELECT * FROM venture_runtime_locks WHERE name='model_benchmark'")
+    return bool(rows and lease_is_live(rows[0]))
+
+
+def benchmark_model_digests(cfg):
+    with urllib.request.urlopen(cfg['url'].rstrip('/')+'/api/tags',timeout=12) as response:data=json.load(response)
+    return {r.get('name'):r.get('digest') for r in data.get('models',[]) if r.get('name') and r.get('digest')}
+
+
+def execute_model_benchmark_page(source,directory):
+    """Test actual generated HTML in isolated browsers; no model self-score is used."""
+    from playwright.sync_api import sync_playwright
+    directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
+    path=directory/'candidate.html';path.write_text(source,encoding='utf-8');url=path.as_uri()
+    result=dict(passed=False,checks=[],screenshots={},path=str(path),content_sha=hashlib.sha256(path.read_bytes()).hexdigest())
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True)
+        try:
+            for width,height in ((1280,900),(390,844)):
+                context=browser.new_context(viewport={'width':width,'height':height},service_workers='block',accept_downloads=True)
+                context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
+                page=context.new_page();page.set_default_timeout(5000);errors=[]
+                page.on('pageerror',lambda error:errors.append(str(error)));page.on('dialog',lambda dialog:dialog.dismiss())
+                try:
+                    page.goto(url,wait_until='domcontentloaded',timeout=15000)
+                    layout=page.evaluate(QA_LAYOUT_SCRIPT)
+                    if errors:raise ValueError('JavaScriptエラー: '+errors[0][:400])
+                    if layout['overflow'] or layout['smallControls'] or layout['tinyText'] or len(layout['heading'].strip())<5:raise ValueError('画面・操作部品の寸法が不足: '+str({k:v for k,v in layout.items() if k!='body'}))
+                    result['checks'].append(dict(width=width,check='layout',passed=True))
+                    for name,priority,date in (('見積もり送付','2','2030-02-01'),('顧客への連絡','5','2030-02-02')):
+                        page.locator('#taskName').fill(name);page.locator('#priority').fill(priority);page.locator('#dueDate').fill(date);page.locator('#addTask').click()
+                    rows=page.locator('#tasks tr')
+                    if rows.count()!=2 or page.locator('#taskCount').inner_text().strip()!='2':raise ValueError('2件の登録・件数表示が不一致')
+                    expected=[['見積もり送付','2','2030-02-01'],['顧客への連絡','5','2030-02-02']]
+                    if [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('登録した入力と一覧の値が不一致')
+                    result['checks'].append(dict(width=width,check='two_records',passed=True))
+                    for invalid_name,priority in (('','3'),('範囲外の作業','9')):
+                        page.locator('#taskName').fill(invalid_name);page.locator('#priority').fill(priority);page.locator('#dueDate').fill('2030-03-01');page.locator('#addTask').click()
+                        if rows.count()!=2:raise ValueError('不正入力で記録が増えた')
+                    result['checks'].append(dict(width=width,check='invalid_input',passed=True))
+                    page.reload(wait_until='domcontentloaded')
+                    rows=page.locator('#tasks tr')
+                    if rows.count()!=2 or [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('再読込で登録値が復元されない')
+                    result['checks'].append(dict(width=width,check='reload',passed=True))
+                    with page.expect_download() as download:page.locator('#downloadCsv').click()
+                    csv_path=directory/('records-'+str(width)+'.csv');download.value.save_as(csv_path)
+                    records=list(csv.reader(csv_path.read_text(encoding='utf-8-sig').splitlines()))
+                    if records!=[['タスク名','優先度','期限']]+expected:raise ValueError('CSV実ファイルの見出し・件数・値が不一致')
+                    result['checks'].append(dict(width=width,check='csv',passed=True))
+                    if errors:raise ValueError('JavaScriptエラー: '+errors[0][:400])
+                    layout=page.evaluate(QA_LAYOUT_SCRIPT)
+                    if layout['overflow'] or layout['smallControls'] or layout['tinyText']:raise ValueError('操作後に画面配置の不足')
+                    shot=directory/('result-'+str(width)+'.png');page.screenshot(path=str(shot));result['screenshots'][str(shot)]=hashlib.sha256(shot.read_bytes()).hexdigest()
+                    result['checks'].append(dict(width=width,check='result_layout',passed=True))
+                finally:context.close()
+            result['passed']=True
+        except Exception as exc:result['error']=type(exc).__name__+': '+str(exc)[:1400]
+        finally:browser.close()
+    return result
+
+
+def benchmark_task_signature():
+    return hashlib.sha256(json.dumps(benchmark_tasks(),ensure_ascii=False).encode()).hexdigest()
+
+
+def benchmark_source_valid(row):
+    try:
+        path=Path(row['path']).resolve()
+        return path.is_relative_to(OUT.resolve()) and hashlib.sha256(path.read_bytes()).hexdigest()==row['content_sha']
+    except (ValueError,TypeError,KeyError,OSError):return False
+
+
+def benchmark_result_valid(row):
+    try:
+        path=Path(row['path']).resolve()
+        if not path.is_relative_to(OUT.resolve()) or hashlib.sha256(path.read_bytes()).hexdigest()!=row['content_sha']:return False
+        wanted={(w,c) for w in (1280,390) for c in ('layout','two_records','invalid_input','reload','csv','result_layout')}
+        if row.get('passed') is not True or len(row['checks'])!=12 or {(x['width'],x['check']) for x in row['checks'] if x.get('passed') is True}!=wanted:return False
+        shots=row.get('screenshots',{})
+        return len(shots)==2 and all(Path(p).resolve().is_relative_to(OUT.resolve()) and hashlib.sha256(Path(p).read_bytes()).hexdigest()==digest for p,digest in shots.items())
+    except (ValueError,TypeError,KeyError,OSError):return False
+
+
+def benchmark_candidate_wins(report):
+    if report.get('status')!='完了' or report.get('policy')!=MODEL_BENCHMARK_POLICY or report.get('task_signature')!=benchmark_task_signature():return False
+    baseline=report.get('baseline');candidate=report.get('candidate');rows=report.get('results',[])
+    if not baseline or not candidate or baseline==candidate or len(rows)!=4:return False
+    if {(r.get('model'),r.get('task')) for r in rows}!={(m,t) for m in (baseline,candidate) for t,_,_ in benchmark_tasks()}:return False
+    return all(benchmark_source_valid(r) for r in rows) and all(benchmark_result_valid(r) for r in rows if r['model']==candidate) and not all(benchmark_result_valid(r) for r in rows if r['model']==baseline)
+
+
+def model_benchmark_worker(cfg,report,owner):
+    job=execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(now(),'実行中','制作AIの比較テスト'))
+    try:
+        ensure_autoqa_environment(job,dict(cfg,autoqa_setup=False),vision=False)
+        for task,label,prompt in benchmark_tasks():
+            for model in (report['baseline'],report['candidate']):
+                cancelled=query("SELECT value FROM agent_settings WHERE key='model_benchmark_cancel'")
+                if cancelled and cancelled[0]['value']=='1':raise InterruptedError('比較を停止しました')
+                report.update(progress=model+' / '+label);save_benchmark_state(report)
+                started=time.monotonic()
+                directory=OUT/'shared'/'model-benchmarks'/report['run_id']/(task+'-'+hashlib.sha256(model.encode()).hexdigest()[:12])
+                try:
+                    bench_cfg=dict(cfg,model=model,ai_context=16384,_temperature=0,_seed=42,_keep_alive=0)
+                    bench_cfg.pop('_json_response',None)
+                    markup=extract_html(local_ai_request(prompt,bench_cfg,5000))
+                    row=execute_model_benchmark_page(markup,directory)
+                except Exception as exc:row=dict(passed=False,error=type(exc).__name__+': '+str(exc)[:1400])
+                row.update(model=model,task=task,label=label,seconds=round(time.monotonic()-started,1));report['results'].append(row);save_benchmark_state(report)
+        if benchmark_model_digests(cfg)!=report['installed']:
+            # Unrelated model downloads do not invalidate a run; the compared models must be unchanged.
+            current=benchmark_model_digests(cfg)
+            if any(current.get(m)!=report['installed'].get(m) for m in (report['baseline'],report['candidate'])):raise ValueError('比較中に対象モデルが変わりました')
+        cancelled=query("SELECT value FROM agent_settings WHERE key='model_benchmark_cancel'")
+        report.update(status='中止' if cancelled and cancelled[0]['value']=='1' else '完了',progress='比較終了',finished=now())
+        report['candidate_better']=benchmark_candidate_wins(report)
+        event(job,'制作AIの比較終了。自動でモデル変更・公開はしていません','完了')
+    except Exception as exc:
+        report.update(status='中止' if isinstance(exc,InterruptedError) else '準備・実行エラー',error=type(exc).__name__+': '+str(exc)[:1400],finished=now())
+        event(job,'制作AIの比較: '+report['error'],'エラー')
+    finally:
+        save_benchmark_state(report);execute('UPDATE agent_jobs SET finished=? WHERE id=?',(now(),job))
+        release_runtime('local_ai',owner);release_runtime('model_benchmark',owner)
+
+
+def start_model_benchmark(cfg,candidate):
+    if state()['enabled']:raise ValueError('継続運転を安全に停止してから比較してください')
+    baseline=coding_config(cfg)['model'];candidate=str(candidate).strip()
+    if not candidate or candidate==baseline:raise ValueError('現在と異なる比較モデルを指定してください')
+    installed=benchmark_model_digests(cfg)
+    if any(m not in installed for m in (baseline,candidate)):raise ValueError('比較する2つのモデルを先にOllamaへ追加してください')
+    owner=runtime_owner()
+    if not claim_runtime('model_benchmark',owner,7200):raise ValueError('比較テストを実行中です')
+    if not claim_runtime('local_ai',owner,7200):
+        release_runtime('model_benchmark',owner);raise ValueError('AIが別の処理を終了するまで待ってから押してください')
+    report=dict(policy=MODEL_BENCHMARK_POLICY,task_signature=benchmark_task_signature(),run_id=uuid.uuid4().hex,baseline=baseline,candidate=candidate,installed=installed,status='実行中',progress='検証用ブラウザの準備',results=[],started=now(),general_model=cfg['model'])
+    save_benchmark_state(report);execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('model_benchmark_cancel','0'))
+    try:threading.Thread(target=model_benchmark_worker,args=(dict(cfg),report,owner),daemon=True,name='venture-model-benchmark').start()
+    except Exception:
+        report['status']='開始エラー';save_benchmark_state(report);release_runtime('local_ai',owner);release_runtime('model_benchmark',owner);raise
+    return report
+
+
+def adopt_benchmark_candidate(cfg):
+    if state()['enabled'] or benchmark_active():raise ValueError('継続運転・比較が停止した状態で切り替えてください')
+    report=benchmark_state();current=config()
+    if not benchmark_candidate_wins(report):raise ValueError('改善を確認した比較結果がありません。同点・未完了では切り替えません')
+    if coding_config(current)['model']!=report['baseline'] or current['model']!=report['general_model']:raise ValueError('比較後に現在の設定が変わりました。再比較してください')
+    installed=benchmark_model_digests(current)
+    if any(installed.get(m)!=report['installed'].get(m) for m in (report['baseline'],report['candidate'])):raise ValueError('比較したモデルの内容が変わりました。再比較してください')
+    execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('code_model_previous_config',json.dumps(current,ensure_ascii=False)))
+    current['code_model']=report['candidate']
+    execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(current,ensure_ascii=False),))
+    return report['candidate']
+
+
+def restore_previous_code_model():
+    if state()['enabled'] or benchmark_active():raise ValueError('継続運転・比較を停止してから戻してください')
+    rows=query("SELECT value FROM agent_settings WHERE key='code_model_previous_config'")
+    if not rows:raise ValueError('戻せる制作モデルの記録がありません')
+    previous=json.loads(rows[0]['value']);current=config()
+    if previous.get('code_model'):current['code_model']=previous['code_model']
+    else:current.pop('code_model',None)
+    execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(current,ensure_ascii=False),))
+    return coding_config(current)['model']
+
+
+@st.fragment(run_every=5)
+def render_model_benchmark_ui(cfg):
+    with st.expander('制作AIの比較テスト',expanded=False):
+        st.caption('制作・修正用: '+coding_config(cfg)['model']+' ／ 企画・調査用: '+cfg['model'])
+        st.write('同じ新規作成・不具合修正を各モデルに1回ずつ依頼し、PC/スマホで登録・不正入力・保存・CSVを実操作します。製品全体の完成度・収益性の証明ではありません。')
+        candidate=st.text_input('比較する制作モデル',value='qwen2.5-coder:7b',key='benchmark_candidate')
+        report=benchmark_state();active=benchmark_active()
+        if st.button('2つのモデルを比較する',disabled=bool(state()['enabled'] or active),key='benchmark_start'):
+            try:start_model_benchmark(config(),candidate);st.rerun()
+            except Exception as exc:st.error(str(exc))
+        if state()['enabled']:st.caption('比較前に上の「安全に停止」を押してください。')
+        if active:
+            st.info('比較中: '+report.get('progress','準備中')+'。画面は5秒ごとに更新します。')
+            if st.button('比較を中止',key='benchmark_cancel'):
+                execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('model_benchmark_cancel','1'));st.warning('現在のAI応答が終わったら停止します。')
+        elif report.get('status')=='実行中':st.warning('前回の比較が中断されています。開始ボタンでやり直せます。')
+        if report.get('results'):
+            st.dataframe([{'モデル':r['model'],'課題':r['label'],'結果':'合格' if benchmark_result_valid(r) else '未合格','秒':r['seconds'],'不足':r.get('error','')} for r in report['results']],hide_index=True,width='stretch')
+        if report.get('error'):st.error(report['error'])
+        if report:
+            st.download_button('比較結果を保存',json.dumps(report,ensure_ascii=False,indent=2),file_name='model-comparison.json',mime='application/json',key='benchmark_report')
+        if benchmark_candidate_wins(report) and coding_config(config())['model']==report['candidate']:
+            st.success('比較結果に基づく制作・修正用モデルを採用済みです。')
+        elif benchmark_candidate_wins(report):
+            st.success('比較モデルが両課題を通過し、現在のモデルより実操作の合格課題が増えました。')
+            if st.button('比較で良かったモデルを制作・修正に採用',key='benchmark_adopt'):
+                try:st.success('制作・修正用を '+adopt_benchmark_candidate(cfg)+' に変更しました。企画・調査用は元の設定です。');st.rerun()
+                except ValueError as exc:st.error(str(exc))
+        elif report.get('status')=='完了':st.info('この比較では切り替え条件を満たしませんでした。両方合格の同点も現在の設定を維持します。')
+        if query("SELECT key FROM agent_settings WHERE key='code_model_previous_config'"):
+            if st.button('元の制作モデルに戻す',key='benchmark_rollback'):
+                try:st.success('制作・修正用を '+restore_previous_code_model()+' に戻しました。');st.rerun()
+                except ValueError as exc:st.error(str(exc))
+
+
 def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
@@ -5808,12 +6048,13 @@ def render_dashboard():
     st.write('**自動開発の設定:** '+('ON' if s['enabled'] else 'OFF')+' ／ 最終動作: '+str(s['heartbeat'] or 'まだありません'))
     col1,col2=st.columns(2)
     with col1:
-        if st.button('▶ 継続運転を開始',type='primary',width='stretch'):
+        if st.button('▶ 継続運転を開始',type='primary',width='stretch',disabled=benchmark_active()):
             st.success(start(cfg)); st.rerun()
     with col2:
         if st.button('■ 安全に停止',width='stretch'):
             stop(); st.warning('停止を要求しました。現在のAI呼出しが終わってから停止します。'); st.rerun()
     if s['last_error']: st.error('直近のエラー: '+s['last_error'])
+    render_model_benchmark_ui(cfg)
     render_simple_development_board(cfg)
     if st.checkbox('詳細・履歴・運用を開く',value=False,key='show_advanced_dashboard'):
         c1,c2,c3,c4=st.columns(4)
