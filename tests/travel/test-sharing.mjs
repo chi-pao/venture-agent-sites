@@ -27,7 +27,7 @@ assert.equal((await call(db,'POST','trips',{padding:'x'.repeat(50000),plan:plan(
 db.sql.prepare('UPDATE travel_trips SET expires_at=0 WHERE id=?').run(shared.id);
 assert.equal((await call(db,'GET','trips/'+shared.id,undefined,shared.editToken)).status,404);
 const disabled=await onRequest({request:new Request('https://example.com/api/travel/trips',{method:'POST'}),env:{TRAVEL_DB:db}});assert.equal(disabled.status,503);
-const health=await onRequest({request:new Request('https://example.com/api/travel/health'),env:{TRAVEL_DB:db}});assert.deepEqual(await health.json(),{databaseBound:true,schemaReady:true,sharingEnabled:false,search:'connection_required',searchSchemaReady:true,searchPolicy:'2026-10-23-geoapify-1',searchModes:['walk','drive'],transit:'not_connected'});
+const health=await onRequest({request:new Request('https://example.com/api/travel/health'),env:{TRAVEL_DB:db}});assert.deepEqual(await health.json(),{databaseBound:true,schemaReady:true,sharingEnabled:false,search:'connection_required',searchSchemaReady:true,searchPolicy:'2026-10-24-geoapify-workers-2',searchModes:['walk','drive'],transit:'not_connected'});
 const quota=database();for(let i=0;i<20;i++)assert.equal((await call(quota,'POST','trips',{plan:plan()})).status,201);
 assert.equal((await call(quota,'POST','trips',{plan:plan()})).status,429);assert.equal(quota.sql.prepare('SELECT count(*) AS n FROM travel_trips').get().n,20);
 db.sql.close();quota.sql.close();

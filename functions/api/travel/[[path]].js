@@ -54,7 +54,7 @@ async function room(db,id,request,edit=false){
  if(!row||!(tokenHash===row.edit_hash||(!edit&&tokenHash===row.view_hash)))fail('計画が見つからないか、この操作を許可されていません',404);
  return {row,editable:tokenHash===row.edit_hash,tokenHash};
 }
-const SEARCH_VERSION='2026-10-23-geoapify-1';
+const SEARCH_VERSION='2026-10-24-geoapify-workers-2';
 function coordinate(value,min,max){if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max)fail('緯度・経度を確認してください');return value;}
 function point(value){const p=object(value);return {lat:coordinate(p.lat,-90,90),lon:coordinate(p.lon,-180,180)};}
 function safeSource(value){if(value==null||value==='')return '';const text=string(value,250);try{const url=new URL(text);if(url.protocol==='https:'&&url.hostname==='www.openstreetmap.org')return url.href;}catch{}fail('出典URLの形式を確認してください');}
@@ -76,7 +76,9 @@ async function providerCall(path,params,env,request){
  await reserveSearch(env,request);
  const url=new URL('https://api.geoapify.com/'+path);for(const [k,v] of Object.entries(params))url.searchParams.set(k,String(v));
  url.searchParams.set('apiKey',env.GEOAPIFY_API_KEY);
- let response;try{response=await fetch(url,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'error'});}catch{fail('検索先への接続ができません。入力した旅程は保持しています',502);}
+ let response;try{response=await fetch(url,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(12000),redirect:'manual'});}catch{fail('検索先への接続ができません。入力した旅程は保持しています',502);}
+ // Workers rejects redirect:'error' before sending. Manual prevents forwarding the key to another origin.
+ if(response.status>=300&&response.status<400)fail('検索先から転送応答を受け取りました。接続先の設定を確認してください',502);
  if(!response.ok)fail(response.status===429?'検索先の無料枠または回数制限に達しました':'検索先の応答を確認できません。キーとAPIの設定を確認してください',response.status===429?429:502);
  const text=await response.text();if(text.length>1000000)fail('検索先の応答が大きすぎます',502);
  let data;try{data=JSON.parse(text);}catch{fail('検索先から正しいデータを取得できませんでした',502);}return data;
