@@ -80,3 +80,19 @@ DOM検証スクリプトは `agent/review-products/verify-products.cjs`。Node.j
 旅行の外部検索はテスト用のプロバイダー応答で検証しており、実APIキーの取得・日本の検索精度・本番D1の実動作は未確認です。ユーザーが無料APIキーを取得し、CloudflareへSecretと環境変数・検索回数テーブルを設定してから実データで確認します。具体手順は `agent/TRAVEL_CONNECTIONS.md`。電車・バスの時刻表、施設営業時間の自動確認、天候・交通の実況、希望投票などは未対応で、旅行の元の完成条件全体を通過したとは扱いません。発信OK、実利用の優位性、収益性も未確認です。
 
 ローカルOllama実モデルで全アプリが完成まで到達することは実証していません。今回変更したのは不具合を直す処理と具体的な旅行接続版であり、完成の保証ではありません。
+
+
+## 2026.10.24.1 — common product design standard and connection follow-up
+
+This release changes the autonomous system itself, not only the manually refined travel UI.
+
+- All product specifications now carry the user-requested minimum quality: clear audience/value/start action, task-specific visual design, readable hierarchy, mobile input, useful result and recovery. The 2026-10-24 travel journal is a quality reference, not a mandatory style template.
+- Before building or repairing, collect a cached competitor brief. At least two distinct actual official text sources must back design patterns, adaptations, concrete improvements and acceptance actions. Generated quotes must match retrieved text. Work-time, classroom and data-cleanup tasks have relevant official reference candidates in addition to sector defaults.
+- The research currently reads a bounded known official reference list. It does not perform unlimited competitor discovery, sign into other products, operate their apps, or capture competitor screenshots. Official-text design inferences are labelled as such. Direct-competitor and missing-information gaps remain explicit; measured superiority is never inferred from these sources.
+- Feed design principles and connection progress to initial generation and incremental repairs. A design repair can change composition, color and hierarchy while preserving functional IDs, data and other working features. A research failure permits independent development but cannot grant owner-review readiness.
+- Tighten source critique and actual PC/mobile image review. Invalidate old quality policies and old-baseline imported candidate proofs rather than automatically treating them as current. No self-score or connection note grants publication permission.
+- Travel scope includes a unified destination/transport/along-route and destination attractions/food flow, reasons and route detour time, complete schedule recalculation, reservations, rest/end warnings, shared mobile itinerary and data recovery. Transit is a separate real data dependency. These are requirements, not a claim that the live travel app implements them all.
+- Dashboard top displays active apps with declared API/server dependencies, current follow-up status and next action. Stopped/held apps are filtered out. Travel includes Geoapify/Cloudflare links and a health-reading button. A configured health response is not a successful search or shared-edit test. Users can record follow-up/evidence; requirement changes require recheck while preserving prior notes. Unknown providers remain developer research, not an instruction for the user to register somewhere.
+- This is workflow enforcement, not proof that a local model will autonomously reach the desired quality on every product. Actual Windows/Ollama generation and its results remain to be observed. Connected backend functions and credentials still require implementation and real integration tests; the static HTML builder cannot complete arbitrary backend services by itself. Live Geoapify search remains a known separate connection issue.
+
+Validation: hash/syntax/backups/rollback and quality/proof regression tests, real Chromium product operation tests, plus Streamlit dashboard smoke checks with an active connected travel app. AI visual assessments and model responses use fixtures in the tests; no claim of actual local model quality. Portable focused regression tests: `python -m unittest discover -s agent/tests -p test_system_baseline.py` (requires Streamlit).
