@@ -5443,12 +5443,14 @@ def record_connection_followup(name,status,next_action,evidence):
 
 def render_connection_followup(cfg):
     rows=connection_followup_rows()
-    if not rows:return
+    st.subheader('APIが必要なアプリ一覧')
+    if not rows:
+        st.caption('登録済みの製品要件には、対応が必要なAPI接続はありません。新しい要件が登録された場合はここに表示します。')
+        return
     pending=[r for r in rows if r['status']!='実データで動作確認済み']
-    st.subheader('API・共有サーバーの接続対応')
     if pending:st.warning('接続の対応・確認が必要なアプリが '+str(len(pending))+'件あります。対象と次の操作を下で確認できます。')
     else:st.caption('記録上は実データの接続確認済み。製品全体の完成検査・発信OKは別に行います。')
-    st.dataframe([{'対象アプリ':r['name'],'状況':r['status'],'必要な接続':' / '.join(r['dependencies']),'次の操作':r['next_action']} for r in pending or rows],hide_index=True,width='stretch')
+    st.dataframe([{'対象アプリ':r['name'],'状況':r['status'],'必要な接続':' / '.join(r['dependencies']),'次の操作':r['next_action']} for r in pending+[r for r in rows if r not in pending]],hide_index=True,width='stretch')
     with st.expander('接続先・設定手順・対応状況を確認する'):
         names=[r['name'] for r in pending]+[r['name'] for r in rows if r not in pending]
         name=st.selectbox('接続を確認するアプリ',names,key='connection_followup_app')
@@ -5481,72 +5483,159 @@ def render_connection_followup(cfg):
                 except ValueError as exc:st.warning(str(exc))
 
 
+def latest_saved_app_pages():
+    rows=query("""SELECT x.id,x.idea,x.path,x.kind,x.validation,x.created,
+        COALESCE(d.stage,'開発状態未確認') AS stage FROM agent_assets x
+        JOIN autonomous_ideas a ON a.name=x.idea
+        LEFT JOIN venture_product_development d ON d.idea=a.name
+        LEFT JOIN venture_owner_decisions o ON o.idea=a.name
+        LEFT JOIN venture_value_state v ON v.idea=a.name
+        WHERE x.kind IN ('品質改善候補HTML','改善候補HTML','試作品HTML','制作検査通過HTML')
+        AND COALESCE(o.decision,'') NOT IN ('中止','保留')
+        AND (o.decision='継続' OR COALESCE(v.phase,a.phase,'') NOT IN ('中止','保留'))
+        ORDER BY x.id DESC LIMIT 3000""")
+    pages=[];seen=set()
+    for row in rows:
+        if row['idea'] in seen:continue
+        if not Path(row['path']).is_file():continue
+        seen.add(row['idea']);pages.append(row)
+    return pages
+
+
+def render_quick_app_preview(cfg):
+    st.subheader('作っているアプリの今のページを見る')
+    pages=latest_saved_app_pages()
+    if not pages:
+        st.caption('保存された画面ができると、ここから開けます。')
+        return
+    by_name={p['idea']:p for p in pages}
+    name=st.selectbox('見たいアプリを選ぶ',list(by_name),key='quick_app_preview_name')
+    selected=by_name[name]
+    st.caption('保存日時: '+str(selected.get('created') or '不明')+' ／ '+selected['stage'])
+    try:
+        page=Path(selected['path']).read_text(encoding='utf-8')
+        preview=ensure_product_preview(name,page,cfg)
+        st.link_button('このアプリの今のページを開く',preview['url'],type='primary',use_container_width=True)
+        if selected['kind']=='試作品HTML':st.caption('これは旧試作品です。新しい改善版はまだ保存されていません。')
+        else:st.caption('開発中の画面も開けます。完成・収益化の判断は、品質検証を通った版で行います。')
+    except (OSError,UnicodeError,ValueError) as exc:st.warning('この画面はまだ開けません: '+str(exc)[:180])
+
+
+def development_brief(item):
+    text=str(item.get('details') or '').strip();stage=item.get('stage','');group=item.get('group','')
+    if group=='確認待ち':return '制作側の品質検証を通過。収益性は最終判断前です。','今のページを使って、継続・修正・見送りを判断する。'
+    if group=='運用中':return '承認済みの版を運用中。','利用反応と実測から次の改善を決める。'
+    for marker in ('画像判定で改善が必要:','画面検査: 要改善 / '):
+        if marker in text:return text.split(marker,1)[1][:350],'指摘された画面・使い方・操作を修正し、PCとスマホで再検査する。'
+    if any(token in text for token in ('参照先ID','JavaScript','未実装の痕跡')):return text[:350],'動かない処理や画面部品の対応を直し、中心機能を操作して再確認する。'
+    if any(token in text for token in ('Ollama','画像モデル','Playwright','Chromium','検証部品','検証環境')):return text[:350],'検証環境・AI接続を復旧してから検査を再開する。アプリの需要不足とは扱わない。'
+    if '画面検査済み' in stage:return '画面検査は済み。APIと中心機能の実動作を確認する必要があります。','API対応一覧から必要な接続を確認し、接続後に実データで中心機能を検査する。'
+    if any(token in text for token in ('同業','比較調査','公式本文','制作設計')):return text[:350],'比較資料をそろえ、対象者に合う画面と機能の設計へ反映する。'
+    if text and text!='まだ改善結果の記録がありません':return text[:350],item.get('next_action') or '記録された不足を一つずつ修正して再検査する。'
+    return 'まだ具体的な検査結果がありません。','対象者・同業比較・必要機能を設計し、最初の画面を作る。'
+
+
+@st.fragment(run_every=20)
+def render_simple_development_board(cfg):
+    items,current=product_portfolio_snapshot()
+    active=[x for x in items if x['group'] not in ('中止','保留')]
+    active.sort(key=lambda x:(not x['current'],x['group']=='運用中',x['group']!='確認待ち',x['name']))
+    st.subheader('開発しているアプリと今の状況')
+    if not active:
+        st.info('開発中のアプリはまだありません。継続運転を開始すると、ここに制作状況が表示されます。')
+    else:
+        briefs={x['name']:development_brief(x) for x in active}
+        specs={x['name']:get_product_spec(x['name']) or {} for x in active}
+        st.dataframe([{'アプリ':x['name'],'作っているもの':str(specs[x['name']].get('requested_outcome') or '対象者と必要な機能を設計中')[:180],
+            '今の状況':('いま作業中 / ' if x['current'] else '')+x['stage'],'継続判断':x['phase']+' / '+x['evidence'],
+            '問題点':briefs[x['name']][0],'次の改善':briefs[x['name']][1]} for x in active],hide_index=True,width='stretch',height=min(380,75+len(active)*36))
+        st.caption('20秒ごとに更新します。完了サイクル数ではなく、制作・検査の記録を表示します。')
+        name=st.selectbox('見たいアプリを選ぶ',[x['name'] for x in active],key='quick_app_preview_name')
+        item=next(x for x in active if x['name']==name);page_row=next((x for x in latest_saved_app_pages() if x['idea']==name),None)
+        if page_row:
+            try:
+                page=Path(page_row['path']).read_text(encoding='utf-8');preview=ensure_product_preview(name,page,cfg)
+                st.link_button('このアプリの今のページを開く',preview['url'],type='primary',use_container_width=True)
+                st.caption('保存日時: '+str(page_row.get('created') or '不明')+(' ／ 旧試作品・改善版は未保存' if page_row['kind']=='試作品HTML' else ' ／ 保存されている最新の画面'))
+                if item['group'] not in ('確認待ち','運用中'):st.caption('制作途中の画面です。完成・判断待ちの版ではありません。')
+            except (OSError,UnicodeError,ValueError) as exc:st.warning('画面を開く準備が必要です: '+str(exc)[:180])
+        else:st.info('このアプリの画面はまだ保存されていません。')
+        issue,improvement=briefs[name]
+        st.write('**問題点:** '+issue)
+        st.write('**次の改善:** '+improvement)
+        with st.expander('変更希望を伝える'):
+            with st.form('simple_change_request'):
+                request=st.text_area('直したいところ・追加したいこと',key='simple_change_request_text_'+name)
+                if st.form_submit_button('改善を依頼する'):
+                    try:request_product_changes(name,request);st.success('改善依頼を保存しました。継続運転で処理します。');st.rerun()
+                    except ValueError as exc:st.warning(str(exc))
+    archived=[x for x in items if x['group'] in ('中止','保留')]
+    if archived:
+        with st.expander('開発を止めているもの・保留（'+str(len(archived))+'件）'):
+            st.dataframe([{'アプリ':x['name'],'判断':x['group'],'理由':x['reason'],'再開に必要なこと':x['next_action']} for x in archived],hide_index=True,width='stretch')
+    render_connection_followup(cfg)
+
+
 def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
-    st.title('🚀 AI事業開発エージェント — 継続運転')
-    st.caption('表示版: 2026.10.24.2 ／ AI一次選別→作り込み→実物確認→OK後に運営')
-    st.caption('あったら便利・困りごとの解決・面白さ・時間短縮 → 試作 → 実利用から学習 → 継続育成と改善 → 次の企画')
-    st.info('事業の育成は継続運転、分野探索は別プロセスでも動かせます。PC稼働中のみ実行し、公開・SNS・実売上の取得は接続後に始まります。探索結果は成功や利益の保証ではありません。')
+    st.title('アプリ開発の状況')
+    st.caption('表示版: 2026.10.24.3 ／ AI一次選別→作り込み→実物確認→OK後に運営')
     s=state(); cfg=config()
-    for message in sync_review_candidates(cfg):st.info(message)
-    render_connection_followup(cfg)
+    sync_messages=sync_review_candidates(cfg)
     with st.sidebar:
-        st.header('自動運転設定')
-        cfg['model']=st.text_input('Ollamaモデル',value=cfg['model'])
-        with st.expander('自動の操作・デザイン検証'):
-            cfg['qa_vision_model']=st.text_input('画像判定用モデル',value=cfg.get('qa_vision_model','qwen2.5vl:3b'))
-            cfg['autoqa_setup']=st.checkbox('検証用ブラウザ・画像モデルを初回に自動準備',value=bool(cfg.get('autoqa_setup',True)))
-            st.caption('初回は無料部品と画像モデル（標準は約3.2GB）を取得します。画像判定もPC内のOllamaで行い、未完了・不合格の版は判断待ちにしません。')
-        cfg['url']=st.text_input('Ollama URL',value=cfg['url'])
-        cfg['interval']=st.number_input('サイクル間の待機秒数',min_value=60,max_value=86400,value=int(cfg['interval']),step=60)
-        cfg['research_interval_hours']=st.number_input('分野探索の間隔 時間',min_value=1,max_value=168,value=int(cfg.get('research_interval_hours',24)))
-        cfg['research_sector_batch']=st.number_input('1回に比較する分野数',min_value=1,max_value=6,value=int(cfg.get('research_sector_batch',2)))
-        cfg['target_first']=True
-        st.caption('利用価値と差別化を優先。売上が出る前も収益への道筋と反応を見て育てます。')
-        cfg['learning_horizon_days']=st.number_input('標準の育成期間 日',min_value=30,max_value=365,value=int(cfg.get('learning_horizon_days',90)))
-        cfg['max_active']=st.number_input('開発待ち枠の目安（有望候補は自動拡張）',min_value=12,max_value=100,value=min(100,max(12,int(cfg.get('max_active',12)))))
-        st.caption('確認待ち・運用中・接続準備待ちは開発枠から除外。目安を超えても、調査基準を通った新規候補には1件ずつ着手できます。')
-        cfg['max_businesses']=st.slider('1サイクルの事業数',1,5,int(cfg['max_businesses']))
-        cfg['max_revisions']=st.slider('試作品の最大修正回数',1,5,int(cfg['max_revisions']))
-        cfg['publish']=st.checkbox('のぼるさんがOKを出した版をGitHubへ保存・公開',value=bool(cfg['publish']))
-        cfg['github_repo']=st.text_input('GitHub リポジトリ (owner/repo)',value=cfg['github_repo'])
-        cfg['public_base_url']=st.text_input('商用公開先のルートURL（Cloudflare Pages等）',value=cfg.get('public_base_url',''),placeholder='https://your-project.pages.dev')
-        st.caption('GitHubはコード保存先です。公開先と同じリポジトリを連携し、ルートを公開する設定にします。')
-        cfg['github_branch']=st.text_input('GitHub ブランチ',value=cfg['github_branch'])
-        cfg['auto_marketing']=st.checkbox('確認済みサイトの紹介ページを自動作成',value=bool(cfg.get('auto_marketing',True)))
-        cfg['payment_url']=st.text_input('任意: 申込・決済ページURL（全事業共通）',value=cfg.get('payment_url',''))
-        cfg['analytics_domain']=st.text_input('任意: Plausible計測ドメイン',value=cfg.get('analytics_domain',''))
-        cfg['plausible_site_id']=st.text_input('任意: PlausibleサイトID',value=cfg.get('plausible_site_id',''))
-        cfg['marketing_webhook']=st.text_input('任意: 集客投稿連携Webhook (HTTPS)',value=cfg.get('marketing_webhook',''))
-        cfg['auto_sns_publish']=st.checkbox('発信OK済みの版を接続済みSNSで自動紹介',value=bool(cfg.get('auto_sns_publish',True)))
-        cfg['sns_channels']=st.multiselect('紹介先SNS',['Bluesky','Mastodon','Webhook'],default=selected_sns_channels(cfg))
-        cfg['sns_daily_limit']=st.number_input('SNS投稿の1日上限 合計',min_value=1,max_value=5,value=int(cfg.get('sns_daily_limit',3)))
-        cfg['auto_improve']=st.checkbox('実測データに基づく既存アプリの自動改善',value=bool(cfg.get('auto_improve',True)))
-        with st.expander('任意: 事業別決済リンク設定'):
-            raw_links=st.text_area('事業名とStripe決済リンクURLのJSON',value=json.dumps(cfg.get('project_payment_links',{}),ensure_ascii=False),height=100)
-            raw_ids=st.text_area('事業名とStripe Payment Link IDのJSON',value=json.dumps(cfg.get('project_payment_link_ids',{}),ensure_ascii=False),height=100)
-            try:
-                parsed_links=json.loads(raw_links); parsed_ids=json.loads(raw_ids)
-                if isinstance(parsed_links,dict) and isinstance(parsed_ids,dict):
-                    cfg['project_payment_links']=parsed_links; cfg['project_payment_link_ids']=parsed_ids
-            except ValueError: st.warning('事業別決済リンクJSONが不正です。以前の設定を維持します。')
-        if st.button('運転設定を保存'):
-            execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(cfg,ensure_ascii=False),))
-            st.success('運転設定を保存しました')
-        st.caption('GitHub: VENTURE_GITHUB_TOKEN / Plausible: VENTURE_PLAUSIBLE_TOKEN / Stripe: VENTURE_STRIPE_SECRET_KEY / 投稿連携: VENTURE_MARKETING_WEBHOOK_TOKEN（任意）をWindows環境変数で設定。')
-        st.caption('新しい有料契約・広告出稿は自動で行いません。計測連携がなければ未計測として表示します。Ollamaはローカルです。')
-        if st.button('AI接続確認'):
-            try:
-                with urllib.request.urlopen(cfg['url'].rstrip('/')+'/api/tags',timeout=8) as r:
-                    st.success('接続成功: '+', '.join(x['name'] for x in json.load(r).get('models',[])))
-            except Exception as e: st.error(str(e))
-
-    c1,c2,c3,c4=st.columns(4)
-    c1.metric('運転設定','ON' if s['enabled'] else 'OFF')
-    c2.metric('完了サイクル',s['cycle'])
-    c3.metric('連続エラー',s['errors'])
-    c4.metric('登録候補',len(query('SELECT name FROM autonomous_ideas')))
+        show_settings=st.checkbox('詳細設定を開く',value=False,key='show_advanced_settings')
+        if show_settings:
+            st.header('自動運転設定')
+            cfg['model']=st.text_input('Ollamaモデル',value=cfg['model'])
+            with st.expander('自動の操作・デザイン検証'):
+                cfg['qa_vision_model']=st.text_input('画像判定用モデル',value=cfg.get('qa_vision_model','qwen2.5vl:3b'))
+                cfg['autoqa_setup']=st.checkbox('検証用ブラウザ・画像モデルを初回に自動準備',value=bool(cfg.get('autoqa_setup',True)))
+                st.caption('初回は無料部品と画像モデル（標準は約3.2GB）を取得します。画像判定もPC内のOllamaで行い、未完了・不合格の版は判断待ちにしません。')
+            cfg['url']=st.text_input('Ollama URL',value=cfg['url'])
+            cfg['interval']=st.number_input('サイクル間の待機秒数',min_value=60,max_value=86400,value=int(cfg['interval']),step=60)
+            cfg['research_interval_hours']=st.number_input('分野探索の間隔 時間',min_value=1,max_value=168,value=int(cfg.get('research_interval_hours',24)))
+            cfg['research_sector_batch']=st.number_input('1回に比較する分野数',min_value=1,max_value=6,value=int(cfg.get('research_sector_batch',2)))
+            cfg['target_first']=True
+            st.caption('利用価値と差別化を優先。売上が出る前も収益への道筋と反応を見て育てます。')
+            cfg['learning_horizon_days']=st.number_input('標準の育成期間 日',min_value=30,max_value=365,value=int(cfg.get('learning_horizon_days',90)))
+            cfg['max_active']=st.number_input('開発待ち枠の目安（有望候補は自動拡張）',min_value=12,max_value=100,value=min(100,max(12,int(cfg.get('max_active',12)))))
+            st.caption('確認待ち・運用中・接続準備待ちは開発枠から除外。目安を超えても、調査基準を通った新規候補には1件ずつ着手できます。')
+            cfg['max_businesses']=st.slider('1サイクルの事業数',1,5,int(cfg['max_businesses']))
+            cfg['max_revisions']=st.slider('試作品の最大修正回数',1,5,int(cfg['max_revisions']))
+            cfg['publish']=st.checkbox('のぼるさんがOKを出した版をGitHubへ保存・公開',value=bool(cfg['publish']))
+            cfg['github_repo']=st.text_input('GitHub リポジトリ (owner/repo)',value=cfg['github_repo'])
+            cfg['public_base_url']=st.text_input('商用公開先のルートURL（Cloudflare Pages等）',value=cfg.get('public_base_url',''),placeholder='https://your-project.pages.dev')
+            st.caption('GitHubはコード保存先です。公開先と同じリポジトリを連携し、ルートを公開する設定にします。')
+            cfg['github_branch']=st.text_input('GitHub ブランチ',value=cfg['github_branch'])
+            cfg['auto_marketing']=st.checkbox('確認済みサイトの紹介ページを自動作成',value=bool(cfg.get('auto_marketing',True)))
+            cfg['payment_url']=st.text_input('任意: 申込・決済ページURL（全事業共通）',value=cfg.get('payment_url',''))
+            cfg['analytics_domain']=st.text_input('任意: Plausible計測ドメイン',value=cfg.get('analytics_domain',''))
+            cfg['plausible_site_id']=st.text_input('任意: PlausibleサイトID',value=cfg.get('plausible_site_id',''))
+            cfg['marketing_webhook']=st.text_input('任意: 集客投稿連携Webhook (HTTPS)',value=cfg.get('marketing_webhook',''))
+            cfg['auto_sns_publish']=st.checkbox('発信OK済みの版を接続済みSNSで自動紹介',value=bool(cfg.get('auto_sns_publish',True)))
+            cfg['sns_channels']=st.multiselect('紹介先SNS',['Bluesky','Mastodon','Webhook'],default=selected_sns_channels(cfg))
+            cfg['sns_daily_limit']=st.number_input('SNS投稿の1日上限 合計',min_value=1,max_value=5,value=int(cfg.get('sns_daily_limit',3)))
+            cfg['auto_improve']=st.checkbox('実測データに基づく既存アプリの自動改善',value=bool(cfg.get('auto_improve',True)))
+            with st.expander('任意: 事業別決済リンク設定'):
+                raw_links=st.text_area('事業名とStripe決済リンクURLのJSON',value=json.dumps(cfg.get('project_payment_links',{}),ensure_ascii=False),height=100)
+                raw_ids=st.text_area('事業名とStripe Payment Link IDのJSON',value=json.dumps(cfg.get('project_payment_link_ids',{}),ensure_ascii=False),height=100)
+                try:
+                    parsed_links=json.loads(raw_links); parsed_ids=json.loads(raw_ids)
+                    if isinstance(parsed_links,dict) and isinstance(parsed_ids,dict):
+                        cfg['project_payment_links']=parsed_links; cfg['project_payment_link_ids']=parsed_ids
+                except ValueError: st.warning('事業別決済リンクJSONが不正です。以前の設定を維持します。')
+            if st.button('運転設定を保存'):
+                execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(cfg,ensure_ascii=False),))
+                st.success('運転設定を保存しました')
+            st.caption('GitHub: VENTURE_GITHUB_TOKEN / Plausible: VENTURE_PLAUSIBLE_TOKEN / Stripe: VENTURE_STRIPE_SECRET_KEY / 投稿連携: VENTURE_MARKETING_WEBHOOK_TOKEN（任意）をWindows環境変数で設定。')
+            st.caption('新しい有料契約・広告出稿は自動で行いません。計測連携がなければ未計測として表示します。Ollamaはローカルです。')
+            if st.button('AI接続確認'):
+                try:
+                    with urllib.request.urlopen(cfg['url'].rstrip('/')+'/api/tags',timeout=8) as r:
+                        st.success('接続成功: '+', '.join(x['name'] for x in json.load(r).get('models',[])))
+                except Exception as e: st.error(str(e))
+    st.write('**自動開発の設定:** '+('ON' if s['enabled'] else 'OFF')+' ／ 最終動作: '+str(s['heartbeat'] or 'まだありません'))
     col1,col2=st.columns(2)
     with col1:
         if st.button('▶ 継続運転を開始',type='primary',width='stretch'):
@@ -5555,81 +5644,88 @@ def render_dashboard():
         if st.button('■ 安全に停止',width='stretch'):
             stop(); st.warning('停止を要求しました。現在のAI呼出しが終わってから停止します。'); st.rerun()
     if s['last_error']: st.error('直近のエラー: '+s['last_error'])
-    st.caption('最終ハートビート: '+str(s['heartbeat'] or 'なし'))
-    render_created_apps(cfg)
-    t1,t2,t3,t4,t5,t6,t7,t8=st.tabs(['事業一覧・継続判断','実行履歴と成果物','実測値の入力','公開と運用','利用者の反応と学習','SNS集客','分野探索・収益化検証','AI動画・投稿事業'])
-    with t1:
-        records=query('SELECT name,phase,score,attempts,last_result,published_url,updated FROM autonomous_ideas ORDER BY updated DESC')
-        if records: st.dataframe(records,hide_index=True,width='stretch')
-        else: st.info('開始すると候補を登録します。')
-        st.caption('売上ゼロだけでは中止しません。実利用の価値・差別化・収益経路を見て育成し、反応不足は保留とします。')
-        with st.expander('収益化の優先順位と判断基準'):
-            st.write('初期仮説は利用価値30%・差別化25%・収益への道筋20%・無料での実現性15%・届けやすさ10%。実利用から学んだ補正は最大5点。')
-            st.write('役立った・面白い・また使いたい・時短を先行指標とし、有望案を継続。中止は育成期間後に別々の期間の新しい実測で否定が重なった場合。')
-            ranks=portfolio_opportunity_preview()
-            if ranks: st.dataframe(ranks,hide_index=True,width='stretch')
-    with t2:
-        for j in query('SELECT * FROM agent_jobs ORDER BY id DESC LIMIT 10'):
-            with st.expander(f"#{j['id']} {j['started']} {j['state']}",expanded=False):
-                st.code(j['details'] or '',language='text')
-                for a in query('SELECT * FROM agent_assets WHERE job_id=? ORDER BY id',(j['id'],)):
-                    p=Path(a['path'])
-                    if p.is_file():
-                        st.write(f"{a['idea']} / {a['kind']} — {a['validation']}")
-                        st.download_button('保存: '+p.name,p.read_bytes(),file_name=p.name,key='asset'+str(a['id']))
-    with t3:
-        names=[x['name'] for x in query('SELECT name FROM autonomous_ideas ORDER BY updated DESC')]
-        if names:
-            selected=st.selectbox('事業',names)
-            last=latest_metrics(selected) or {}
-            with st.form('metrics'):
-                views=st.number_input('閲覧数（累計）',min_value=0,value=int(last.get('views',0)))
-                leads=st.number_input('問い合わせ数（累計）',min_value=0,value=int(last.get('leads',0)))
-                sales=st.number_input('販売件数（累計）',min_value=0,value=int(last.get('sales',0)))
-                revenue=st.number_input('売上（円・累計）',min_value=0,value=int(last.get('revenue',0)))
-                expenses=st.number_input('費用（円・累計）',min_value=0,value=int(last.get('expenses',0)))
-                costs_confirmed=st.checkbox('費用・手数料・返金を確認済み',value=False)
-                if st.form_submit_button('実測値を保存・再判定'):
-                    execute('''INSERT INTO autonomous_metrics(idea,measured,views,leads,sales,revenue,expenses,source)
-                               VALUES(?,?,?,?,?,?,?,?)''',(selected,now(),views,leads,sales,revenue,expenses,'手動入力（費用・返金確認済）' if costs_confirmed else '手動入力'))
-                    phase,reason=decide(selected,cfg)
-                    execute('UPDATE autonomous_ideas SET phase=?,updated=? WHERE name=?',(phase,now(),selected))
-                    st.success(f'{phase}: {reason}')
-        else: st.info('まず継続運転を開始してください。')
-        st.caption('外部連携設定があればアクセス・Stripe決済を自動取得。未接続項目や手数料は未計測です。実際の数値のみ入力してください。')
-    with t4:
-        render_product_review_ui(cfg)
-        st.write('**判断方針:** 困りごとの解決・便利さ・面白さ・時間短縮から企画。差別化と収益への道筋がある案は、売上前も反応を見て育てます。売上ゼロや閲覧数だけでは中止しません。')
-        st.write('**運転の流れ:** 先行市場調査→完成条件の設計→試作・修正・自動チェック→のぼるさんの確認とOK→公開内容の確認→SNS紹介→利用反応の確認→改善案の作成→再確認。接続が必要な機能は、実装・接続待ちとして表示します。')
-        st.write('**接続後に可能:** GitHubへのコード保存と商用公開先の反映確認、訪問者数取得、Stripe事業別決済集計、接続済みSNSへの投稿。決済・納品は商品と接続の準備後に開始します。')
-        st.write('**自動では行わない:** 実績の捏造、品質未確認の試作のSNS紹介、外部アカウントの無断作成、料金発生、連携していない本番サイトの変更。')
-        st.write('**注意:** 市場見出しは弱い需要シグナル。Plausibleは計測開始からの訪問者、Stripeは総売上で、手数料・税・原価は未集計。未接続・未計測を利益ゼロや成功として扱いません。')
-        st.subheader('公開検証・計測の状況')
-        quality=query('SELECT idea AS 事業,status AS 製品品質,reason AS 確認内容,checked AS 確認日時 FROM venture_product_quality ORDER BY checked DESC')
-        if quality:
-            st.dataframe(quality,hide_index=True,width='stretch')
-        st.caption('公開HTMLの一致と、利用者に紹介できる製品品質は別々に確認します。製品品質は別途レビューが必要です。品質未確認の試作はSNS紹介を保留し、需要不足や中止とは区別します。')
-        checks = query('''SELECT idea,github_saved,public_verified,checked,details,expected_url,
-                          acquisition,metrics_status FROM autonomous_checks ORDER BY checked DESC LIMIT 50''')
-        if checks:
-            st.dataframe(checks,hide_index=True,width='stretch')
-        else:
-            st.info('公開検証の履歴はまだありません。')
-        st.caption('公開確認はHTMLの一致まで。顧客による実用性、集客実績、売上の証明ではありません。')
-        st.subheader('集客・計測・改善タスク')
-        actions=query('SELECT idea,action,status,details,created FROM autonomous_actions ORDER BY created DESC LIMIT 80')
-        if actions: st.dataframe(actions,hide_index=True,width='stretch')
-        else: st.info('タスクは次のサイクルから記録されます。')
-        st.caption('既存DB: '+str(DB)+' / 保存先: '+str(OUT))
-    with t5:
-        render_value_learning_ui(cfg)
-    with t6:
-        render_sns_ui(cfg)
-    with t7:
-        render_research_ui(cfg)
-    with t8:
-        render_media_business_ui(cfg)
-    if st.button('画面を更新'): st.rerun()
+    render_simple_development_board(cfg)
+    if st.checkbox('詳細・履歴・運用を開く',value=False,key='show_advanced_dashboard'):
+        c1,c2,c3,c4=st.columns(4)
+        c1.metric('運転設定','ON' if s['enabled'] else 'OFF')
+        c2.metric('完了サイクル',s['cycle'])
+        c3.metric('連続エラー',s['errors'])
+        c4.metric('登録候補',len(query('SELECT name FROM autonomous_ideas')))
+        for message in sync_messages:st.info(message)
+        render_created_apps(cfg)
+        t1,t2,t3,t4,t5,t6,t7,t8=st.tabs(['事業一覧・継続判断','実行履歴と成果物','実測値の入力','公開と運用','利用者の反応と学習','SNS集客','分野探索・収益化検証','AI動画・投稿事業'])
+        with t1:
+            records=query('SELECT name,phase,score,attempts,last_result,published_url,updated FROM autonomous_ideas ORDER BY updated DESC')
+            if records: st.dataframe(records,hide_index=True,width='stretch')
+            else: st.info('開始すると候補を登録します。')
+            st.caption('売上ゼロだけでは中止しません。実利用の価値・差別化・収益経路を見て育成し、反応不足は保留とします。')
+            with st.expander('収益化の優先順位と判断基準'):
+                st.write('初期仮説は利用価値30%・差別化25%・収益への道筋20%・無料での実現性15%・届けやすさ10%。実利用から学んだ補正は最大5点。')
+                st.write('役立った・面白い・また使いたい・時短を先行指標とし、有望案を継続。中止は育成期間後に別々の期間の新しい実測で否定が重なった場合。')
+                ranks=portfolio_opportunity_preview()
+                if ranks: st.dataframe(ranks,hide_index=True,width='stretch')
+        with t2:
+            for j in query('SELECT * FROM agent_jobs ORDER BY id DESC LIMIT 10'):
+                with st.expander(f"#{j['id']} {j['started']} {j['state']}",expanded=False):
+                    st.code(j['details'] or '',language='text')
+                    for a in query('SELECT * FROM agent_assets WHERE job_id=? ORDER BY id',(j['id'],)):
+                        p=Path(a['path'])
+                        if p.is_file():
+                            st.write(f"{a['idea']} / {a['kind']} — {a['validation']}")
+                            st.download_button('保存: '+p.name,p.read_bytes(),file_name=p.name,key='asset'+str(a['id']))
+        with t3:
+            names=[x['name'] for x in query('SELECT name FROM autonomous_ideas ORDER BY updated DESC')]
+            if names:
+                selected=st.selectbox('事業',names)
+                last=latest_metrics(selected) or {}
+                with st.form('metrics'):
+                    views=st.number_input('閲覧数（累計）',min_value=0,value=int(last.get('views',0)))
+                    leads=st.number_input('問い合わせ数（累計）',min_value=0,value=int(last.get('leads',0)))
+                    sales=st.number_input('販売件数（累計）',min_value=0,value=int(last.get('sales',0)))
+                    revenue=st.number_input('売上（円・累計）',min_value=0,value=int(last.get('revenue',0)))
+                    expenses=st.number_input('費用（円・累計）',min_value=0,value=int(last.get('expenses',0)))
+                    costs_confirmed=st.checkbox('費用・手数料・返金を確認済み',value=False)
+                    if st.form_submit_button('実測値を保存・再判定'):
+                        execute('''INSERT INTO autonomous_metrics(idea,measured,views,leads,sales,revenue,expenses,source)
+                                   VALUES(?,?,?,?,?,?,?,?)''',(selected,now(),views,leads,sales,revenue,expenses,'手動入力（費用・返金確認済）' if costs_confirmed else '手動入力'))
+                        phase,reason=decide(selected,cfg)
+                        execute('UPDATE autonomous_ideas SET phase=?,updated=? WHERE name=?',(phase,now(),selected))
+                        st.success(f'{phase}: {reason}')
+            else: st.info('まず継続運転を開始してください。')
+            st.caption('外部連携設定があればアクセス・Stripe決済を自動取得。未接続項目や手数料は未計測です。実際の数値のみ入力してください。')
+        with t4:
+            render_product_review_ui(cfg)
+            st.write('**判断方針:** 困りごとの解決・便利さ・面白さ・時間短縮から企画。差別化と収益への道筋がある案は、売上前も反応を見て育てます。売上ゼロや閲覧数だけでは中止しません。')
+            st.write('**運転の流れ:** 先行市場調査→完成条件の設計→試作・修正・自動チェック→のぼるさんの確認とOK→公開内容の確認→SNS紹介→利用反応の確認→改善案の作成→再確認。接続が必要な機能は、実装・接続待ちとして表示します。')
+            st.write('**接続後に可能:** GitHubへのコード保存と商用公開先の反映確認、訪問者数取得、Stripe事業別決済集計、接続済みSNSへの投稿。決済・納品は商品と接続の準備後に開始します。')
+            st.write('**自動では行わない:** 実績の捏造、品質未確認の試作のSNS紹介、外部アカウントの無断作成、料金発生、連携していない本番サイトの変更。')
+            st.write('**注意:** 市場見出しは弱い需要シグナル。Plausibleは計測開始からの訪問者、Stripeは総売上で、手数料・税・原価は未集計。未接続・未計測を利益ゼロや成功として扱いません。')
+            st.subheader('公開検証・計測の状況')
+            quality=query('SELECT idea AS 事業,status AS 製品品質,reason AS 確認内容,checked AS 確認日時 FROM venture_product_quality ORDER BY checked DESC')
+            if quality:
+                st.dataframe(quality,hide_index=True,width='stretch')
+            st.caption('公開HTMLの一致と、利用者に紹介できる製品品質は別々に確認します。製品品質は別途レビューが必要です。品質未確認の試作はSNS紹介を保留し、需要不足や中止とは区別します。')
+            checks = query('''SELECT idea,github_saved,public_verified,checked,details,expected_url,
+                              acquisition,metrics_status FROM autonomous_checks ORDER BY checked DESC LIMIT 50''')
+            if checks:
+                st.dataframe(checks,hide_index=True,width='stretch')
+            else:
+                st.info('公開検証の履歴はまだありません。')
+            st.caption('公開確認はHTMLの一致まで。顧客による実用性、集客実績、売上の証明ではありません。')
+            st.subheader('集客・計測・改善タスク')
+            actions=query('SELECT idea,action,status,details,created FROM autonomous_actions ORDER BY created DESC LIMIT 80')
+            if actions: st.dataframe(actions,hide_index=True,width='stretch')
+            else: st.info('タスクは次のサイクルから記録されます。')
+            st.caption('既存DB: '+str(DB)+' / 保存先: '+str(OUT))
+        with t5:
+            render_value_learning_ui(cfg)
+        with t6:
+            render_sns_ui(cfg)
+        with t7:
+            render_research_ui(cfg)
+        with t8:
+            render_media_business_ui(cfg)
+        if st.button('画面を更新'): st.rerun()
 
 
 if __name__ == "__main__":

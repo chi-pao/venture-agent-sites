@@ -150,4 +150,25 @@ class BlueprintTests(FrameworkTests):
   material=app.owner_decision_material(name,dict(blueprint=item,competitive_brief=brief,content_sha='a'*64,scope_sha=app.product_scope_sha(name)))
   self.assertIn('未検証',material['validation']);self.assertIn('仮説',material['monetization_hypothesis']);self.assertNotIn('revenue',material)
 
+
+
+class QuickPreviewTests(FrameworkTests):
+ def asset(self,name,kind,text='<!doctype html><html><body>test page</body></html>'):
+  path=self.root/(name+str(len(app.query('SELECT id FROM agent_assets')))+'.html');path.write_text(text)
+  app.execute('INSERT INTO agent_assets(idea,kind,path,validation,created) VALUES(?,?,?,?,?)',(name,kind,str(path),'未検証',app.now()))
+  return path
+ def test_newest_page_includes_unverified_drafts_without_granting_approval(self):
+  self.add('試作A');old=self.asset('試作A','品質改善候補HTML');new=self.asset('試作A','改善候補HTML')
+  self.add('試作B');self.asset('試作B','試作品HTML')
+  pages=app.latest_saved_app_pages();self.assertEqual(len(pages),2)
+  self.assertEqual(next(p['path'] for p in pages if p['idea']=='試作A'),str(new))
+  self.assertFalse(app.candidate_production_acceptance('試作A'));self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
+  new.unlink();self.assertEqual(next(p['path'] for p in app.latest_saved_app_pages() if p['idea']=='試作A'),str(old))
+ def test_stopped_pages_hidden_and_explicit_resume_restores_preview(self):
+  name='休止試作';self.add(name);self.asset(name,'品質改善候補HTML')
+  app.set_owner_decision(name,'中止','利用者の判断で制作を停止します')
+  self.assertEqual(app.latest_saved_app_pages(),[])
+  app.set_owner_decision(name,'継続','対象者を絞って再び制作を進めます')
+  self.assertEqual(len(app.latest_saved_app_pages()),1)
+
 if __name__=='__main__':unittest.main()
