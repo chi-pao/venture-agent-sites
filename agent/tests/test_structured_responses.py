@@ -47,4 +47,25 @@ class StructuredResponseTests(unittest.TestCase):
   issue,next_action=app.development_brief(dict(stage='設計・修正待ち',details='JSONDecodeError: Extra data line 19 column 1'))
   self.assertIn('開発処理を進められていません',issue);self.assertIn('再生成',next_action)
 
+ def test_planning_failure_is_visible_in_job_history_and_keeps_retry_state(self):
+  name='履歴に出る設計失敗';app.execute('UPDATE autonomous_control SET enabled=1')
+  app.execute('INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,1,?,?)',(name,app.now(),app.now()))
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  with patch.object(app,'ensure_product_spec',side_effect=app.AutoQAPlanError('AI回答形式の再生成にも失敗')):
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  history=app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details']
+  self.assertIn(name+': 完成条件の設計・読み込みを開始',history)
+  self.assertIn('設計・修正を進められませんでした',history);self.assertIn('AI回答形式',history)
+  self.assertEqual(app.query('SELECT stage FROM venture_product_development WHERE idea=?',(name,))[0]['stage'],'設計・修正待ち')
+ def test_saved_development_with_no_html_attempt_is_resumed(self):
+  name='試作前に設計失敗した案';app.execute('UPDATE autonomous_control SET enabled=1')
+  app.execute('INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,0,?,?)',(name,app.now(),app.now()))
+  app.product_development_state(name,'設計・修正待ち','前回はAI回答形式の失敗')
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  with patch.object(app,'ensure_product_spec',side_effect=app.AutoQAPlanError('今回も形式エラー')) as design:
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  self.assertEqual(design.call_count,1)
+  self.assertIn(name,app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details'])
+  self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
+
 if __name__=='__main__':unittest.main()

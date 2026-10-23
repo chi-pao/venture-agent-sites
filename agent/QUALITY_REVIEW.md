@@ -134,3 +134,14 @@ The user's running dashboard showed ten displayed products in design/repair wait
 - Explain response-format failures in the dashboard as a development blocker with the next repair action, rather than displaying them as a market verdict. Bump display version only; quality gates and release approval remain unchanged.
 
 Validation: 57 portable baseline/structured-response tests passed; 74 continuation, automatic-QA (including Chromium workflows), incremental-repair and production-gate regressions passed. Streamlit AppTest rendered the .4 dashboard, pending/confirmed connection inventory, archive reasons, advanced settings and actual saved-page preview without creating approval. Model outputs in these tests are fixtures; recovery on the user's actual Windows/Ollama responses and subsequent product completion must be confirmed after update. This patch does not claim the affected apps are now complete.
+
+
+## 2026.10.24.5 — resume recorded pre-HTML work and expose planning failures
+
+The user supplied completed cycles #1262/#1263 containing only the start and no-new-candidates messages. These show scheduling but do not prove successful development or identify the failing app. An exception in ensure_product_spec occurred before the development-start event, then was written only to product_development_state and silently returned. This could produce exactly that sparse job history; it is not proof that the same error occurred in those particular cycles.
+
+- Log the selected app before spec generation/loading and log planning/repair exception class and message in the same job history, while preserving the retry state and quality gates.
+- Include apps with a persisted development record even if their HTML-attempt counter is zero. Previously that queue excluded them despite the dashboard showing their development state. Bare untouched candidates are still excluded; owner/AI stop/hold decisions and explicit continuation retain existing behavior.
+- Put the executing release version into the cycle-start record, tied to the dashboard version constant. Clarify that no-new-candidates means no new opportunity, not that existing product development succeeded or SNS posting occurred.
+
+Validation: 59 portable tests passed, including real job-history records for a planning failure and resumption of a saved zero-HTML-attempt development row without granting product approval. 32 continuation/screening/owner-decision regressions passed. Populated Streamlit AppTest for version .5, actual saved-page preview, API inventory, archive and advanced controls passed. No access to the user's Windows database or Ollama runtime; actual successful design/build remains to be confirmed from a subsequent version-tagged cycle.

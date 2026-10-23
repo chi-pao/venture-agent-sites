@@ -32,6 +32,8 @@ from pathlib import Path
 
 import streamlit as st
 
+APP_VERSION='2026.10.24.5'
+
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
 DB = BASE / 'venture_agent_integrated.db'  # 過去の実行履歴を継承
@@ -1313,7 +1315,7 @@ def quality_development_cycle(job,cfg):
         LEFT JOIN venture_product_development d ON d.idea=a.name
         LEFT JOIN venture_value_state v ON v.idea=a.name
         LEFT JOIN venture_owner_decisions o ON o.idea=a.name
-        WHERE a.attempts>0 AND COALESCE(o.decision,'') NOT IN ('中止','保留')
+        WHERE (a.attempts>0 OR d.idea IS NOT NULL) AND COALESCE(o.decision,'') NOT IN ('中止','保留')
             AND (o.decision='継続' OR COALESCE(v.phase,'') NOT IN ('中止','保留'))
         ORDER BY CASE WHEN d.stage='修正依頼あり' THEN 0 WHEN d.idea IS NULL THEN 1 ELSE 2 END,COALESCE(d.updated,'')''')
     waiting={}
@@ -1353,6 +1355,7 @@ def quality_development_cycle(job,cfg):
             except (ValueError,TypeError):pass
         attempts=int(row['attempts'] or 0) if same else 0
         try:
+            event(job,name+': 完成条件の設計・読み込みを開始')
             spec=ensure_product_spec(name,cfg);qa_stage='修正中'
             candidates=query("SELECT path,validation FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
             if candidates and Path(candidates[0]['path']).is_file():
@@ -1374,7 +1377,9 @@ def quality_development_cycle(job,cfg):
             product_development_state(name,stage,detail,attempts+1,assets[0]['path'] if assets else '')
             event(job,name+(': 画面・独立機能を改善。接続機能は未完成' if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
         except Exception as exc:
-            product_development_state(name,'設計・修正待ち',type(exc).__name__+': '+str(exc)[:300],attempts)
+            detail=type(exc).__name__+': '+str(exc)[:300]
+            product_development_state(name,'設計・修正待ち',detail,attempts)
+            event(job,name+': 設計・修正を進められませんでした / '+detail)
         return
     event(job,'既存製品の開発状況: '+(' / '.join(k+str(v)+'件' for k,v in waiting.items()) or '改善対象なし')+'。確認待ちの版は保持し、修正依頼で再開できます')
 
@@ -3624,7 +3629,7 @@ def normalize_idea(name):
 def cycle(cfg):
     job=execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(now(),'開始待ち',''))
     try:
-        event(job,'継続運転サイクル開始','実行中')
+        event(job,'継続運転サイクル開始 / 実行版: '+APP_VERSION,'実行中')
         for message in sync_review_candidates(cfg):event(job,message)
         reconcile_publications(job,cfg=cfg)
         refresh_product_quality(job,cfg)
@@ -3661,7 +3666,7 @@ def cycle(cfg):
                 research_cycle(cfg)
             proposals=research_ready_proposals(limit=4,min_score=int(cfg.get('min_score',35)))
         if not proposals:
-            event(job,'検証候補はまだありません。分野探索・比較根拠を確認し、既存事業の集客と育成を継続','完了')
+            event(job,'新規の検証候補はまだありません。既存アプリの制作・待機・失敗理由は、この履歴の上の記録を確認してください','完了')
             return
         findings=[]
         proposals.sort(key=lambda x:x[1],reverse=True)
@@ -5607,7 +5612,7 @@ def render_dashboard():
     init()
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('アプリ開発の状況')
-    st.caption('表示版: 2026.10.24.4 ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    st.caption('表示版: '+APP_VERSION+' ／ AI一次選別→作り込み→実物確認→OK後に運営')
     s=state(); cfg=config()
     sync_messages=sync_review_candidates(cfg)
     with st.sidebar:
