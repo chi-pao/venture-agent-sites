@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_63501ff105e3c7b0c554b1e2:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物件比較</title>
+    <style>
+        .card {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .card input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        .card button {
+            margin-top: 10px;
+        }
+        #comparison {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="input">
+        <h1>物件を追加</h1>
+        <form id="property-form">
+            <label>
+                名前:
+                <input id="field-name" name="name" type="text" required maxlength="80">
+            </label>
+            <label>
+                最寄り駅:
+                <input id="field-station" name="station" type="text" required maxlength="80">
+            </label>
+            <label>
+                家賃:
+                <input id="field-rent" name="rent" type="number" min="0" max="100000000" step="any" required>
+            </label>
+            <label>
+                管理費:
+                <input id="field-management" name="management" type="number" min="0" max="100000000" step="any" required>
+            </label>
+            <label>
+                面積（㎡）:
+                <input id="field-area" name="area" type="text" maxlength="80">
+            </label>
+            <label>
+                駅徒歩（分）:
+                <input id="field-walk" name="walk" type="text" maxlength="80">
+            </label>
+            <label>
+                設備・修繕の確認:
+                <input id="field-repair" name="repair" type="text" maxlength="80">
+            </label>
+            <label>
+                問合わせ・内見の状況:
+                <input id="field-contact" name="contact" type="text" maxlength="80">
+            </label>
+            <button type="submit">追加</button>
+        </form>
+        <button id="add" onclick="addProperty()">物件を追加</button>
+        <button id="start-own" onclick="startOwn()">比較を空にする</button>
+        <button id="remove" onclick="removeProperty()">選択した物件を削除</button>
+        <button id="save" onclick="save()">保存</button>
+        <button id="sample" onclick="loadSamples()">サンプルデータを読み込む</button>
+        <button id="sample-top" onclick="loadSamples()">トップに戻る</button>
+    </div>
+    <div id="comparison">
+        <h1>比較</h1>
+        <div id="details">
+            <table>
+                <thead>
+                    <tr>
+                        <th>比較する項目</th>
+                        <th>家賃</th>
+                        <th>管理費</th>
+                        <th>面積</th>
+                        <th>駅徒歩</th>
+                        <th>初期費用</th>
+                        <th>2年間の支払額</th>
+                        <th>面積単価</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 以下に比較データを追加 -->
+                </tbody>
+            </table>
+        </div>
+        <div id="detail-panel" hidden>
+            <h1>詳細</h1>
+            <article id="detail" class="card">
+                <div class="card-head">
+                    <h3>新しい物件</h3>
+                    <span class="pill">駅未入力</span>
+                </div>
+                <div class="small" style="margin-top:13px">月額（家賃＋管理費）</div>
+                <div class="price" data-testid="monthly-1">未入力<span>円／月</span></div>
+                <dl style="margin-top:12px">
+                    <div>
+                        <dt>初期費用（入力済み分）</dt>
+                        <dd data-testid="upfront-1">—</dd>
+                    </div>
+                    <div>
+                        <dt>2年間の支払額めやす</dt>
+                        <dd>—</dd>
+                    </div>
+                    <div>
+                        <dt>面積／駅徒歩</dt>
+                        <dd>未確認 ／ 未確認</dd>
+                    </div>
+                    <div>
+                        <dt>月額の㎡単価</dt>
+                        <dd>未確認</dd>
+                    </div>
+                </dl>
+                <div class="missing">初期費用の内訳はすべて入力済み</div>
+                <button data-edit="1">この物件を編集</button>
+            </article>
+        </div>
+        <div id="editor">
+            <h1>編集</h1>
+            <form id="edit-form">
+                <label>
+                    名前:
+                    <input id="edit-name" name="name" type="text" required maxlength="80">
+                </label>
+                <label>
+                    最寄り駅:
+                    <input id="edit-station" name="station" type="text" maxlength="80">
+                </label>
+                <label>
+                    家賃:
+                    <input id="edit-rent" name="rent" type="number" min="0" max="100000000" step="any" required>
+                </label>
+                <label>
+                    管理費・共益費:
+                    <input id="edit-management" name="management" type="number" min="0" max="100000000" step="any" required>
+                </label>
+                <label>
+                    面積（㎡）:
+                    <input id="edit-area" name="area" type="text" maxlength="80">
+                </label>
+                <label>
+                    駅徒歩（分）:
+                    <input id="edit-walk" name="walk" type="text" maxlength="80">
+                </label>
+                <label>
+                    設備・修繕の確認:
+                    <input id="edit-repair" name="repair" type="text" maxlength="80">
+                </label>
+                <label>
+                    問合わせ・内見の状況:
+                    <input id="edit-contact" name="contact" type="text" maxlength="80">
+                </label>
+                <button type="submit">保存</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        const properties = JSON.parse(localStorage.getItem('properties')) || [];
+
+        function addProperty() {
+            const property = {
+                name: '',
+                station: '',
+                rent: 0,
+                management: 0,
+                area: '',
+                walk: '',
+                repair: '',
+                contact: ''
+            };
+            properties.push(property);
+            localStorage.setItem('properties', JSON.stringify(properties));
+            alert('物件が追加されました');
+        }
+
+        function startOwn() {
+            properties = [];
+            localStorage.setItem('properties', JSON.stringify(properties));
+            alert('比較が空になりました');
+        }
+
+        function removeProperty() {
+            const selected = document.querySelectorAll('.card input[type="checkbox"]');
+            selected.forEach(checkbox => {
+                if (checkbox.checked) {
+                    const index = properties.findIndex(item => JSON.stringify(item) === JSON.stringify(JSON.parse(checkbox.closest('.card').dataset.property)));
+                    if (index !== -1) {
+                        properties.splice(index, 1);
+                        localStorage.setItem('properties', JSON.stringify(properties));
+                        checkbox.closest('.card').remove();
+                    }
+                }
+            });
+        }
+
+        function save() {
+            localStorage.setItem('properties', JSON.stringify(properties));
+            alert('データが保存されました');
+        }
+
+        function loadSamples() {
+            const sampleProperties = [
+                { name: '物件A', station: '駅A', rent: 10000, management: 5000, area: '100', walk: '5', repair: '良好', contact: '未連絡' },
+                { name: '物件B', station: '駅B', rent: 12000, management: 6000, area: '120', walk: '10', repair: '良好', contact: '未連絡' }
+            ];
+            properties.push(...sampleProperties);
+            localStorage.setItem('properties', JSON.stringify(properties));
+            alert('サンプルデータが読み込まれました');
+        }
+
+        document.getElementById('property-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const property = {
+                name: document.getElementById('field-name').value,
+                station: document.getElementById('field-station').value,
+                rent: document.getElementById('field-rent').value,
+                management: document.getElementById('field-management').value,
+                area: document.getElementById('field-area').value,
+                walk: document.getElementById('field-walk').value,
+                repair: document.getElementById('field-repair').value,
+                contact: document.getElementById('field-contact').value
+            };
+            properties.push(property);
+            localStorage.setItem('properties', JSON.stringify(properties));
+            alert('物件が追加されました');
+        });
+    </script>
+</body>
+</html>
