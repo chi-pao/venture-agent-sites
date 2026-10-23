@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_8231896b81643a1c51d49a14:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Value Function</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 10px; }
+        .button-group { text-align: center; }
+        .button-group button { margin: 5px; padding: 10px 20px; }
+        .comparison { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Time Value Function</h1>
+        <div class="input-group">
+            <label for="estimatedTime">見積時間 (分):</label>
+            <input type="number" id="estimatedTime" min="1" required>
+        </div>
+        <div class="input-group">
+            <label for="availableTime">働ける時間 (分):</label>
+            <input type="number" id="availableTime" min="1" required>
+        </div>
+        <div class="input-group">
+            <label for="actualTime">実績時間 (分):</label>
+            <input type="number" id="actualTime" min="0" required>
+        </div>
+        <div class="button-group">
+            <button onclick="calculateDifference()">計算</button>
+            <button onclick="saveData()">保存</button>
+            <button onclick="loadData()">読み込み</button>
+            <button onclick="compareWithExcel()">Excelとの比較</button>
+            <button onclick="compareWithTrello()">Trelloとの比較</button>
+            <button onclick="compareWithNotion()">Notionとの比較</button>
+        </div>
+        <div id="result"></div>
+        <div id="savedData"></div>
+        <div id="comparisonResult"></div>
+    </div>
+
+    <script>
+        function calculateDifference() {
+            const estimatedTime = parseInt(document.getElementById('estimatedTime').value, 10);
+            const availableTime = parseInt(document.getElementById('availableTime').value, 10);
+            const actualTime = parseInt(document.getElementById('actualTime').value, 10);
+
+            const result = document.getElementById('result');
+            result.textContent = `結果: ${calculateDifferenceResult(estimatedTime, availableTime, actualTime)}`;
+        }
+
+        function calculateDifferenceResult(estimatedTime, availableTime, actualTime) {
+            const difference = (availableTime - actualTime) - (estimatedTime - actualTime);
+            return difference > 0 ? `超過時間: ${difference}分` : `不足時間: ${-difference}分`;
+        }
+
+        function saveData() {
+            const estimatedTime = document.getElementById('estimatedTime').value;
+            const availableTime = document.getElementById('availableTime').value;
+            const actualTime = document.getElementById('actualTime').value;
+
+            const data = {
+                estimatedTime: estimatedTime,
+                availableTime: availableTime,
+                actualTime: actualTime,
+                difference: calculateDifferenceResult(estimatedTime, availableTime, actualTime)
+            };
+
+            localStorage.setItem('timeValueData', JSON.stringify(data));
+            document.getElementById('savedData').textContent = 'データ保存しました。';
+        }
+
+        function loadData() {
+            const savedData = localStorage.getItem('timeValueData');
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                document.getElementById('estimatedTime').value = data.estimatedTime;
+                document.getElementById('availableTime').value = data.availableTime;
+                document.getElementById('actualTime').value = data.actualTime;
+                document.getElementById('result').textContent = `結果: ${data.difference}`;
+            } else {
+                document.getElementById('savedData').textContent = '保存データがありません。';
+            }
+        }
+
+        function compareWithExcel() {
+            const estimatedTime = parseInt(document.getElementById('estimatedTime').value, 10);
+            const availableTime = parseInt(document.getElementById('availableTime').value, 10);
+            const actualTime = parseInt(document.getElementById('actualTime').value, 10);
+
+            const result = document.getElementById('result');
+            result.textContent = `結果: ${calculateDifferenceResult(estimatedTime, availableTime, actualTime)}`;
+
+            const comparisonResult = document.getElementById('comparisonResult');
+            comparisonResult.textContent = `Excelとの比較: ${compareWithExcelResult(estimatedTime, availableTime, actualTime)}`;
+        }
+
+        function compareWithExcelResult(estimatedTime, availableTime, actualTime) {
+            const difference = (availableTime - actualTime) - (estimatedTime - actualTime);
+            return difference > 0 ? `超過時間: ${difference}分` : `不足時間: ${-difference}分`;
+        }
+
+        function compareWithTrello() {
+            const estimatedTime = parseInt(document.getElementById('estimatedTime').value, 10);
+            const availableTime = parseInt(document.getElementById('availableTime').value, 10);
+            const actualTime = parseInt(document.getElementById('actualTime').value, 10);
+
+            const result = document.getElementById('result');
+            result.textContent = `結果: ${calculateDifferenceResult(estimatedTime, availableTime, actualTime)}`;
+
+            const comparisonResult = document.getElementById('comparisonResult');
+            comparisonResult.textContent = `Trelloとの比較: ${compareWithTrelloResult(estimatedTime, availableTime, actualTime)}`;
+        }
+
+        function compareWithTrelloResult(estimatedTime, availableTime, actualTime) {
+            const difference = (availableTime - actualTime) - (estimatedTime - actualTime);
+            return difference > 0 ? `超過時間: ${difference}分` : `不足時間: ${-difference}分`;
+        }
+
+        function compareWithNotion() {
+            const estimatedTime = parseInt(document.getElementById('estimatedTime').value, 10);
+            const availableTime = parseInt(document.getElementById('availableTime').value, 10);
+            const actualTime = parseInt(document.getElementById('actualTime').value, 10);
+
+            const result = document.getElementById('result');
+            result.textContent = `結果: ${calculateDifferenceResult(estimatedTime, availableTime, actualTime)}`;
+
+            const comparisonResult = document.getElementById('comparisonResult');
+            comparisonResult.textContent = `Notionとの比較: ${compareWithNotionResult(estimatedTime, availableTime, actualTime)}`;
+        }
+
+        function compareWithNotionResult(estimatedTime, availableTime, actualTime) {
+            const difference = (availableTime - actualTime) - (estimatedTime - actualTime);
+            return difference > 0 ? `超過時間: ${difference}分` : `不足時間: ${-difference}分`;
+        }
+    </script>
+</body>
+</html>
