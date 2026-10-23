@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_b47606bd49af7c94edb76905:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン料理教室</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン料理教室</h1>
+        <form id="recipeForm">
+            <div class="input-group">
+                <label for="ingredient">材料</label>
+                <input type="text" id="ingredient" placeholder="例: チキン、玉ねぎ" required>
+            </div>
+            <div class="input-group">
+                <label for="quantity">量</label>
+                <input type="number" id="quantity" placeholder="例: 200g" required>
+            </div>
+            <div class="input-group">
+                <label for="cookingTime">調理時間</label>
+                <input type="number" id="cookingTime" placeholder="例: 30" required>
+            </div>
+            <div class="input-group">
+                <label for="difficulty">難易度</label>
+                <input type="number" id="difficulty" placeholder="例: 3" required>
+            </div>
+            <button type="submit">計算</button>
+        </form>
+        <div class="result" id="result">
+            <h2>結果</h2>
+            <p id="output"></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('recipeForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const ingredient = document.getElementById('ingredient').value;
+            const quantity = document.getElementById('quantity').value;
+            const cookingTime = document.getElementById('cookingTime').value;
+            const difficulty = document.getElementById('difficulty').value;
+
+            const output = document.getElementById('output');
+            output.textContent = `材料: ${ingredient}, 量: ${quantity}, 調理時間: ${cookingTime}分, 難易度: ${difficulty}`;
+
+            localStorage.setItem('recipe', JSON.stringify({
+                ingredient,
+                quantity,
+                cookingTime,
+                difficulty
+            }));
+        });
+
+        window.onload = function() {
+            const savedRecipe = localStorage.getItem('recipe');
+            if (savedRecipe) {
+                const recipe = JSON.parse(savedRecipe);
+                document.getElementById('ingredient').value = recipe.ingredient;
+                document.getElementById('quantity').value = recipe.quantity;
+                document.getElementById('cookingTime').value = recipe.cookingTime;
+                document.getElementById('difficulty').value = recipe.difficulty;
+                document.getElementById('output').textContent = `材料: ${recipe.ingredient}, 量: ${recipe.quantity}, 調理時間: ${recipe.cookingTime}分, 難易度: ${recipe.difficulty}`;
+            }
+        };
+
+        document.getElementById('downloadCsv').addEventListener('click', function() {
+            const csvContent = 'data:text/csv;charset=utf-8,ingredient,quantity,cookingTime,difficulty\n' +
+                `${document.getElementById('ingredient').value},${document.getElementById('quantity').value},${document.getElementById('cookingTime').value},${document.getElementById('difficulty').value}`;
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'recipe.csv');
+            document.body.appendChild(link);
+            link.click();
+        });
+    </script>
+</body>
+</html>
