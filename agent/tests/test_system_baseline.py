@@ -106,4 +106,48 @@ class DesignEvidenceTests(FrameworkTests):
   urls=app.competitive_reference_candidates('在宅ワーク管理アプリ')
   self.assertIn('clockify.me',urls[0]);self.assertIn('toggl.com',urls[1])
 
+
+
+class BlueprintTests(FrameworkTests):
+ def fixture(self,name):
+  spec=app.get_product_spec(name);urls=['https://nicody.jp/','https://wanderlog.com/']
+  item=dict(user_scene='具体的な利用場面で予定と結果を一画面で整理したい人。',first_action='使いたい日付と対象者の条件を最初に入力する。',use_reason='未確認を区別しながら予定を比較して保存できる仮説。',visual_direction='対象者に合う配色と情報階層で入力と結果を区別する。',screen_sections=[dict(purpose='条件を分かりやすく入力する画面',action='日付と具体的な条件を入力する',result='入力した条件と妥当性が表示される') for _ in range(3)],core_flows=[dict(input='具体的な異なる予定条件を入力する',operation='条件を変更して結果を確認し保存する',expected_result='条件に応じた比較結果と保存記録を確認する',acceptance=[i]) for i in range(len(spec['acceptance']))],adaptations=[dict(source_url=u,implementation='入力と結果を同じ画面で対応づける構成を実装する。',improvement='対象者の未確認項目と次の操作を分かりやすくする。') for u in urls])
+  brief=dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),checked=app.now(),sources=[dict(url=u,content_sha='a'*64) for u in urls],design_patterns=[dict(source_url=u,evidence_type='official_text',pattern='入力と結果を一画面でそろえるための設計です。',adapt='利用者に合う項目をまとめた画面を実装します。',improvement='不要な入力を減らして結果を見やすく設計します。',acceptance='異なる条件を入力して結果が変化することを確認。') for u in urls])
+  return item,brief
+ def test_blueprint_covers_all_features_and_real_comparison_sources(self):
+  name='用途テスト';self.add(name);item,brief=self.fixture(name)
+  app.validate_product_blueprint(item,app.get_product_spec(name),brief)
+  item['core_flows'][-1]['acceptance']=[0]
+  with self.assertRaises(app.AutoQAPlanError):app.validate_product_blueprint(item,app.get_product_spec(name),brief)
+  item,brief=self.fixture(name);item['adaptations'][0]['source_url']='https://invented.example/'
+  with self.assertRaises(app.AutoQAPlanError):app.validate_product_blueprint(item,app.get_product_spec(name),brief)
+ def test_blueprint_is_cached_and_invalidated_by_new_user_scope(self):
+  name='用途テスト';self.add(name);item,brief=self.fixture(name)
+  with patch.object(app,'ensure_competitive_brief',return_value=brief),patch.object(app,'ai',return_value=json.dumps(item)) as model:
+   app.ensure_product_blueprint(name,dict(app.DEFAULT));app.ensure_product_blueprint(name,dict(app.DEFAULT))
+   self.assertEqual(model.call_count,1)
+  self.assertTrue(app.get_product_blueprint(name));self.assertIn('design_blueprint',json.loads(app.quality_requirements_text(name)))
+  app.request_product_changes(name,'もっと利用者に合う新しい集計機能を追加してください')
+  self.assertIsNone(app.get_product_blueprint(name))
+ def test_connected_draft_with_bad_visuals_is_repaired_and_never_final_ready(self):
+  app.execute('UPDATE autonomous_control SET enabled=1')
+  name='用途テスト';self.add(name);spec=app.get_product_spec(name);app.store_product_spec(name,dict(spec,delivery_mode='connected',dependencies=['検索API']))
+  source='<html><body>'+('existing-function;'*100)+'</body></html>'
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'incremental_product_repair',side_effect=lambda *a,**k:(a[2].replace('existing-function;','improved-function;',1), '部分修正')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査合格')),patch.object(app,'review_connected_layout',side_effect=[(False,'画面検査: 要改善 / スマホで主操作が見えない'),(True,'画面検査: 合格（API実動作・主機能の検証は別）')]) as visual,patch.object(app,'event'):
+   page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=2),'画面の改善',existing_page=source,allow_partial=True)
+  self.assertEqual(repair.call_count,2);self.assertEqual(visual.call_count,2);self.assertFalse(ready);self.assertIn('画面検査: 合格',detail)
+  self.assertIsNone(app.candidate_production_acceptance(name));self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
+ def test_connected_screen_fix_resumes_after_three_minutes(self):
+  app.execute('UPDATE autonomous_control SET enabled=1')
+  name='用途テスト';self.add(name);spec=app.get_product_spec(name);app.store_product_spec(name,dict(spec,delivery_mode='connected',dependencies=['検索API']))
+  app.product_development_state(name,'画面改善中・接続未完了','画面に使い方が見えない',4)
+  app.execute('UPDATE venture_product_development SET updated=?',((app.policy_clock()-app.timedelta(seconds=181)).isoformat(),))
+  with patch.object(app,'build',return_value=('draft','画面の不足を修正中',False)) as build,patch.object(app,'product_source',return_value=''),patch.object(app,'event'):
+   app.quality_development_cycle(1,dict(app.DEFAULT))
+  self.assertEqual(build.call_count,1)
+ def test_decision_material_uses_hypotheses_without_inventing_revenue(self):
+  name='用途テスト';self.add(name);item,brief=self.fixture(name)
+  material=app.owner_decision_material(name,dict(blueprint=item,competitive_brief=brief,content_sha='a'*64,scope_sha=app.product_scope_sha(name)))
+  self.assertIn('未検証',material['validation']);self.assertIn('仮説',material['monetization_hypothesis']);self.assertNotIn('revenue',material)
+
 if __name__=='__main__':unittest.main()
