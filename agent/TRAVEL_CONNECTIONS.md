@@ -78,3 +78,12 @@ Differentiation hypothesis: explicitly plan rest, slower walking allowance and d
 Comparison acceptance task: create the same 1-day 4-place trip for 3 family members, set a fixed-time booking, add breaks, compare late/finish warnings, reorder places and send a read-only invite. Measure successful completion, time, confusion points and willingness to reuse with actual target users. Record missing features and failures before declaring an advantage.
 
 Validation: desktop 1280px and mobile 390px browser workflow, reload, CSV, JSON restore/cancel/invalid restore, two-browser shared editing/version conflict, read-only invitation passed with provider fixtures. Both layouts visually reviewed with Japanese fonts. Actual production Geoapify search currently returns a connection error; it is not counted as a passed search test or launch-ready.
+
+
+## 2026-10-24: production Geoapify connection fixed
+
+Root cause: Cloudflare Workers rejects fetch redirect mode `error` before a request is sent. Changed to `manual`, explicitly rejecting 3xx responses without following Location or returning the key/URL. Reference: https://developers.cloudflare.com/workers/runtime-apis/request/
+
+Code commit: a5cbea0478871d3ab528e6533c0aecdfc66d7ae2. Search policy: 2026-10-24-geoapify-workers-2. Cloudflare deployment 1f8e13c2 succeeded. Production health, POST search for 東京駅 (5 actual candidates), nearby food (10 actual candidates), and walking route from 35.6823144,139.7660671 to 35.6824597,139.7645864 (331.871 seconds / 296 meters, rounded to 6 minutes) all returned HTTP 200 through the main alias. These are provider/model results, not field verification of access, hours or exact walking time.
+
+Regression test simulates Workers rejecting the unsupported redirect mode and confirms manual 302 rejection, no follow-up request, and key/Location redaction. Existing provider and SQLite sharing tests passed. Browser tests were not rerun for this backend-only fix because the temporary Playwright package was absent; prior UI workflows remain separate evidence. This resolves the previous transport error; transit schedules, along-route recommendation and full travel product completion remain unfinished.
