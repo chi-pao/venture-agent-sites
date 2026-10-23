@@ -62,3 +62,19 @@ https://apidocs.geoapify.com/docs/geocoding/forward-geocoding/
 https://apidocs.geoapify.com/docs/places/
 https://apidocs.geoapify.com/docs/routing/
 https://developers.cloudflare.com/pages/functions/bindings/#d1-databases
+
+
+## 2026-10-24: travel journal visual review and competitor references
+
+Official reference pages checked:
+- nicody https://nicody.jp/ : place search, reorder, invite flow; map and itinerary switching.
+- Wanderlog https://wanderlog.com/ : itinerary and map in one view, reduce tool switching.
+- tabiori https://tabiori.com/ : family/friend shared itinerary, collaborative planning and printable records.
+
+Applied: clear start/itinerary anchors, vivid teal/coral/yellow journal styling, decorative original SVG illustration clearly labelled as an illustration, chronological event cards, trip companion/pace/buffer summary, visible search feedback, mobile single-column route action, keyboard focus outlines and reduced-motion support. Existing storage/CSV/restore/shared-plan permissions remain in use. No competitor artwork or branding copied.
+
+Differentiation hypothesis: explicitly plan rest, slower walking allowance and desired finish time for groups with different paces. This is not a verified unique feature or measured superiority. No new claim of maps, public transit, opening hours, booking, real-time chat, or automatic route optimization.
+
+Comparison acceptance task: create the same 1-day 4-place trip for 3 family members, set a fixed-time booking, add breaks, compare late/finish warnings, reorder places and send a read-only invite. Measure successful completion, time, confusion points and willingness to reuse with actual target users. Record missing features and failures before declaring an advantage.
+
+Validation: desktop 1280px and mobile 390px browser workflow, reload, CSV, JSON restore/cancel/invalid restore, two-browser shared editing/version conflict, read-only invitation passed with provider fixtures. Both layouts visually reviewed with Japanese fonts. Actual production Geoapify search currently returns a connection error; it is not counted as a passed search test or launch-ready.
