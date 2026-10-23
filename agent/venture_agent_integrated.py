@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.5'
+APP_VERSION='2026.10.24.6'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -333,18 +333,38 @@ def product_scope_sha(name):
     return rows[0]['scope_sha'] if rows else ''
 
 
-def store_product_spec(name,spec,source='AI設計・未確認'):
-    if not isinstance(spec,dict):raise ValueError('製品要件がありません')
+PRODUCT_SPEC_SCHEMA={
+    'type':'object',
+    'properties':{
+        **{k:{'type':'string','minLength':1} for k in ('audience','requested_outcome','differentiation')},
+        **{k:{'type':'array','minItems':3,'items':{'type':'string','minLength':1}} for k in ('workflow','must_have','acceptance')},
+        'delivery_mode':{'type':'string','enum':['browser_local','connected']},
+        'dependencies':{'type':'array','items':{'type':'string','minLength':1}}},
+    'required':['audience','requested_outcome','differentiation','workflow','must_have','acceptance','delivery_mode','dependencies']}
+
+
+def validate_product_spec(spec):
+    """Validate model content without storing incomplete requirements or inventing items."""
+    if not isinstance(spec,dict):raise ValueError('製品要件はJSONオブジェクトで指定してください')
+    errors=[]
+    for key,label in (('audience','対象者'),('requested_outcome','完成条件'),('differentiation','差別化')):
+        if not isinstance(spec.get(key),str) or not spec[key].strip():errors.append(key+'（'+label+'）に具体的な文字列が必要')
+    for key,label in (('workflow','利用手順'),('must_have','必須機能'),('acceptance','操作確認')):
+        value=spec.get(key)
+        if not isinstance(value,list):errors.append(key+'（'+label+'）は文字列配列が必要。現在: '+type(value).__name__)
+        elif len(value)<3:errors.append(key+'（'+label+'）が'+str(len(value))+'件。具体的な文字列を3件以上にする')
+        elif not all(isinstance(item,str) and item.strip() for item in value):errors.append(key+'（'+label+'）の各項目を空でない文字列にする。オブジェクトや空欄は不可')
+    if spec.get('delivery_mode') not in ('browser_local','connected'):errors.append('delivery_modeをbrowser_localまたはconnectedにする')
+    dependencies=spec.get('dependencies',[])
+    if not isinstance(dependencies,list) or not all(isinstance(item,str) and item.strip() for item in dependencies):errors.append('dependenciesは接続名の文字列配列にする。不要なら空配列')
+    if errors:raise ValueError('設計条件の不足: '+' / '.join(errors))
     spec=dict(spec,development_baseline=PRODUCT_DEVELOPMENT_BASELINE,baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS)
-    if not all(isinstance(spec.get(k),str) and spec[k].strip() for k in ('audience','requested_outcome','differentiation')):
-        raise ValueError('対象者・完成条件・差別化を具体的に記入してください')
-    for key in ('workflow','must_have','acceptance'):
-        if not isinstance(spec.get(key),list) or len(spec[key])<3 or not all(isinstance(s,str) and s.strip() for s in spec[key]):
-            raise ValueError('利用手順・必須機能・操作確認をそれぞれ3件以上指定してください')
-    if spec.get('delivery_mode') not in ('browser_local','connected'):raise ValueError('実装方式を確認してください')
-    if not isinstance(spec.get('dependencies',[]),list):raise ValueError('接続要件を確認してください')
-    # A dependency cannot be erased by relabelling a connected service as single-file HTML.
-    if spec.get('dependencies'):spec=dict(spec,delivery_mode='connected')
+    if dependencies:spec=dict(spec,delivery_mode='connected')
+    return spec
+
+
+def store_product_spec(name,spec,source='AI設計・未確認'):
+    spec=validate_product_spec(spec)
     encoded=json.dumps(spec,ensure_ascii=False,sort_keys=True)
     digest=hashlib.sha256(encoded.encode()).hexdigest()
     execute('''INSERT INTO venture_product_specs(idea,spec,scope_sha,source,created,updated)
@@ -368,7 +388,8 @@ def ensure_product_spec(name,cfg,plan=''):
         'キー: audience,requested_outcome,differentiation（文字列）、workflow,must_have,acceptance（具体的な文字列の配列、各3件以上）、'
         'delivery_mode（browser_local または connected）、dependencies（必要なAPI・サーバー等の配列。不要なら空）。'
         '\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\n計画:'+plan[:2500])
-    return store_product_spec(name,ai_json(prompt,cfg,2200))
+    designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,validator=validate_product_spec)
+    return store_product_spec(name,designed)
 
 
 COMPETITIVE_POLICY='2026-10-24-sector-design-2'
@@ -678,15 +699,21 @@ def qa_json(text):
     return value
 
 
-def ai_json(prompt,cfg,tokens=2200):
-    """Constrain structured responses and retry a formatting failure once."""
-    structured_cfg=dict(cfg,_json_response=True)
-    request=prompt
-    for attempt in range(2):
-        try:return qa_json(ai(request,structured_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
-        except AutoQAPlanError as exc:
-            if attempt:raise AutoQAPlanError('AI回答形式の再生成にも失敗。品質合格にはせず次回に再試行します: '+str(exc)) from exc
-            request=prompt+'\n前回は回答形式が不正でした。説明・思考過程・Markdown・2つ目の候補は出さず、要求された完成したJSONオブジェクト1件だけを返してください。配列や文字列は必ず閉じてください。'
+def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
+    """Feed actual validation failures back; bound repair and never invent missing content."""
+    structured_cfg=dict(cfg,_json_response=schema if schema is not None else True)
+    base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
+    request=base_prompt;limit=3 if validator else 2
+    for attempt in range(limit):
+        value=None
+        try:
+            value=qa_json(ai(request,structured_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
+            return validator(value) if validator else value
+        except ValueError as exc:
+            if attempt+1==limit:raise AutoQAPlanError('AI設計・回答の修正を'+str(limit)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
+            request=(base_prompt+'\n前回の検査で次の不足が見つかりました。要件を減らさず具体的に修正してください。\n検査結果: '+str(exc)[:2000]
+                +'\n前回のJSON: '+(json.dumps(value,ensure_ascii=False)[:10000] if value is not None else '回答形式が不正で読み取り不可')
+                +'\n説明・思考過程・Markdown・2つ目の候補は出さず、必要なキーを全て含む完成したJSONオブジェクト1件だけを返してください。')
 
 
 
@@ -2263,7 +2290,7 @@ def ai(prompt,cfg,tokens=2200):
 def local_ai_request(prompt,cfg,tokens=2200):
     body={'model':cfg['model'],'prompt':prompt,'stream':False,
           'options':{'temperature':0.2,'num_predict':tokens,'num_ctx':max(8192,min(32768,int(cfg.get('ai_context',16384))))}}
-    if cfg.get('_json_response'):body['format']='json'
+    if cfg.get('_json_response'):body['format']=cfg['_json_response'] if isinstance(cfg['_json_response'],dict) else 'json'
     payload=json.dumps(body).encode('utf-8')
     req=urllib.request.Request(cfg['url'].rstrip('/')+'/api/generate',data=payload,
                                headers={'Content-Type':'application/json'})

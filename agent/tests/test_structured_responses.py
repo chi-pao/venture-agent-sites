@@ -68,4 +68,36 @@ class StructuredResponseTests(unittest.TestCase):
   self.assertIn(name,app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details'])
   self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
 
+ def complete_spec(self):
+  return dict(audience='個人講師',requested_outcome='出欠を登録して集計保存する',differentiation='未回答と欠席を区別して確認する',workflow=['名簿を登録する','出欠を入力する','集計を保存する'],must_have=['名簿登録','出欠集計','保存と復元'],acceptance=['名簿の再表示を確認','欠席と未回答の集計を照合','保存後の再読込を照合'],delivery_mode='browser_local',dependencies=[])
+ def test_missing_list_entries_are_repaired_using_actual_validation_feedback(self):
+  name='項目不足から修正する設計';valid=self.complete_spec();bad=dict(valid,workflow=['入力'],acceptance={'check':'保存'})
+  with patch.object(app,'ai',side_effect=[json.dumps(bad,ensure_ascii=False),json.dumps(valid,ensure_ascii=False)]) as model:
+   spec=app.ensure_product_spec(name,dict(app.DEFAULT))
+  self.assertEqual(spec['workflow'],valid['workflow']);self.assertEqual(model.call_count,2)
+  retry=model.call_args.args[0];self.assertIn('workflow（利用手順）が1件',retry);self.assertIn('acceptance（操作確認）は文字列配列',retry)
+  self.assertIn('前回のJSON',retry);self.assertIn('出欠',retry)
+  schema=model.call_args.args[1]['_json_response'];self.assertEqual(schema['properties']['workflow']['minItems'],3)
+  self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
+ def test_repeated_inadequate_design_is_bounded_and_never_saved_or_padded(self):
+  valid=self.complete_spec();bad=dict(valid,must_have=['登録','集計'])
+  with patch.object(app,'ai',return_value=json.dumps(bad,ensure_ascii=False)) as model:
+   with self.assertRaises(app.AutoQAPlanError):app.ensure_product_spec('不足が直らない設計',dict(app.DEFAULT))
+  self.assertEqual(model.call_count,3);self.assertIsNone(app.get_product_spec('不足が直らない設計'))
+ def test_successful_design_repair_reaches_build_in_same_cycle(self):
+  name='修正して制作に進む案';app.execute('UPDATE autonomous_control SET enabled=1')
+  app.execute('INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,1,?,?)',(name,app.now(),app.now()))
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  valid=self.complete_spec();bad=dict(valid,must_have=['登録'])
+  with patch.object(app,'ai',side_effect=[json.dumps(bad),json.dumps(valid)]),patch.object(app,'build',return_value=('draft','制作検査は未合格',False)) as build:
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  self.assertEqual(build.call_count,1);self.assertIsNotNone(app.get_product_spec(name));self.assertFalse(app.candidate_production_acceptance(name))
+  history=app.query('SELECT details FROM agent_jobs WHERE id=?',(job,))[0]['details'];self.assertIn('開発開始基準',history)
+ def test_transport_sends_required_keys_and_minimum_list_lengths_as_schema(self):
+  cfg=dict(app.DEFAULT,_json_response=app.PRODUCT_SPEC_SCHEMA)
+  with patch.object(app.urllib.request,'urlopen',return_value=io.BytesIO(b'{"response":"{}"}')) as request:
+   app.local_ai_request('設計',cfg)
+  schema=json.loads(request.call_args.args[0].data)['format']
+  self.assertIn('must_have',schema['required']);self.assertEqual(schema['properties']['acceptance']['minItems'],3)
+
 if __name__=='__main__':unittest.main()
