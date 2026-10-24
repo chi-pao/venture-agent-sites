@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_108909853fd2fc8ba8c1c9a6:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン音楽理論学習アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1, h2 { color: #333; }
+        input, button { margin: 10px 0; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン音楽理論学習アプリ</h1>
+        <h2>音楽理論学習</h2>
+        <form id="learningForm">
+            <label for="note">音符:</label>
+            <input type="text" id="note" required>
+            <label for="interval">音程:</label>
+            <input type="number" id="interval" required>
+            <button type="submit">計算</button>
+        </form>
+        <div id="result" class="result"></div>
+        <button id="save">保存</button>
+        <button id="load">復元</button>
+        <button id="export">CSV出力</button>
+    </div>
+
+    <script>
+        document.getElementById('learningForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const note = document.getElementById('note').value;
+            const interval = parseInt(document.getElementById('interval').value, 10);
+            if (isNaN(interval)) {
+                document.getElementById('result').innerHTML = '入力が不正です。';
+                return;
+            }
+            const result = calculateMusicTheory(note, interval);
+            document.getElementById('result').innerHTML = `結果: ${result}`;
+        });
+
+        function calculateMusicTheory(note, interval) {
+            // 簡単な音楽理論計算の例
+            return `${note} + ${interval} = ${note + interval}`;
+        }
+
+        document.getElementById('save').addEventListener('click', function() {
+            const result = document.getElementById('result').innerHTML;
+            localStorage.setItem('musicTheoryResult', result);
+            alert('結果が保存されました。');
+        });
+
+        document.getElementById('load').addEventListener('click', function() {
+            const result = localStorage.getItem('musicTheoryResult');
+            if (result) {
+                document.getElementById('result').innerHTML = result;
+                alert('結果が復元されました。');
+            } else {
+                alert('保存された結果が見つかりません。');
+            }
+        });
+
+        document.getElementById('export').addEventListener('click', function() {
+            const result = document.getElementById('result').innerHTML;
+            if (result) {
+                const csvData = `音符,音程,結果\n${result}`;
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'music_theory_results.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                alert('結果が保存されていません。');
+            }
+        });
+    </script>
+</body>
+</html>
