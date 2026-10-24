@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.28'
+APP_VERSION='2026.10.25.29'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -397,7 +397,7 @@ PRODUCT_INTERFACE_SCHEMA={
         'title':{'type':'string','minLength':4,'maxLength':48},
         'intro':{'type':'string','minLength':15,'maxLength':180},
         'record_label':{'type':'string','minLength':2,'maxLength':24},
-        'capabilities':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','enum':['guided_session','rating_summary','checklist_progress','deadline_tracking','cost_comparison','faq_search','schedule_conflict','review_interval']}},
+        'capabilities':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','enum':['guided_session','rating_summary','checklist_progress','deadline_tracking','cost_comparison','faq_search','schedule_conflict','review_interval','quiz_practice','case_tracking']}},
         'fields':{'type':'array','minItems':3,'maxItems':8,'items':{'type':'object','properties':{
             'id':{'type':'string','pattern':'^[a-z][a-z0-9_]{1,23}$'},
             'label':{'type':'string','minLength':1,'maxLength':32},
@@ -412,17 +412,21 @@ PRODUCT_INTERFACE_SCHEMA={
 def product_operation(name,spec):
     # Prefer the explicit product and outcome labels. Generic acceptance text
     # often contains words like "compare" or "schedule" and must not choose a pattern.
-    name_text=str(name).casefold();text=(name_text+' '+str(spec.get('requested_outcome',''))).casefold()
-    if any(x in text for x in ('チャットボット','chatbot','faq','問い合わせ回答','よくある質問')):return 'faq'
-    if any(x in text for x in ('会議','打ち合わせ','meeting')):return 'meeting'
-    if any(x in text for x in ('英会話','英語レッスン','語学レッスン','english conversation')):return 'english_lesson'
-    if any(x in text for x in ('出欠','出席管理','授業参加','クラス参加','attendance')):return 'attendance'
-    if any(x in text for x in ('返品','返金','返品対応','return management')):return 'returns'
-    if any(x in text for x in ('会計','経費','入出金','仕訳','売上管理','請求管理','accounting')):return 'accounting'
-    if any(x in text for x in ('タスク','プロジェクト管理','作業管理','業務進捗','todo','task board')):return 'task_board'
-    if any(x in text for x in ('満足度','アンケート','調査','評価回答')):return 'survey'
-    if any(x in text for x in ('比較','費用','価格','金額')):return 'compare'
-    if any(x in text for x in ('予定','日程','スケジュール','旅行','期限','時間管理')):return 'schedule'
+    # A generic blueprint may mention comparison, scheduling or calculations
+    # for every business. Classify from the named product only; otherwise use
+    # composable workflow capabilities instead of a misleading unrelated screen.
+    name_text=str(name).casefold()
+    if any(x in name_text for x in ('チャットボット','chatbot','faq','問い合わせ回答','よくある質問')):return 'faq'
+    if any(x in name_text for x in ('会議','打ち合わせ','meeting')):return 'meeting'
+    if any(x in name_text for x in ('英会話','英語レッスン','語学レッスン','english conversation')):return 'english_lesson'
+    if any(x in name_text for x in ('出欠','出席管理','授業参加','クラス参加','attendance')):return 'attendance'
+    if any(x in name_text for x in ('返品','返金','返品対応','return management')):return 'returns'
+    if any(x in name_text for x in ('会計','経費','入出金','仕訳','売上管理','請求管理','accounting')):return 'accounting'
+    if any(x in name_text for x in ('タスク','プロジェクト管理','作業管理','業務進捗','todo','task board')):return 'task_board'
+    if any(x in name_text for x in ('音楽理論','music theory','クイズ練習')):return 'custom_workflow'
+    if any(x in name_text for x in ('満足度','アンケート','調査','評価回答')):return 'survey'
+    if any(x in name_text for x in ('比較','費用','価格','金額')):return 'compare'
+    if any(x in name_text for x in ('予定','日程','スケジュール','旅行','期限','時間管理')):return 'schedule'
     # A generic outcome often says "record/save" for every product. Only the
     # product label itself can designate the plain records pattern.
     if any(x in name_text for x in ('メモ','記録','台帳','ログ','記録一覧','リスト')):return 'records'
@@ -443,7 +447,8 @@ PRODUCT_CAPABILITY_ROLES={
     'guided_session':{'duration'},'rating_summary':{'rating'},
     'checklist_progress':{'status'},'deadline_tracking':{'date'},
     'cost_comparison':{'amount'},'faq_search':{'question','answer'},
-    'schedule_conflict':{'date','time','duration'},'review_interval':{'date','rating'}}
+    'schedule_conflict':{'date','time','duration'},'review_interval':{'date','rating'},
+    'quiz_practice':{'question','answer'},'case_tracking':{'title','status','date'}}
 
 
 def deterministic_product_interface(name,spec):
@@ -463,6 +468,15 @@ def deterministic_product_interface(name,spec):
         'compare':dict(title='費用比較メモ',intro='個人や小規模事業者が候補ごとの費用と条件を記録し、金額を一覧で比べられます。',record_label='比較候補',fields=[field('candidate','候補名','text','title'),field('amount','金額','number','amount'),field('conditions','条件・メモ','textarea','notes',False)]),
         'schedule':dict(title='予定整理ボード',intro='個人や小規模チームが予定と期限を登録し、日付順に見通しを整理できます。',record_label='予定',fields=[field('event_title','予定名','text','title'),field('event_date','日付','date','date'),field('event_time','時刻','time','time',False),field('event_notes','メモ','textarea','notes',False)]),
         'records':dict(title='業務記録ボード',intro='個人や小規模事業者が作業記録をまとめ、あとから検索・保存・出力できます。',record_label='記録',fields=[field('record_title','記録名','text','title'),field('record_category','分類','text','category',False),field('record_notes','内容','textarea','notes',False)])}
+    if operation=='custom_workflow':
+        text=' '.join([str(name),str(spec.get('requested_outcome','')),*map(str,spec.get('must_have',[]))]).casefold()
+        if any(word in text for word in ('音楽理論','音楽学習','music theory','クイズ','問題演習','練習問題')):
+            return dict(title='音楽理論クイズ練習帳',intro='学習者が自分の問題と正解を登録し、出題・回答照合・得点確認を繰り返せます。',record_label='練習問題',capabilities=['quiz_practice'],fields=[field('lesson_title','問題の分類','text','title'),field('question','問題','textarea','question'),field('correct_answer','正解','text','answer'),field('topic','単元','text','category',False)])
+        if any(word in text for word in ('マインドフルネス','呼吸練習','mindfulness')):
+            return dict(title='マインドフルネス練習ノート',intro='短い練習の時間を測り、終わった後の手応えと気づきを記録できます。',record_label='練習記録',capabilities=['guided_session','rating_summary'],fields=[field('practice_title','練習内容','text','title'),field('duration_minutes','目安時間（分）','number','duration'),field('rating','手応え（1〜5）','number','rating'),field('practice_notes','気づき・メモ','textarea','notes',False)])
+        if any(word in text for word in ('顧客','問い合わせ','対応','依頼','案件','申請','業務','作業','case','ticket','request','follow-up')):
+            return dict(title='対応・期限管理ボード',intro='小規模チームが依頼や案件の担当内容・期限・状態を記録し、未完了と期限超過を一覧で追えます。',record_label='対応案件',capabilities=['case_tracking'],fields=[field('case_title','依頼・案件名','text','title'),field('case_date','対応期限','date','date'),field('case_status','対応状況','select','status',True,['未着手','対応中','確認待ち','完了']),field('case_amount','金額・見積（任意）','number','amount',False),field('case_notes','次の対応・メモ','textarea','notes',False)])
+        raise ProductPatternUnsupportedError('用途に合う構造化部品が未登録です。業務固有の処理部品を設計・検証するまで完成候補にはしません: '+str(name)[:120])
     if operation not in templates:
         raise ProductPatternUnsupportedError('この用途の独立操作・入力定義が未登録です: '+str(name)[:120])
     return templates[operation]
@@ -480,7 +494,6 @@ def validate_product_interface(item,name,spec):
     roles=[x.get('role') for x in fields if isinstance(x,dict)]
     if len(ids)!=len(fields) or len(set(ids))!=len(ids) or any(not re.fullmatch(r'[a-z][a-z0-9_]{1,23}',str(x)) for x in ids):raise AutoQAPlanError('入力項目IDが不正または重複しています')
     if any(not isinstance(x.get('label'),str) or not x['label'].strip() or x.get('type') not in ('text','textarea','date','time','number','select') or x.get('role') not in ('title','question','answer','category','status','date','time','amount','rating','duration','location','notes','value','direction') or type(x.get('required')) is not bool for x in fields):raise AutoQAPlanError('入力項目のラベル・種類・役割・必須設定が不正です')
-    if len(set(roles))!=len(roles):raise AutoQAPlanError('入力項目の役割は重複できません')
     if any(x['type']=='select' and (not isinstance(x['options'],list) or not 2<=len(x['options'])<=8) for x in fields):raise AutoQAPlanError('選択欄には2〜8件の選択肢が必要です')
     operation=product_operation(name,spec)
     if operation not in PRODUCT_OPERATION_REQUIREMENTS:
@@ -493,6 +506,8 @@ def validate_product_interface(item,name,spec):
         unknown=set(capabilities)-set(PRODUCT_CAPABILITY_ROLES)
         if unknown:raise AutoQAPlanError('未登録の機能部品: '+', '.join(sorted(unknown)))
         required=set().union(*(PRODUCT_CAPABILITY_ROLES[x] for x in capabilities))
+        ambiguous=required.intersection({role for role in roles if roles.count(role)>1})
+        if ambiguous:raise AutoQAPlanError('処理に使う入力役割が重複しています: '+', '.join(sorted(ambiguous)))
     if not required.issubset(set(roles)):raise AutoQAPlanError(operation+'に必要な専用入力欄が不足しています: '+', '.join(sorted(required-set(roles))))
     if 'title' not in roles and 'question' not in roles:raise AutoQAPlanError('一覧を識別する名前または質問の欄が必要です')
     return dict(item,operation=operation,capabilities=capabilities)
@@ -510,11 +525,11 @@ def ensure_product_interface(name,cfg):
         except (ValueError,TypeError,KeyError):pass
     prompt=('JSONだけでオフラインWebアプリの入力定義を作る。HTMLやJavaScriptは出力しない。'
         'アプリ対象者と価値を表す短い画面タイトル・説明、3〜8個の具体的な入力欄を設計。'
-        '役割は title,question,answer,category,status,date,time,amount,rating,duration,location,notes,value,direction から選び、重複不可。'
+        '役割は title,question,answer,category,status,date,time,amount,rating,duration,location,notes,value,direction から選ぶ。分類・メモなど複数欄に使える役割は重複可。集計・計算・出題の中心役割は一つずつにする。'
         '選択欄は2〜8個のoptionsを付ける。外部接続のないAI・自動回答・リアルタイムを約束しない。'
         'faqにはquestionとanswer、surveyにはrating、compareにはamount、meetingにはdate,time,duration、english_lessonにはtitle,answer,value,date,rating、attendanceにはdate,status、task_boardにはdate,status、scheduleにはdate、accountingにはdate,amount,direction、returnsにはtitle,date,status,amountを含める。'
-        '既存9種以外は業種名に関係なく、検証済み機能部品を組み合わせるcustom_workflowとして設計。'
-        'capabilitiesはguided_session（duration必須）,rating_summary（rating必須）,checklist_progress（status必須）,deadline_tracking（date必須）,cost_comparison（amount必須）,faq_search（question+answer必須）,schedule_conflict（date+time+duration必須）,review_interval（date+rating必須）から1〜5個選ぶ。'
+        '専用の製品型に当てはまらない用途は、対象者の中心作業に一致する検証済み機能部品を組み合わせるcustom_workflowとして設計。'
+        'capabilitiesはguided_session（duration必須）,rating_summary（rating必須）,checklist_progress（status必須）,deadline_tracking（date必須）,cost_comparison（amount必須）,faq_search（question+answer必須）,schedule_conflict（date+time+duration必須）,review_interval（date+rating必須）,quiz_practice（question+answer必須。登録した問題を出題して回答を照合し正誤と得点を表示）,case_tracking（title+status+date必須。案件名・状態・期限を管理し未完了・期限超過を集計）から1〜5個選ぶ。'
         '要件に一致する部品がないときは、似ているふりをせずunsupportedとする。'
         'キー: title,intro,record_label,capabilities,fields[{id,label,type,role,required,options}]。'
         '\n操作種別:'+operation+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:4500]
@@ -524,14 +539,36 @@ def ensure_product_interface(name,cfg):
             validator=lambda value:validate_product_interface(value,name,spec))
         item=validate_product_interface(item,name,spec)
     except Exception as exc:
-        # A malformed local-model answer must never block the deterministic renderer.
-        if operation=='custom_workflow':
-            raise ProductPatternUnsupportedError('用途に合う機能部品の構成を検証できません: '+str(exc)[:250]) from exc
-        item=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
+        # A malformed model answer falls back only to a deterministic, domain-matched
+        # component set. Unknown workflows remain blocked rather than becoming CRUD.
+        try:item=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
+        except ProductPatternUnsupportedError as unsupported:
+            raise ProductPatternUnsupportedError('用途に合う機能部品の構成を検証できません: '+str(exc)[:250]+' / '+str(unsupported)[:250]) from exc
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
             ('product_interface_fallback:'+name,json.dumps({'reason':str(exc)[:700],'at':now()},ensure_ascii=False)))
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',(key,json.dumps(item,ensure_ascii=False)))
     return item
+
+
+def apply_generated_layout_safety(page):
+    """Apply a shared responsive control baseline before judging model-generated HTML."""
+    marker='id="venture-layout-safety"'
+    if not isinstance(page,str) or marker in page:return page
+    css='''<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style>'''
+    head=re.search(r'</head\s*>',page,re.I)
+    if head:return page[:head.start()]+css+page[head.start():]
+    body=re.search(r'<body\b[^>]*>',page,re.I)
+    if body:return page[:body.end()]+css+page[body.end():]
+    return page+css
 
 
 def render_product_interface(name,item,spec):
@@ -556,11 +593,12 @@ def render_product_interface(name,item,spec):
     app_json=json.dumps(dict(fields=fields,operation=operation,capabilities=capabilities,name=name),ensure_ascii=False).replace('</','<\\/')
     special={'faq':'質問を検索すると登録済みの回答を表示し、見つからない質問は未解決一覧に記録します。','survey':'回答を登録すると評価の平均と回答件数を集計します。','compare':'数値を登録し、未入力と合計を分けて比較します。','meeting':'会議候補を日付順に整理し、登録済み予定との時間の重なりを確認します。','english_lesson':'手応えを記録すると、次に見直す日付の目安を一覧に表示します。','attendance':'出席・遅刻・欠席・早退を登録し、全体の出席率と欠席者を集計します。','task_board':'未完了の数と期限状況を自動で表示し、優先順に作業を確認できます。','schedule':'日付順に予定を整理し、次の予定を確認します。','accounting':'収入・支出を科目別に記録し、期間ごとの収支と未入出金を集計します。','returns':'対応期限と状態から未処理・期限超過を整理し、返金予定額を合計します。','records':'入力した記録を検索・保存・出力できます。'}.get(operation)
     if operation=='custom_workflow':
-        labels={'guided_session':'目安時間を設定して練習を開始できます。','rating_summary':'評価の平均と回答数を確認できます。','checklist_progress':'状態別の進み具合を確認できます。','deadline_tracking':'期限と超過状況を確認できます。','cost_comparison':'登録した金額の比較に使えます。','faq_search':'登録した質問と回答を検索できます。','schedule_conflict':'登録済み予定との重なりを確認できます。','review_interval':'評価に応じた復習日の目安を確認できます。'}
+        labels={'guided_session':'目安時間を設定して練習を開始できます。','rating_summary':'評価の平均と回答数を確認できます。','checklist_progress':'状態別の進み具合を確認できます。','deadline_tracking':'期限と超過状況を確認できます。','cost_comparison':'登録した金額の比較に使えます。','faq_search':'登録した質問と回答を検索できます。','schedule_conflict':'登録済み予定との重なりを確認できます。','review_interval':'評価に応じた復習日の目安を確認できます。','quiz_practice':'登録した問題を出題し、入力した回答の正誤と得点を表示できます。','case_tracking':'依頼・案件名、状態、期限をまとめ、未完了と期限超過を確認できます。'}
         special=' / '.join(labels[x] for x in capabilities)
     guided='guided_session' in capabilities
     timer_markup=('<section class="step" id="practicePanel"><b>練習タイマー</b><strong id="timerDisplay" aria-live="polite">準備完了</strong><div class="actions"><button id="startPractice" type="button">開始・再開</button><button id="pausePractice" type="button" class="secondary">一時停止</button><button id="resetPractice" type="button" class="secondary">リセット</button></div><p class="muted">入力した目安時間を計測します。音声・専門的な指導は行いません。</p></section>') if guided else ''
     timer_script='''\nif(APP.capabilities.includes('guided_session')){let remaining=0,timerId=null;const duration=APP.fields.find(f=>f.role==='duration');const display=$('timerDisplay');const draw=()=>{display.textContent=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0')};$('startPractice').addEventListener('click',()=>{if(!remaining)remaining=Math.max(1,Math.min(180,Number($(duration.id).value)||Number(records[0]?.[duration.id])||5))*60;draw();if(timerId)return;timerId=setInterval(()=>{remaining=Math.max(0,remaining-1);draw();if(!remaining){clearInterval(timerId);timerId=null;display.textContent='終了'}} ,1000)});$('pausePractice').addEventListener('click',()=>{clearInterval(timerId);timerId=null});$('resetPractice').addEventListener('click',()=>{clearInterval(timerId);timerId=null;remaining=0;display.textContent='準備完了'})}'''
+    quiz_script='''\nfunction quizAnswerMatches(given,expected){const norm=v=>String(v||'').trim().normalize('NFKC').toLocaleLowerCase().replace(/♯/g,'#').replace(/♭/g,'b').replace(/\\s+/g,'');return norm(given)===norm(expected)}if(APP.capabilities.includes('quiz_practice')){const q=APP.fields.find(f=>f.role==='question'),a=APP.fields.find(f=>f.role==='answer');let deck=[],index=-1,score=0,checked=false;const feedback=$('quizFeedback');const show=()=>{if(index<0||index>=deck.length){$('quizQuestion').textContent='練習を始めてください';return}$('quizQuestion').textContent='問題 '+(index+1)+' / '+deck.length+'：'+deck[index][q.id];$('quizAnswer').value='';checked=false};$('startQuiz').addEventListener('click',()=>{deck=records.filter(r=>String(r[q.id]||'').trim()&&String(r[a.id]||'').trim());index=0;score=0;feedback.textContent=deck.length?'全'+deck.length+'問を開始します。':'問題がありません。先に問題と正解を登録してください。';show()});$('checkQuiz').addEventListener('click',()=>{if(index<0||index>=deck.length){feedback.textContent='先に練習を始めてください。';return}if(checked){feedback.textContent='「次の問題」を押してください。現在の得点 '+score+' / '+deck.length;return}const given=$('quizAnswer').value.trim(),expected=deck[index][a.id];if(!given){feedback.textContent='回答を入力してください。';return}checked=true;const correct=quizAnswerMatches(given,expected);if(correct)score++;feedback.textContent=(correct?'正解です。':'不正解です。登録された答え：'+deck[index][a.id])+' 得点 '+score+' / '+deck.length});$('nextQuiz').addEventListener('click',()=>{if(!deck.length){feedback.textContent='先に練習を始めてください。';return}if(!checked){feedback.textContent='先に回答を確認してください。';return}index++;if(index>=deck.length){$('quizQuestion').textContent='練習終了';feedback.textContent='結果：'+score+' / '+deck.length+'問正解';index=-1;return}show();feedback.textContent='次の問題です。現在の得点 '+score+' / '+deck.length})}'''
     connection_note=''
     if spec.get('delivery_mode')=='connected':
         dependencies=' / '.join(map(str,spec.get('dependencies',[]))) or '外部連携'
@@ -569,8 +607,10 @@ def render_product_interface(name,item,spec):
     operation_markup=(
         '<section class="operation-panel"><h3>期間別の収支</h3><label class="field"><span>集計期間</span><select id="accountingPeriod"><option value="">全期間</option></select></label><div id="accountingTotals" class="kpi-grid" aria-live="polite"></div><button id="loadAccountingSample" class="secondary" type="button">架空のサンプルで試す</button><p class="muted">税務申告・仕訳自動生成・銀行連携は行いません。登録内容はこのブラウザに保存します。</p></section>' if operation=='accounting' else
         '<section class="operation-panel"><h3>対応状況</h3><div id="returnTotals" class="kpi-grid" aria-live="polite"></div><button id="loadReturnSample" class="secondary" type="button">架空のサンプルで試す</button><p class="muted">店舗ごとの返品規約を設定し、期限を入力してください。注文・配送システムとは未接続です。</p></section>' if operation=='returns' else
-        '<section class="faq-lookup"><h3>問い合わせへの回答を探す</h3><label class="field"><span>質問・キーワード</span><input id="faqQuery" type="search" placeholder="例：配送にかかる日数"></label><div class="actions"><button id="searchFaq" type="button">FAQを検索</button></div><div id="faqAnswer" class="notice" role="status"></div><h3>未解決の質問 <span id="unresolvedCount">0</span></h3><ul id="unresolvedList"></ul></section>' if operation=='faq' or 'faq_search' in capabilities else timer_markup)
+        '<section class="faq-lookup"><h3>問い合わせへの回答を探す</h3><label class="field"><span>質問・キーワード</span><input id="faqQuery" type="search" placeholder="例：配送にかかる日数"></label><div class="actions"><button id="searchFaq" type="button">FAQを検索</button></div><div id="faqAnswer" class="notice" role="status"></div><h3>未解決の質問 <span id="unresolvedCount">0</span></h3><ul id="unresolvedList"></ul></section>' if operation=='faq' or 'faq_search' in capabilities else
+        '<section class="operation-panel" id="quizPanel"><h3>問題に挑戦</h3><p id="quizQuestion" class="quiz-question">開始すると登録済みの問題を表示します</p><label class="field"><span>あなたの回答</span><input id="quizAnswer" autocomplete="off"></label><div class="actions"><button id="startQuiz" type="button">練習を始める</button><button id="checkQuiz" type="button" class="secondary">回答を確認</button><button id="nextQuiz" type="button" class="secondary">次の問題</button></div><p id="quizFeedback" class="notice" role="status" aria-live="polite"></p><p class="muted">正解は登録された答えと照合します。出題問題は事業者が登録してください。</p></section>' if 'quiz_practice' in capabilities else timer_markup)
     summary_label={'faq':'未解決質問','attendance':'出席率','task_board':'未完了タスク','custom_workflow':'利用状況','accounting':'差引収支','returns':'未処理 / 期限超過'}.get(operation,'集計')
+    if 'quiz_practice' in capabilities:summary_label='登録問題数'
     return f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escaped_title}</title><style>
 :root{{--accent:{accent};--ink:#1d2938;--muted:#68788a;--paper:#f5f8fc;--line:#dce5ef;--card:#fff}}*{{box-sizing:border-box}}body{{margin:0;background:linear-gradient(145deg,#edf5fb,#f8f7ff 60%,#fff7f0);color:var(--ink);font:16px/1.55 system-ui,"Yu Gothic",sans-serif}}.wrap{{max-width:1100px;margin:auto;padding:26px 18px 60px}}header{{background:linear-gradient(120deg,var(--accent),#23384e);color:white;border-radius:24px;padding:32px;box-shadow:0 18px 42px #20364d28}}.eyebrow{{font-size:13px;letter-spacing:.08em;opacity:.85}}h1{{font-size:clamp(28px,5vw,42px);line-height:1.2;margin:8px 0 10px}}header p{{max-width:720px;margin:0;color:#eaf3fb}}.steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0 24px}}.step,.card{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 8px 25px #23384e0d}}.step b{{color:var(--accent);display:block}}.layout{{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.6fr);gap:16px}}h2{{font-size:20px;margin:0 0 14px}}.fields{{display:grid;gap:12px}}.field span{{display:block;font-size:14px;font-weight:700;margin-bottom:5px}}input,textarea,select,button{{font:inherit}}input,textarea,select{{width:100%;border:1px solid #cbd7e4;border-radius:11px;padding:10px 12px;min-height:42px;background:#fff;color:var(--ink)}}input:focus,textarea:focus,select:focus{{outline:3px solid #79a9d344;border-color:var(--accent)}}button,.file-button{{border:0;border-radius:11px;padding:11px 15px;min-height:42px;background:var(--accent);color:white;font-weight:750;cursor:pointer}}button.secondary,.file-button{{background:#eaf0f6;color:#26374a}}button.danger{{background:#fff0ed;color:#a33228}}button:hover,.file-button:hover{{filter:brightness(.96)}}.actions,.toolbar{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.notice{{min-height:26px;color:var(--accent);font-weight:700;margin-top:8px}}.operation-panel{{background:#f5f8fc;border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}}.kpi-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}}.kpi{{background:white;border:1px solid var(--line);border-radius:11px;padding:10px;min-width:0}}.kpi span{{display:block;color:var(--muted);font-size:12px}}.kpi strong{{display:block;font-size:18px;overflow-wrap:anywhere}}.metric{{display:inline-flex;align-items:baseline;gap:8px;background:#eef4f9;border-radius:12px;padding:10px 13px;margin:0 8px 12px 0}}.metric strong{{font-size:22px}}.table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:12px}}table{{width:100%;border-collapse:collapse;min-width:620px;background:white}}th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}}th{{background:#f1f5f9;font-size:13px}}.row-actions{{white-space:nowrap}}.row-actions button{{min-height:34px;padding:6px 9px;font-size:13px}}.muted{{color:var(--muted);font-size:13px}}.hidden{{display:none!important}}#restoreFile{{display:none}}.layout{{min-width:0}}.layout>.card{{min-width:0;width:100%}}h1,h2,.field span{{overflow-wrap:anywhere}}@media(max-width:760px){{.wrap{{padding:14px 12px 40px;width:100%;min-width:0;overflow-x:hidden}}header{{padding:23px 20px;border-radius:19px}}.steps{{grid-template-columns:1fr}}.layout{{display:flex!important;flex-direction:column;width:100%;min-width:0;gap:12px}}.layout>.card{{padding:15px;width:100%!important;min-width:0!important;max-width:100%!important;margin:0}}.table-wrap{{max-width:100%;overflow-x:auto}}button,.file-button{{min-height:44px}}.kpi-grid{{grid-template-columns:1fr}}}}
 </style></head><body><main class="wrap"><header><div class="eyebrow">{record}を整理する</div><h1>{escaped_title}</h1><p>{escaped_intro}</p></header>{connection_note}<section class="steps" aria-label="使い方"><div class="step"><b>01 入力</b>必要な情報を登録します</div><div class="step"><b>02 整理</b>{esc(special)}</div><div class="step"><b>03 保存・共有</b>一覧を保存し、CSVで持ち出せます</div></section><div class="layout"><section class="card"><h2>{record}を登録</h2><form id="recordForm" class="fields">{''.join(field_markup)}<div class="actions"><button id="saveRecord" type="submit">{record}を保存</button><button id="clearForm" type="button" class="secondary">入力を消去</button></div></form><div id="result" class="notice" role="status"></div><div class="muted">保存先はこのブラウザです。共有サーバーとは同期しません。</div></section><section class="card"><h2>{record}一覧</h2><div class="metric"><span>登録数</span><strong id="recordCount">0</strong></div><div id="summary" class="metric"><span>{summary_label}</span><strong id="summaryValue">0</strong></div>{operation_markup}<label class="field"><span>一覧を検索</span><input id="searchRecords" type="search" placeholder="キーワードを入力"></label><div class="toolbar"><button id="downloadCsv" type="button" class="secondary">CSV出力</button><button id="downloadJson" type="button" class="secondary">バックアップ保存</button><label class="file-button" for="restoreFile">バックアップ復元</label><input id="restoreFile" type="file" accept="application/json,.json"></div><div id="listMessage" class="notice" role="status"></div><div class="table-wrap"><table><thead><tr>{cols}<th>操作</th></tr></thead><tbody id="recordRows"></tbody></table></div></section></div></main><script>
@@ -581,6 +621,7 @@ function esc(v){{return String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'
 function reviewDue(row){{const d=APP.fields.find(f=>f.role==='date'),r=APP.fields.find(f=>f.role==='rating');if(!row[d?.id])return '学習日を入力';const base=new Date(String(row[d.id])+'T12:00:00');if(Number.isNaN(base.getTime()))return '日付を確認';const score=Number(row[r?.id])||3;base.setDate(base.getDate()+(score<=2?1:score===3?3:7));return base.toLocaleDateString('ja-JP')}}
 function attendanceSummary(){{const f=APP.fields.find(x=>x.role==='status'),n=records.length;const present=records.filter(r=>['出席','遅刻','早退'].includes(r[f?.id])).length;const absent=records.filter(r=>r[f?.id]==='欠席').length;return n?Math.round(present/n*100)+'%（出席扱い'+present+'/'+n+'、欠席'+absent+'）':'—'}}
 function taskSummary(){{const f=APP.fields.find(x=>x.role==='status');const open=records.filter(r=>r[f?.id]!=='完了').length;const overdue=records.filter(r=>taskStatus(r)==='期限超過').length;return open+'件 / 期限超過'+overdue+'件'}}
+function caseTrackingSummary(){{const s=APP.fields.find(x=>x.role==='status'),d=APP.fields.find(x=>x.role==='date'),a=APP.fields.find(x=>x.role==='amount');const done=new Set(['完了','解決','返金済み','対応済み']);const open=records.filter(r=>!done.has(String(r[s?.id]||''))).length;const today=new Date().toISOString().slice(0,10);const overdue=records.filter(r=>!done.has(String(r[s?.id]||''))&&String(r[d?.id]||'')&&String(r[d.id])<today).length;const amount=a?records.reduce((n,r)=>n+(Number(r[a.id])||0),0):0;return `${{open}}件 未完了 / ${{overdue}}件 期限超過 / ${{amount.toLocaleString('ja-JP')}}円`}}
 function taskStatus(row){{const due=APP.fields.find(f=>f.role==='date'),status=APP.fields.find(f=>f.role==='status');if(row[status?.id]==='完了')return '完了';const date=String(row[due?.id]||'');if(!date)return '期限未設定';const today=new Date();const key=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');return date<key?'期限超過':date===key?'本日期限':'期限内'}}
 function returnCaseStatus(row){{const date=APP.fields.find(f=>f.role==='date'),status=APP.fields.find(f=>f.role==='status'),state=String(row[status?.id]||'');if(['返金済み','対象外'].includes(state))return state;const due=String(row[date?.id]||'');if(!due)return '期限未設定';const today=new Date(),key=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');return due<key?'期限超過':state}}
 function accountingAmounts(){{const date=APP.fields.find(f=>f.role==='date'),amount=APP.fields.find(f=>f.role==='amount'),direction=APP.fields.find(f=>f.role==='direction'),status=APP.fields.find(f=>f.role==='status'),period=$('accountingPeriod')?.value||'';const rows=records.filter(r=>!period||String(r[date?.id]||'').slice(0,7)===period);const income=rows.filter(r=>r[direction?.id]==='収入').reduce((n,r)=>n+(Number(r[amount?.id])||0),0),expense=rows.filter(r=>r[direction?.id]==='支出').reduce((n,r)=>n+(Number(r[amount?.id])||0),0),pending=rows.filter(r=>r[status?.id]==='未').length;return {{income,expense,net:income-expense,pending,rows}}}}
@@ -588,7 +629,7 @@ function renderAccountingSummary(){{const totals=accountingAmounts(),fmt=n=>'¥'
 function renderReturnSummary(){{const status=APP.fields.find(f=>f.role==='status'),amount=APP.fields.find(f=>f.role==='amount'),open=records.filter(r=>!['返金済み','対象外'].includes(r[status?.id])),overdue=records.filter(r=>returnCaseStatus(r)==='期限超過'),refund=records.reduce((n,r)=>n+(Number(r[amount?.id])||0),0);$('returnTotals').innerHTML='<div class="kpi"><span>未完了</span><strong>'+open.length+'件</strong></div><div class="kpi"><span>期限超過</span><strong>'+overdue.length+'件</strong></div><div class="kpi"><span>返金予定の合計</span><strong>¥'+Math.round(refund).toLocaleString('ja-JP')+'</strong></div>';return open.length+'件 / 超過'+overdue.length+'件'}}
 function dateOffset(days){{const d=new Date();d.setDate(d.getDate()+days);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}}
 function meetingStatus(row,index){{const d=APP.fields.find(f=>f.role==='date'),t=APP.fields.find(f=>f.role==='time'),m=APP.fields.find(f=>f.role==='duration');const start=new Date(String(row[d?.id]||'')+'T'+String(row[t?.id]||''));if(Number.isNaN(start.getTime()))return '日時を確認';const end=start.getTime()+Math.max(1,Number(row[m?.id])||30)*60000;const conflict=records.some((other,i)=>{{if(i===index||other[d?.id]!==row[d?.id])return false;const otherStart=new Date(String(other[d?.id]||'')+'T'+String(other[t?.id]||'')).getTime();const otherEnd=otherStart+Math.max(1,Number(other[m?.id])||30)*60000;return Number.isFinite(otherStart)&&start.getTime()<otherEnd&&otherStart<end}});return conflict?'予定が重複':'空き'}}
-function render(){{const q=$('searchRecords').value.trim().toLocaleLowerCase();const source=records.map((r,i)=>({{r,i}}));if(['schedule','meeting','attendance','task_board','custom_workflow','accounting','returns'].includes(APP.operation)){{const dateField=APP.fields.find(f=>f.role==='date');if(dateField)source.sort((a,b)=>String(a.r[dateField.id]||'').localeCompare(String(b.r[dateField.id]||'')))}}const shown=source.filter(x=>JSON.stringify(x.r).toLocaleLowerCase().includes(q));$('recordRows').innerHTML=shown.map(x=>'<tr>'+APP.fields.map(f=>'<td>'+esc(x.r[f.id])+'</td>').join('')+((APP.operation==='meeting'||APP.capabilities.includes('schedule_conflict'))?'<td>'+meetingStatus(x.r,x.i)+'</td>':'')+((APP.operation==='english_lesson'||APP.capabilities.includes('review_interval'))?'<td>'+reviewDue(x.r)+'</td>':'')+((APP.operation==='task_board'||APP.capabilities.includes('deadline_tracking'))?'<td>'+taskStatus(x.r)+'</td>':'')+((APP.operation==='returns')?'<td>'+returnCaseStatus(x.r)+'</td>':'')+'<td class="row-actions"><button type="button" class="secondary" data-edit="'+x.i+'">編集</button> <button type="button" class="danger" data-delete="'+x.i+'">削除</button></td></tr>').join('');$('recordCount').textContent=String(records.length);let value='—';if(APP.operation==='accounting'){{const sel=$('accountingPeriod'),keep=sel.value,dateField=APP.fields.find(f=>f.role==='date'),months=[...new Set(records.map(r=>String(r[dateField?.id]||'').slice(0,7)).filter(Boolean))].sort().reverse();sel.innerHTML='<option value="">全期間</option>'+months.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');if(months.includes(keep))sel.value=keep;value=renderAccountingSummary()}}else if(APP.operation==='returns')value=renderReturnSummary();else if(APP.operation==='survey'||APP.capabilities.includes('rating_summary')){{const nums=records.map(r=>Number(r[APP.fields.find(f=>f.role==='rating')?.id])).filter(Number.isFinite);value=nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)+'/5':'—'}}else if(APP.operation==='compare'||APP.capabilities.includes('cost_comparison')){{const f=APP.fields.find(x=>x.role==='amount');const nums=records.map(r=>Number(r[f?.id])).filter(Number.isFinite);value=nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString():'—'}}else if(APP.operation==='faq'||APP.capabilities.includes('faq_search')){{value=String(unresolved.length)+'件';if($('unresolvedCount')){{$('unresolvedCount').textContent=String(unresolved.length);$('unresolvedList').innerHTML=unresolved.slice(0,20).map(x=>'<li>'+esc(x.question)+'</li>').join('')}}}}else if(APP.operation==='attendance')value=attendanceSummary();else if(APP.operation==='task_board')value=taskSummary();else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('checklist_progress')){{const f=APP.fields.find(x=>x.role==='status');const done=records.filter(r=>['完了','済み','実施済み'].includes(r[f?.id])).length;value=records.length?Math.round(done/records.length*100)+'% 完了':'—'}}else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('deadline_tracking')){{value=String(records.filter(r=>taskStatus(r)==='期限超過').length)+'件 期限超過'}}else if(['schedule','meeting','custom_workflow'].includes(APP.operation))value=records.length?records.length+'件':'—';else value=String(records.length)+'件';$('summaryValue').textContent=value}}
+function render(){{const q=$('searchRecords').value.trim().toLocaleLowerCase();const source=records.map((r,i)=>({{r,i}}));if(['schedule','meeting','attendance','task_board','custom_workflow','accounting','returns'].includes(APP.operation)){{const dateField=APP.fields.find(f=>f.role==='date');if(dateField)source.sort((a,b)=>String(a.r[dateField.id]||'').localeCompare(String(b.r[dateField.id]||'')))}}const shown=source.filter(x=>JSON.stringify(x.r).toLocaleLowerCase().includes(q));$('recordRows').innerHTML=shown.map(x=>'<tr>'+APP.fields.map(f=>'<td>'+esc(x.r[f.id])+'</td>').join('')+((APP.operation==='meeting'||APP.capabilities.includes('schedule_conflict'))?'<td>'+meetingStatus(x.r,x.i)+'</td>':'')+((APP.operation==='english_lesson'||APP.capabilities.includes('review_interval'))?'<td>'+reviewDue(x.r)+'</td>':'')+((APP.operation==='task_board'||APP.capabilities.includes('deadline_tracking'))?'<td>'+taskStatus(x.r)+'</td>':'')+((APP.operation==='returns')?'<td>'+returnCaseStatus(x.r)+'</td>':'')+'<td class="row-actions"><button type="button" class="secondary" data-edit="'+x.i+'">編集</button> <button type="button" class="danger" data-delete="'+x.i+'">削除</button></td></tr>').join('');$('recordCount').textContent=String(records.length);let value='—';if(APP.operation==='accounting'){{const sel=$('accountingPeriod'),keep=sel.value,dateField=APP.fields.find(f=>f.role==='date'),months=[...new Set(records.map(r=>String(r[dateField?.id]||'').slice(0,7)).filter(Boolean))].sort().reverse();sel.innerHTML='<option value="">全期間</option>'+months.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');if(months.includes(keep))sel.value=keep;value=renderAccountingSummary()}}else if(APP.operation==='returns')value=renderReturnSummary();else if(APP.operation==='survey'||APP.capabilities.includes('rating_summary')){{const nums=records.map(r=>Number(r[APP.fields.find(f=>f.role==='rating')?.id])).filter(Number.isFinite);value=nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)+'/5':'—'}}else if(APP.operation==='compare'||APP.capabilities.includes('cost_comparison')){{const f=APP.fields.find(x=>x.role==='amount');const nums=records.map(r=>Number(r[f?.id])).filter(Number.isFinite);value=nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString():'—'}}else if(APP.operation==='faq'||APP.capabilities.includes('faq_search')){{value=String(unresolved.length)+'件';if($('unresolvedCount')){{$('unresolvedCount').textContent=String(unresolved.length);$('unresolvedList').innerHTML=unresolved.slice(0,20).map(x=>'<li>'+esc(x.question)+'</li>').join('')}}}}else if(APP.operation==='attendance')value=attendanceSummary();else if(APP.operation==='task_board')value=taskSummary();else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('case_tracking')){{value=caseTrackingSummary()}}else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('quiz_practice')){{const q=APP.fields.find(f=>f.role==='question');value=String(records.filter(r=>String(r[q?.id]||'').trim()).length)+'問'}}else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('checklist_progress')){{const f=APP.fields.find(x=>x.role==='status');const done=records.filter(r=>['完了','済み','実施済み'].includes(r[f?.id])).length;value=records.length?Math.round(done/records.length*100)+'% 完了':'—'}}else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('deadline_tracking')){{value=String(records.filter(r=>taskStatus(r)==='期限超過').length)+'件 期限超過'}}else if(['schedule','meeting','custom_workflow'].includes(APP.operation))value=records.length?records.length+'件':'—';else value=String(records.length)+'件';$('summaryValue').textContent=value}}
 form.addEventListener('submit',e=>{{e.preventDefault();const row={{}};for(const f of APP.fields)row[f.id]=$(f.id).value.trim();if(APP.fields.some(f=>f.required&&!row[f.id])){{$('result').textContent='必須項目を入力してください';return}}if(APP.operation==='faq'&&editing<0){{const q=String(row[APP.fields.find(f=>f.role==='question').id]).toLocaleLowerCase();const found=records.find(r=>(String(r[APP.fields.find(f=>f.role==='question').id])+' '+String(r[APP.fields.find(f=>f.role==='answer').id])).toLocaleLowerCase().includes(q));if(found)$('result').textContent='登録済みFAQに一致する回答があります';else $('result').textContent='FAQを登録しました。質問の一致検索を利用できます'}}else $('result').textContent=editing<0?'保存しました':'変更を保存しました';if(editing<0)records.unshift(row);else records[editing]=row;editing=-1;form.reset();save()}});
 $('recordRows').addEventListener('click',e=>{{const edit=e.target.dataset.edit,del=e.target.dataset.delete;if(edit!==undefined){{editing=Number(edit);const r=records[editing];for(const f of APP.fields)$(f.id).value=r[f.id]??'';$('result').textContent='編集内容を保存してください'}}if(del!==undefined){{records.splice(Number(del),1);save();$('result').textContent='削除しました'}}}});
 $('clearForm').addEventListener('click',()=>{{form.reset();editing=-1;$('result').textContent='入力を消去しました'}});$('searchRecords').addEventListener('input',render);if($('accountingPeriod'))$('accountingPeriod').addEventListener('change',render);if($('loadAccountingSample'))$('loadAccountingSample').addEventListener('click',()=>{{records=[{{transaction_title:'架空サンプル 売上',transaction_date:dateOffset(-3),direction:'収入',account_category:'売上',amount:'120000',payment_status:'済',transaction_notes:'架空データ'}} ,{{transaction_title:'架空サンプル 通信費',transaction_date:dateOffset(-2),direction:'支出',account_category:'通信費',amount:'6800',payment_status:'済',transaction_notes:'架空データ'}} ,{{transaction_title:'架空サンプル 未入金',transaction_date:dateOffset(-1),direction:'収入',account_category:'売上',amount:'35000',payment_status:'未',transaction_notes:'架空データ'}}];save();$('listMessage').textContent='架空のサンプルを表示しています'}});if($('loadReturnSample'))$('loadReturnSample').addEventListener('click',()=>{{records=[{{return_item:'架空サンプル スニーカー',order_number:'SAMPLE-001',response_deadline:dateOffset(2),return_status:'返送待ち',refund_amount:'8900',return_notes:'架空データ・期限内'}} ,{{return_item:'架空サンプル バッグ',order_number:'SAMPLE-002',response_deadline:dateOffset(-2),return_status:'確認中',refund_amount:'5400',return_notes:'架空データ・期限超過'}} ,{{return_item:'架空サンプル 雑貨',order_number:'SAMPLE-003',response_deadline:dateOffset(-1),return_status:'返金済み',refund_amount:'1200',return_notes:'架空データ・処理済み'}}];save();$('listMessage').textContent='架空のサンプルを表示しています'}});
@@ -596,14 +637,14 @@ if(APP.operation==='faq'||APP.capabilities.includes('faq_search'))$('searchFaq')
 $('downloadCsv').addEventListener('click',()=>{{const cell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\\ufeff'+[APP.fields.map(f=>f.label),...records.map(r=>APP.fields.map(f=>r[f.id]))].map(row=>row.map(cell).join(',')).join('\\r\\n');download(csv,'text/csv;charset=utf-8','records.csv')}});
 $('downloadJson').addEventListener('click',()=>download(JSON.stringify({{version:1,records,unresolved}},null,2),'application/json','records-backup.json'));
 function download(data,type,name){{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{{type}}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}}
-$('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();{timer_script}
+$('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();{timer_script}{quiz_script}
 </script></body></html>'''
 
 
 def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
     """Use validated components when free-form code fails; full product QA still gates readiness."""
     definition=ensure_product_interface(name,cfg)
-    page=render_product_interface(name,definition,get_product_spec(name) or {})
+    page=apply_generated_layout_safety(render_product_interface(name,definition,get_product_spec(name) or {}))
     errors=validate_html(page,name)
     if errors:raise ValueError('構造化部品のコード検査: '+' / '.join(errors))
     try:
@@ -1308,6 +1349,12 @@ def review_qa_images(name,browser_result,cfg):
     model=cfg.get('qa_vision_model','qwen2.5vl:3b');owner=runtime_owner()
     if not claim_runtime('local_ai',owner,720):raise AutoQAEnvironmentError('別処理がAIを使用中。画像判定を次回に再試行します')
     try:
+        keys=('audience','design','readability','mobile','usefulness')
+        visual_schema={'type':'object','properties':{key:{'type':'object','properties':{
+            'score':{'type':'integer','minimum':0,'maximum':5},
+            'reason':{'type':'string','minLength':15,'maxLength':600}},
+            'required':['score','reason'],'additionalProperties':False} for key in keys},
+            'required':list(keys),'additionalProperties':False}
         base=cfg['url'].rstrip('/')
         if model!=cfg['model']:
             req=urllib.request.Request(base+'/api/generate',data=json.dumps({'model':cfg['model'],'keep_alive':0}).encode(),headers={'Content-Type':'application/json'})
@@ -1328,13 +1375,13 @@ def review_qa_images(name,browser_result,cfg):
         for retry in range(3):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1800,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
+                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1800,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(req,timeout=600) as r:data=json.load(r)
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
             try:
                 review=qa_json(data.get('response',''))
-                for key in ('audience','design','readability','mobile','usefulness'):
+                for key in keys:
                     part=review.get(key,{})
                     if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<15:
                         raise AutoQAPlanError('画像判定の根拠が不十分: '+key)
@@ -4048,9 +4095,10 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         return '',detail,False
 
     configured_revisions=max(1,int(cfg['max_revisions']))
-    # Reserve recovery slots for materially different strategies. Repeated failure
-    # triggers a diagnosis and strategy change instead of breaking to the same fallback.
-    attempt_limit=configured_revisions+5
+    # Bound work by distinct recovery routes. A candidate gets the configured
+    # product revisions plus one full rebuild, capped at four total attempts;
+    # repeated free-form generations are not a substitute for a working workflow.
+    attempt_limit=min(configured_revisions+1,4)
     force_full_generation_reason=''
     recovery_count=min(4,int(repair_state.get('recovery_stage',0) or 0))
     for n in range(1, attempt_limit + 1):
@@ -4135,7 +4183,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
         sanitized_page=remove_unconnected_ai_brand_claim(page,name,release_spec)
         if sanitized_page!=page:event(job,name+': AI未接続の企画名表記を画面用名称から外し、未接続機能を約束しない表示へ調整')
-        page=sanitized_page
+        page=apply_generated_layout_safety(sanitized_page)
+        if page!=sanitized_page:event(job,name+': 全用途共通の入力欄・ボタン寸法と画面幅の補正を適用してから画面検査')
         errors = validate_html(page, name)+preserve_checkpoint_features(checkpoint,page)
         placeholder=legacy_placeholder_reason(name,page)
         if placeholder:errors.append('用途に合う中心機能がない旧サンプル: '+placeholder)
