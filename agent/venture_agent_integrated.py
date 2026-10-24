@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.14'
+APP_VERSION='2026.10.24.15'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -3659,16 +3659,17 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         return '',detail,False
 
     configured_revisions=max(1,int(cfg['max_revisions']))
-    # Keep one bounded same-cycle slot for a focused repair after the configured drafts fail.
-    # The final candidate still remains unapproved unless every validation passes.
-    attempt_limit=configured_revisions+1
+    # Reserve two bounded same-cycle slots: one for a focused repair after a failed
+    # draft, and one fallback when that repair proposal itself cannot be applied.
+    # The final candidate remains unapproved unless every validation passes.
+    attempt_limit=configured_revisions+2
     force_full_generation_reason=''
     for n in range(1, attempt_limit + 1):
         if not state()['enabled'] or not development_allowed(name):
             break
 
         if n>configured_revisions:
-            event(job,name+': 検査不合格を同じサイクル内で即時修正・再検査します（追加試行は1回）')
+            event(job,name+': 検査不合格を同じサイクル内で即時修正・再検査します（追加の救済試行は最大2回）')
         event(job, f'{name}: 試作品作成・修正 {n}/{attempt_limit}')
 
         requirements = (
