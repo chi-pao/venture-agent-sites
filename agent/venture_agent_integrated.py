@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.13'
+APP_VERSION='2026.10.24.14'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -3658,11 +3658,18 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         action_record(name,'製品開発','接続・実装待ち',detail)
         return '',detail,False
 
-    for n in range(1, int(cfg['max_revisions']) + 1):
+    configured_revisions=max(1,int(cfg['max_revisions']))
+    # Keep one bounded same-cycle slot for a focused repair after the configured drafts fail.
+    # The final candidate still remains unapproved unless every validation passes.
+    attempt_limit=configured_revisions+1
+    force_full_generation_reason=''
+    for n in range(1, attempt_limit + 1):
         if not state()['enabled'] or not development_allowed(name):
             break
 
-        event(job, f'{name}: 試作品作成・修正 {n}/{cfg["max_revisions"]}')
+        if n>configured_revisions:
+            event(job,name+': 検査不合格を同じサイクル内で即時修正・再検査します（追加試行は1回）')
+        event(job, f'{name}: 試作品作成・修正 {n}/{attempt_limit}')
 
         requirements = (
             '先に決めた制作設計（画面と主機能へ具体的に反映）:\n'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:4500]+'\n'
@@ -3702,6 +3709,11 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             requirements += ('\n今回は発信不可の開発途中版。外部接続なしで独立して動く画面・入力・日程計算・保存等を改善する。'
                 '接続が必要な検索・共同編集は未接続と正確に表示し、成功や検索結果を捏造しない。'
                 '未実装を隠さない。この開発途中版に限り未接続の明示を許可する。完成条件は削除しない。')
+        if force_full_generation_reason:
+            requirements += ('\n直前の局所修正は形式・置換位置が合わず適用できませんでした。'
+                '今回は同じ完成条件からHTMLを作り直し、次の具体的な失敗を必ず解消してください。'
+                '失敗した修正案や無効な置換文字列を出力・再利用せず、保存とJSON復元・CSV出力を含む中心機能を省略しないこと。\n'
+                +force_full_generation_reason[:1800])
 
         if previous_page:
             try:
@@ -3714,9 +3726,12 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
                 diagnose_next=True;event(job,name+': '+last)
                 final=(previous_page,last,False)
-                if not checkpoint and repair_state['repeat']>=2:
-                    event(job,name+': 部分修正が連続で成立しないため、次の試行は新しい候補の作成へ切替。旧版は保持します')
-                    previous_page=''
+                # A malformed/unaligned edit must not consume another revision trying
+                # another patch against the same source. Keep the old file, then regenerate
+                # from the saved product spec and carry the exact failure into that prompt.
+                force_full_generation_reason=last
+                event(job,name+': 局所修正を中止。旧版を保持し、完成条件から新しい候補を同じ運転内で作り直します')
+                previous_page=''
                 continue
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
@@ -3786,6 +3801,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         seen_failures.add(signature)
         repair_state=dict(signature=signature,repeat=int(repair_state.get('repeat',0))+1 if repeated else 0,checked=now())
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
+        if n < attempt_limit:
+            event(job,name+': 検査不合格を保持し、直後の試行で修正して再検査します')
 
     if final and state()['enabled']:
         save(job, name, asset_kind, final[0], 'html', final[1])
