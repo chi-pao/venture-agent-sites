@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.11'
+APP_VERSION='2026.10.24.12'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -884,9 +884,19 @@ QA_LAYOUT_SCRIPT=r'''() => {
  const show=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'};
  const controls=[...document.querySelectorAll('button,input:not([type=hidden]):not([type=file]),select,textarea')].filter(show);
  const bad=controls.filter(e=>{const r=e.getBoundingClientRect();return !['checkbox','radio'].includes(e.type)&&(r.width<32||r.height<36)}).map(e=>e.id||e.textContent.slice(0,30));
+ const overflowNodes=[...document.querySelectorAll('body *')].filter(show).map(e=>{
+   const r=e.getBoundingClientRect(),s=getComputedStyle(e);
+   const outside=r.left < -2 || r.right > innerWidth + 2;
+   const inner=e.scrollWidth > e.clientWidth + 2;
+   if(!outside&&!inner)return null;
+   return {tag:e.tagName.toLowerCase(),id:e.id||'',className:typeof e.className==='string'?e.className.slice(0,100):'',
+     text:(e.innerText||e.getAttribute('aria-label')||'').replace(/\s+/g,' ').slice(0,100),
+     left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width),clientWidth:e.clientWidth,scrollWidth:e.scrollWidth,
+     cssWidth:s.width,maxWidth:s.maxWidth,whiteSpace:s.whiteSpace,position:s.position};
+ }).filter(Boolean).sort((a,b)=>(b.right-innerWidth)-(a.right-innerWidth)).slice(0,12);
  const text=[...document.querySelectorAll('p,label,h1,h2,h3,button,li,small')].filter(show);
  const tiny=text.filter(e=>parseFloat(getComputedStyle(e).fontSize)<12).length;
- return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth+2,controls:controls.length,smallControls:bad,tinyText:tiny,heading:document.querySelector('h1')?.textContent||'',body:document.body.innerText.slice(0,9000)};
+ return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth+2,overflowNodes,controls:controls.length,smallControls:bad,tinyText:tiny,heading:document.querySelector('h1')?.textContent||'',body:document.body.innerText.slice(0,9000)};
 }'''
 
 

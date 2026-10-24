@@ -195,11 +195,13 @@ The user confirmed qwen2.5:7b in the running settings and successfully pulled qw
 
 Validation: 80 portable tests passed, including six benchmark gating/routing/rollback/fair-generation tests; 39 incremental/continuation/screening/launcher regressions passed. A real Chromium benchmark integration exercised four fixture-model outputs, valid candidate workflows and CSV at both widths, failed baseline code, no automatic model change or product approval, explicit coding-only adoption and rollback. Streamlit .9 dashboard/inventory/preview smoke check passed. Model responses/digests in development tests are fixtures: actual qwen2.5:7b versus qwen2.5-coder:7b results, runtime and resulting full-app quality must be obtained from the user's local run. Neither a download success nor these framework tests is evidence that the new model is better.
 
-## 2026.10.24.11 自動開発の失敗ループ修正
+## 2026.10.24.12 自動開発の失敗ループ修正
 
 - 操作テスト計画の生成結果にも仕様検証を適用し、不備があれば不足理由と前回JSONを同じ運転内で返して最大3回まで作り直します。
 - テスト計画を作れない状態は最大2回だけ同じ版で再試行し、続く場合は「自動検証で要修正」にして、次の運転を製品改善へ戻します。Playwright・Ollama・画像モデルなどの環境準備失敗は製品不具合と混ぜず、環境再試行に残します。
 - 実ブラウザ検査で製品コードの不具合が見つかった場合は、同じ開発運転内で一度修正して再検査します。検証計画や環境の問題では候補コードを無用に書き換えません。
+- 横はみ出しを検出したとき、要素ID・幅・画面上の左右位置・CSS幅を検査結果へ含めます。次の修正指示が「どこがはみ出したか」まで伝わります。
 - 84件の回帰テストを実施。検証計画の同一運転内修正、検査失敗からの即時修正と再検査、同じ版の計画失敗を無限再試行しないこと、環境障害では候補を変えないことを追加確認しました。
+- Chromiumで固定幅要素の横はみ出しを発生させ、原因要素・幅・位置を検査結果から特定できることを確認しました。
 
 これは実モデルが高品質な製品を一発で作れることの実証ではありません。こちらの実行環境から、利用者PC上のOllamaモデルを呼び出せないため、qwen2.5:7b / qwen2.5-coder:7bによる生成品質、Windows上での継続運転、実際の製品完成は未確認です。リリース後に実モデルで一つの製品を「設計→実装→実ブラウザ検証→失敗に応じた修正→再検証」まで通し、失敗理由が更新され続けることを別途確認します。公開・SNS発信の承認ゲートは従来どおりです。
