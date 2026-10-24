@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.15'
+APP_VERSION='2026.10.24.17'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -363,8 +363,31 @@ def validate_product_spec(spec):
     return spec
 
 
+def required_product_connections(name,spec):
+    """Infer integrations that a single offline HTML file cannot truthfully provide."""
+    text=(str(name)+' '+str(spec.get('requested_outcome',''))+' '+str(spec.get('differentiation',''))).casefold()
+    required=[]
+    if any(term in text for term in ('チャットボット','chatbot','自動応答','対話型サポート')):
+        required.append('チャット回答処理のサーバー接続（AI回答を表示する場合はAI推論API）')
+    if any(term in text for term in ('共同編集','リアルタイム共有','複数人で同時','同行者と共有')):
+        required.append('共同編集・共有用サーバー')
+    if any(term in text for term in ('経路検索','移動経路','ルート検索','乗換案内','時刻表','地図検索')):
+        required.append('実データの地図・経路検索API')
+    return required
+
+
+def normalize_product_connections(name,spec):
+    spec=dict(spec)
+    dependencies=list(spec.get('dependencies') or [])
+    for required in required_product_connections(name,spec):
+        if required not in dependencies:dependencies.append(required)
+    spec['dependencies']=dependencies
+    if dependencies:spec['delivery_mode']='connected'
+    return spec
+
+
 def store_product_spec(name,spec,source='AI設計・未確認'):
-    spec=validate_product_spec(spec)
+    spec=normalize_product_connections(name,validate_product_spec(spec))
     encoded=json.dumps(spec,ensure_ascii=False,sort_keys=True)
     digest=hashlib.sha256(encoded.encode()).hexdigest()
     execute('''INSERT INTO venture_product_specs(idea,spec,scope_sha,source,created,updated)
@@ -376,10 +399,13 @@ def store_product_spec(name,spec,source='AI設計・未確認'):
 def ensure_product_spec(name,cfg,plan=''):
     existing=get_product_spec(name)
     if existing:
-        if existing.get('development_baseline')!=PRODUCT_DEVELOPMENT_BASELINE:
-            existing=dict(existing,development_baseline=PRODUCT_DEVELOPMENT_BASELINE,
+        normalized=normalize_product_connections(name,existing)
+        if (existing.get('development_baseline')!=PRODUCT_DEVELOPMENT_BASELINE
+                or normalized.get('dependencies')!=existing.get('dependencies')
+                or normalized.get('delivery_mode')!=existing.get('delivery_mode')):
+            existing=dict(normalized,development_baseline=PRODUCT_DEVELOPMENT_BASELINE,
                 baseline_requirements=PRODUCT_BASELINE_REQUIREMENTS)
-            store_product_spec(name,existing,source='ユーザー指定の開発開始基準')
+            store_product_spec(name,existing,source='開発基準・必要な接続を再確認')
         return existing
     item=idea_details(name)
     prompt=('製品の発信前の完成条件をJSONオブジェクトだけで設計する。入力画面と結果の写しだけで完成としない。'
@@ -3593,7 +3619,7 @@ def preserve_checkpoint_features(checkpoint,candidate):
 
 
 def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
-    cfg=coding_config(cfg)
+    cfg=coding_config(cfg,task='repair')
     spec=get_product_spec(name) or {}
     compact={k:spec.get(k) for k in ('audience','requested_outcome','must_have','acceptance','user_change_requests')}
     compact['design_blueprint']=get_product_blueprint(name)
@@ -3710,6 +3736,11 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             requirements += ('\n今回は発信不可の開発途中版。外部接続なしで独立して動く画面・入力・日程計算・保存等を改善する。'
                 '接続が必要な検索・共同編集は未接続と正確に表示し、成功や検索結果を捏造しない。'
                 '未実装を隠さない。この開発途中版に限り未接続の明示を許可する。完成条件は削除しない。')
+        if any('チャット回答処理のサーバー接続' in item for item in release_spec.get('dependencies',[])):
+            requirements += ('\nチャット回答処理はサーバー接続が必要で、現在は未接続です。'
+                'この版はFAQ回答ライブラリとして作り、FAQの追加・編集・検索・一致回答の表示・未登録質問の記録・CSV出力・JSON保存復元を実装してください。'
+                '画面タイトルは「FAQ回答ライブラリ」等にし、接続前の自動チャット・AI回答・リアルタイム対応を名乗らないでください。'
+                '単なる接続予定の説明画面にせず、FAQを実際に登録して検索できる独立機能を完成させてください。')
         if force_full_generation_reason:
             requirements += ('\n直前の局所修正は形式・置換位置が合わず適用できませんでした。'
                 '今回は同じ完成条件からHTMLを作り直し、次の具体的な失敗を必ず解消してください。'
@@ -3736,7 +3767,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 continue
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
-            page=extract_html(ai(prompt,coding_config(cfg),9000))
+            page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
         errors = validate_html(page, name)+preserve_checkpoint_features(checkpoint,page)
         placeholder=legacy_placeholder_reason(name,page)
         if placeholder:errors.append('用途に合う中心機能がない旧サンプル: '+placeholder)
@@ -5830,8 +5861,27 @@ PC1280px・スマホ390pxで横はみ出しなし。入力とボタンは高さ3
 この小課題は能力比較用であり、AI推論や外部接続機能は表示しない。DOCTYPEから閉じHTMLまでコードだけを返す。'''
 
 
-def coding_config(cfg):
-    return dict(cfg,model=cfg.get('code_model') or cfg['model'])
+def coding_config(cfg,task='new'):
+    """Use a benchmark winner only for the exact coding task it actually passed."""
+    baseline=cfg.get('code_model') or cfg['model']
+    if task not in ('new','repair'):return dict(cfg,model=baseline)
+    try:
+        report=benchmark_state()
+        if (report.get('status')!='完了' or report.get('policy')!=MODEL_BENCHMARK_POLICY
+                or report.get('task_signature')!=benchmark_task_signature()
+                or report.get('baseline')!=baseline or not report.get('candidate')):
+            return dict(cfg,model=baseline)
+        installed=benchmark_model_digests(cfg)
+        if any(installed.get(m)!=report.get('installed',{}).get(m) for m in (baseline,report['candidate'])):
+            return dict(cfg,model=baseline)
+        rows={(r.get('model'),r.get('task')):r for r in report.get('results',[])}
+        control=rows.get((baseline,task));challenger=rows.get((report['candidate'],task))
+        control_ok=bool(control and benchmark_result_valid(control))
+        challenger_ok=bool(challenger and benchmark_result_valid(challenger))
+        if challenger_ok and not control_ok:return dict(cfg,model=report['candidate'])
+    except Exception:
+        pass
+    return dict(cfg,model=baseline)
 
 
 def benchmark_tasks():
