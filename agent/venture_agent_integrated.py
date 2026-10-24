@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.21'
+APP_VERSION='2026.10.25.22'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -409,7 +409,9 @@ PRODUCT_INTERFACE_SCHEMA={
 
 
 def product_operation(name,spec):
-    text=(str(name)+' '+str(spec.get('requested_outcome',''))+' '+' '.join(spec.get('must_have',[]))).casefold()
+    # Prefer the explicit product and outcome labels. Generic acceptance text
+    # often contains words like "compare" or "schedule" and must not choose a pattern.
+    text=(str(name)+' '+str(spec.get('requested_outcome',''))).casefold()
     if any(x in text for x in ('チャットボット','chatbot','faq','問い合わせ回答','よくある質問')):return 'faq'
     if any(x in text for x in ('会議','打ち合わせ','meeting')):return 'meeting'
     if any(x in text for x in ('英会話','英語レッスン','語学レッスン','english conversation')):return 'english_lesson'
@@ -418,7 +420,8 @@ def product_operation(name,spec):
     if any(x in text for x in ('満足度','アンケート','調査','評価回答')):return 'survey'
     if any(x in text for x in ('比較','費用','価格','金額')):return 'compare'
     if any(x in text for x in ('予定','日程','スケジュール','旅行','期限','時間管理')):return 'schedule'
-    return 'records'
+    if any(x in text for x in ('メモ','記録','台帳','ログ','記録一覧','リスト')):return 'records'
+    return 'unsupported'
 
 
 # A pattern is supported only when its input contract and functional handler exist.
@@ -444,6 +447,8 @@ def deterministic_product_interface(name,spec):
         'compare':dict(title='費用比較メモ',intro='個人や小規模事業者が候補ごとの費用と条件を記録し、金額を一覧で比べられます。',record_label='比較候補',fields=[field('candidate','候補名','text','title'),field('amount','金額','number','amount'),field('conditions','条件・メモ','textarea','notes',False)]),
         'schedule':dict(title='予定整理ボード',intro='個人や小規模チームが予定と期限を登録し、日付順に見通しを整理できます。',record_label='予定',fields=[field('event_title','予定名','text','title'),field('event_date','日付','date','date'),field('event_time','時刻','time','time',False),field('event_notes','メモ','textarea','notes',False)]),
         'records':dict(title='業務記録ボード',intro='個人や小規模事業者が作業記録をまとめ、あとから検索・保存・出力できます。',record_label='記録',fields=[field('record_title','記録名','text','title'),field('record_category','分類','text','category',False),field('record_notes','内容','textarea','notes',False)])}
+    if operation not in templates:
+        raise ProductPatternUnsupportedError('この用途の独立操作・入力定義が未登録です: '+str(name)[:120])
     return templates[operation]
 
 
@@ -461,7 +466,10 @@ def validate_product_interface(item,name,spec):
     if any(not isinstance(x.get('label'),str) or not x['label'].strip() or x.get('type') not in ('text','textarea','date','time','number','select') or x.get('role') not in ('title','question','answer','category','status','date','time','amount','rating','duration','location','notes','value') or type(x.get('required')) is not bool for x in fields):raise AutoQAPlanError('入力項目のラベル・種類・役割・必須設定が不正です')
     if len(set(roles))!=len(roles):raise AutoQAPlanError('入力項目の役割は重複できません')
     if any(x['type']=='select' and (not isinstance(x['options'],list) or not 2<=len(x['options'])<=8) for x in fields):raise AutoQAPlanError('選択欄には2〜8件の選択肢が必要です')
-    operation=product_operation(name,spec);required=PRODUCT_OPERATION_REQUIREMENTS[operation]
+    operation=product_operation(name,spec)
+    if operation not in PRODUCT_OPERATION_REQUIREMENTS:
+        raise ProductPatternUnsupportedError('対応する製品パターンが未登録です: '+str(name)[:120])
+    required=PRODUCT_OPERATION_REQUIREMENTS[operation]
     if not required.issubset(set(roles)):raise AutoQAPlanError(operation+'に必要な専用入力欄が不足しています: '+', '.join(sorted(required-set(roles))))
     if 'title' not in roles and 'question' not in roles:raise AutoQAPlanError('一覧を識別する名前または質問の欄が必要です')
     return dict(item,operation=operation)
@@ -469,12 +477,14 @@ def validate_product_interface(item,name,spec):
 
 def ensure_product_interface(name,cfg):
     spec=get_product_spec(name) or {};scope=product_scope_sha(name)
+    operation=product_operation(name,spec)
+    if operation not in PRODUCT_OPERATION_REQUIREMENTS:
+        raise ProductPatternUnsupportedError('操作パターン未登録。汎用記録画面を完成候補にはしません: '+str(name)[:120])
     key='product_interface:'+name+':'+scope
     rows=query('SELECT value FROM agent_settings WHERE key=?',(key,))
     if rows:
         try:return validate_product_interface(json.loads(rows[0]['value']),name,spec)
         except (ValueError,TypeError,KeyError):pass
-    operation=product_operation(name,spec)
     prompt=('JSONだけでオフラインWebアプリの入力定義を作る。HTMLやJavaScriptは出力しない。'
         'アプリ対象者と価値を表す短い画面タイトル・説明、3〜8個の具体的な入力欄を設計。'
         '役割は title,question,answer,category,status,date,time,amount,rating,duration,location,notes,value から選び、重複不可。'
@@ -567,6 +577,40 @@ def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
     save(job,name,asset_kind,page,'html',validation)
     event(job,name+': 自由生成の失敗後、構造化部品で操作可能な候補を作成。完成条件QAは続行中')
     return page,validation,not partial
+
+
+PRODUCT_PATTERN_PROBES={
+    'faq':'FAQ問い合わせ回答管理','survey':'顧客満足度アンケート','compare':'料金比較ツール',
+    'meeting':'会議日程調整','english_lesson':'英会話レッスン','attendance':'授業出欠管理',
+    'task_board':'作業進捗タスクボード','schedule':'予定整理ボード','records':'作業メモ記録一覧'}
+PRODUCT_PATTERN_BEHAVIOR_MARKERS={
+    'faq':('searchFaq','unresolvedList'),'survey':('toFixed(1)',),'compare':('toLocaleString()',),
+    'meeting':('meetingStatus',),'english_lesson':('reviewDue',),'attendance':('attendanceSummary',),
+    'task_board':('taskStatus','taskSummary'),'schedule':("includes(APP.operation)",),'records':('recordRows',)}
+
+
+def audit_product_pattern_catalog():
+    """Build and statically inspect every registered fallback before accepting a release."""
+    declared=set(PRODUCT_OPERATION_REQUIREMENTS)
+    if declared!=set(PRODUCT_PATTERN_PROBES) or declared!=set(PRODUCT_PATTERN_BEHAVIOR_MARKERS):
+        raise ValueError('製品パターン台帳のキー不一致: requirements/probes/behavior')
+    results=[]
+    common=('id="recordForm"','id="saveRecord"','id="recordRows"','id="downloadCsv"',
+        'id="downloadJson"','id="restoreFile"','localStorage','text/csv','application/json')
+    for operation,name in PRODUCT_PATTERN_PROBES.items():
+        spec=dict(audience='対象利用者',requested_outcome='中心作業を入力・処理して保存する',
+            differentiation='手作業の確認を減らす',workflow=['入力','処理','保存'],must_have=['入力','処理','保存'],
+            acceptance=['入力値を変更','処理結果を照合','保存を再表示'],delivery_mode='browser_local',dependencies=[])
+        if product_operation(name,spec)!=operation:raise ValueError('製品パターンの分類不一致: '+operation)
+        definition=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
+        if not PRODUCT_OPERATION_REQUIREMENTS[operation].issubset({f['role'] for f in definition['fields']}):
+            raise ValueError('必須データ役割の欠落: '+operation)
+        page=render_product_interface(name,definition,spec);errors=validate_html(page,name)
+        if errors:raise ValueError(operation+'の生成HTML検査: '+' / '.join(errors))
+        missing=[marker for marker in common+PRODUCT_PATTERN_BEHAVIOR_MARKERS[operation] if marker not in page]
+        if missing:raise ValueError(operation+'の機能・保存部品の欠落: '+', '.join(missing))
+        results.append(dict(operation=operation,title=definition['title'],fields=len(definition['fields']),static='合格'))
+    return results
 
 
 def store_product_spec(name,spec,source='AI設計・未確認'):
@@ -926,6 +970,7 @@ AUTO_QA_FAILURE_STAGES=('自動検証で要修正','自動実操作・画像検�
 
 class AutoQAEnvironmentError(RuntimeError):pass
 class AutoQAPlanError(ValueError):pass
+class ProductPatternUnsupportedError(AutoQAPlanError):pass
 
 
 def qa_json(text):
@@ -1630,6 +1675,16 @@ def quality_development_cycle(job,cfg):
         if not state()['enabled']:return
         name=row['name']
         if not development_allowed(name):continue
+        if row['stage']=='操作パターン追加待ち':
+            marks=query('SELECT value FROM agent_settings WHERE key=?',('product_pattern_wait:'+name,))
+            try:marker=json.loads(marks[0]['value']) if marks else {}
+            except (ValueError,TypeError):marker={}
+            if marker.get('version')==APP_VERSION:
+                waiting['新しい操作パターンの追加待ち']=waiting.get('新しい操作パターンの追加待ち',0)+1
+                continue
+            execute('DELETE FROM agent_settings WHERE key=?',('product_pattern_wait:'+name,))
+            product_development_state(name,'修正依頼あり','エージェント版の更新を検出。新しい操作パターンで再検証します',row['attempts'])
+            row=dict(row);row['stage']='修正依頼あり';row['updated']=''
         prior=get_product_spec(name)
         baseline_changed=bool(prior and prior.get('development_baseline')!=PRODUCT_DEVELOPMENT_BASELINE)
         if baseline_changed:ensure_product_spec(name,cfg)
@@ -1690,7 +1745,7 @@ def quality_development_cycle(job,cfg):
                 product_development_state(name,'自動検証で要修正',qa_detail,attempts+qa_round)
                 event(job,name+': 検査不合格を保持して、その場で対象コードを修正・再検査します')
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-            stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else qa_stage
+            stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else '操作パターン追加待ち' if '操作パターン未登録' in verdict else qa_stage
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+qa_round+1,assets[0]['path'] if assets else '')
             event(job,name+((': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
@@ -4028,6 +4083,12 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             if release_spec.get('delivery_mode')=='browser_local' or partial:
                 event(job,name+': 自由生成が検査に通らないため、定義済み入力・保存・出力部品で再構成します')
                 return structured_product_fallback(job,name,cfg,plan,asset_kind,partial)
+        except ProductPatternUnsupportedError as exc:
+            detail='操作パターン未登録。汎用画面を完成扱いにしません: '+str(exc)[:500]
+            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
+                ('product_pattern_wait:'+name,json.dumps({'version':APP_VERSION,'reason':detail,'updated':now()},ensure_ascii=False)))
+            event(job,name+': '+detail)
+            return final[0],detail,False
         except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
             event(job,name+': 構造化部品の再構成も未完了。確認待ちにはしません: '+str(exc)[:700])
     return final if final else ('', '中断', False)
