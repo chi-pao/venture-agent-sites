@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.22'
+APP_VERSION='2026.10.25.25'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -397,6 +397,7 @@ PRODUCT_INTERFACE_SCHEMA={
         'title':{'type':'string','minLength':4,'maxLength':48},
         'intro':{'type':'string','minLength':15,'maxLength':180},
         'record_label':{'type':'string','minLength':2,'maxLength':24},
+        'capabilities':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','enum':['guided_session','rating_summary','checklist_progress','deadline_tracking','cost_comparison','faq_search','schedule_conflict','review_interval']}},
         'fields':{'type':'array','minItems':3,'maxItems':8,'items':{'type':'object','properties':{
             'id':{'type':'string','pattern':'^[a-z][a-z0-9_]{1,23}$'},
             'label':{'type':'string','minLength':1,'maxLength':32},
@@ -411,7 +412,7 @@ PRODUCT_INTERFACE_SCHEMA={
 def product_operation(name,spec):
     # Prefer the explicit product and outcome labels. Generic acceptance text
     # often contains words like "compare" or "schedule" and must not choose a pattern.
-    text=(str(name)+' '+str(spec.get('requested_outcome',''))).casefold()
+    name_text=str(name).casefold();text=(name_text+' '+str(spec.get('requested_outcome',''))).casefold()
     if any(x in text for x in ('チャットボット','chatbot','faq','問い合わせ回答','よくある質問')):return 'faq'
     if any(x in text for x in ('会議','打ち合わせ','meeting')):return 'meeting'
     if any(x in text for x in ('英会話','英語レッスン','語学レッスン','english conversation')):return 'english_lesson'
@@ -420,8 +421,12 @@ def product_operation(name,spec):
     if any(x in text for x in ('満足度','アンケート','調査','評価回答')):return 'survey'
     if any(x in text for x in ('比較','費用','価格','金額')):return 'compare'
     if any(x in text for x in ('予定','日程','スケジュール','旅行','期限','時間管理')):return 'schedule'
-    if any(x in text for x in ('メモ','記録','台帳','ログ','記録一覧','リスト')):return 'records'
-    return 'unsupported'
+    # A generic outcome often says "record/save" for every product. Only the
+    # product label itself can designate the plain records pattern.
+    if any(x in name_text for x in ('メモ','記録','台帳','ログ','記録一覧','リスト')):return 'records'
+    # Unknown business labels use a composable workflow contract rather than
+    # being forced into one of the nine sector-shaped fallback screens.
+    return 'custom_workflow'
 
 
 # A pattern is supported only when its input contract and functional handler exist.
@@ -429,7 +434,13 @@ PRODUCT_OPERATION_REQUIREMENTS={
     'faq':{'question','answer'},'survey':{'rating'},'compare':{'amount'},
     'meeting':{'date','time','duration'},'english_lesson':{'title','answer','value','date','rating'},
     'attendance':{'date','status'},'task_board':{'date','status'},
-    'schedule':{'date'},'records':set()}
+    'schedule':{'date'},'records':set(),'custom_workflow':set()}
+
+PRODUCT_CAPABILITY_ROLES={
+    'guided_session':{'duration'},'rating_summary':{'rating'},
+    'checklist_progress':{'status'},'deadline_tracking':{'date'},
+    'cost_comparison':{'amount'},'faq_search':{'question','answer'},
+    'schedule_conflict':{'date','time','duration'},'review_interval':{'date','rating'}}
 
 
 def deterministic_product_interface(name,spec):
@@ -470,9 +481,16 @@ def validate_product_interface(item,name,spec):
     if operation not in PRODUCT_OPERATION_REQUIREMENTS:
         raise ProductPatternUnsupportedError('対応する製品パターンが未登録です: '+str(name)[:120])
     required=PRODUCT_OPERATION_REQUIREMENTS[operation]
+    capabilities=item.get('capabilities',[])
+    if operation=='custom_workflow':
+        if not isinstance(capabilities,list) or not capabilities or len(capabilities)>5 or len(set(capabilities))!=len(capabilities):
+            raise AutoQAPlanError('新しい用途には、検証済み機能部品を1〜5個組み合わせてください')
+        unknown=set(capabilities)-set(PRODUCT_CAPABILITY_ROLES)
+        if unknown:raise AutoQAPlanError('未登録の機能部品: '+', '.join(sorted(unknown)))
+        required=set().union(*(PRODUCT_CAPABILITY_ROLES[x] for x in capabilities))
     if not required.issubset(set(roles)):raise AutoQAPlanError(operation+'に必要な専用入力欄が不足しています: '+', '.join(sorted(required-set(roles))))
     if 'title' not in roles and 'question' not in roles:raise AutoQAPlanError('一覧を識別する名前または質問の欄が必要です')
-    return dict(item,operation=operation)
+    return dict(item,operation=operation,capabilities=capabilities)
 
 
 def ensure_product_interface(name,cfg):
@@ -490,7 +508,10 @@ def ensure_product_interface(name,cfg):
         '役割は title,question,answer,category,status,date,time,amount,rating,duration,location,notes,value から選び、重複不可。'
         '選択欄は2〜8個のoptionsを付ける。外部接続のないAI・自動回答・リアルタイムを約束しない。'
         'faqにはquestionとanswer、surveyにはrating、compareにはamount、meetingにはdate,time,duration、english_lessonにはtitle,answer,value,date,rating、attendanceにはdate,status、task_boardにはdate,status、scheduleにはdateを含める。'
-        'キー: title,intro,record_label,fields[{id,label,type,role,required,options}]。'
+        '既存9種以外は業種名に関係なく、検証済み機能部品を組み合わせるcustom_workflowとして設計。'
+        'capabilitiesはguided_session（duration必須）,rating_summary（rating必須）,checklist_progress（status必須）,deadline_tracking（date必須）,cost_comparison（amount必須）,faq_search（question+answer必須）,schedule_conflict（date+time+duration必須）,review_interval（date+rating必須）から1〜5個選ぶ。'
+        '要件に一致する部品がないときは、似ているふりをせずunsupportedとする。'
+        'キー: title,intro,record_label,capabilities,fields[{id,label,type,role,required,options}]。'
         '\n操作種別:'+operation+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:4500]
         +'\n制作設計:'+json.dumps(get_product_blueprint(name) or {},ensure_ascii=False)[:3500])
     try:
@@ -499,6 +520,8 @@ def ensure_product_interface(name,cfg):
         item=validate_product_interface(item,name,spec)
     except Exception as exc:
         # A malformed local-model answer must never block the deterministic renderer.
+        if operation=='custom_workflow':
+            raise ProductPatternUnsupportedError('用途に合う機能部品の構成を検証できません: '+str(exc)[:250]) from exc
         item=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
             ('product_interface_fallback:'+name,json.dumps({'reason':str(exc)[:700],'at':now()},ensure_ascii=False)))
@@ -508,7 +531,7 @@ def ensure_product_interface(name,cfg):
 
 def render_product_interface(name,item,spec):
     """Render verified form, CRUD, search, persistence and file I/O from a small JSON contract."""
-    item=validate_product_interface(item,name,spec);fields=item['fields'];operation=item['operation']
+    item=validate_product_interface(item,name,spec);fields=item['fields'];operation=item['operation'];capabilities=item.get('capabilities',[])
     def esc(value):return html.escape(str(value),quote=True)
     field_markup=[]
     for f in fields:
@@ -518,42 +541,48 @@ def render_product_interface(name,item,spec):
         else:control=f'<input id="{fid}" type="{esc(f["type"])}"'+(' min="1" max="5" step="1"' if f['role']=='rating' else '')+required+'>'
         field_markup.append(f'<label class="field"><span>{label}</span>{control}</label>')
     cols=''.join(f'<th>{esc(f["label"])}</th>' for f in fields)
-    if operation=='meeting':cols += '<th>時間の重なり</th>'
+    if operation=='meeting' or 'schedule_conflict' in capabilities:cols += '<th>時間の重なり</th>'
     escaped_title=esc(item['title']);escaped_intro=esc(item['intro']);record=esc(item['record_label'])
-    if operation=='english_lesson':cols += '<th>復習目安</th>'
-    if operation=='task_board':cols += '<th>期限状況</th>'
+    if operation=='english_lesson' or 'review_interval' in capabilities:cols += '<th>復習目安</th>'
+    if operation=='task_board' or 'deadline_tracking' in capabilities:cols += '<th>期限状況</th>'
     # Distinct, legible palettes by sector keep the common interaction model from looking cloned.
     sector=project_registry(name)['sector'];accent={'travel_lifestyle':'#087f8c','education':'#7653c3','family_health':'#df6b50','real_estate':'#356f9c','business_ops':'#3858a8','media':'#bd4b79'}.get(sector,'#356f9c')
-    app_json=json.dumps(dict(fields=fields,operation=operation,name=name),ensure_ascii=False).replace('</','<\\/')
-    special={'faq':'質問を検索すると登録済みの回答を表示し、見つからない質問は未解決一覧に記録します。','survey':'回答を登録すると評価の平均と回答件数を集計します。','compare':'数値を登録し、未入力と合計を分けて比較します。','meeting':'会議候補を日付順に整理し、登録済み予定との時間の重なりを確認します。','english_lesson':'手応えを記録すると、次に見直す日付の目安を一覧に表示します。','attendance':'出席・遅刻・欠席・早退を登録し、全体の出席率と欠席者を集計します。','task_board':'未完了の数と期限状況を自動で表示し、優先順に作業を確認できます。','schedule':'日付順に予定を整理し、次の予定を確認します。','records':'入力した記録を検索・保存・出力できます。'}[operation]
+    app_json=json.dumps(dict(fields=fields,operation=operation,capabilities=capabilities,name=name),ensure_ascii=False).replace('</','<\\/')
+    special={'faq':'質問を検索すると登録済みの回答を表示し、見つからない質問は未解決一覧に記録します。','survey':'回答を登録すると評価の平均と回答件数を集計します。','compare':'数値を登録し、未入力と合計を分けて比較します。','meeting':'会議候補を日付順に整理し、登録済み予定との時間の重なりを確認します。','english_lesson':'手応えを記録すると、次に見直す日付の目安を一覧に表示します。','attendance':'出席・遅刻・欠席・早退を登録し、全体の出席率と欠席者を集計します。','task_board':'未完了の数と期限状況を自動で表示し、優先順に作業を確認できます。','schedule':'日付順に予定を整理し、次の予定を確認します。','records':'入力した記録を検索・保存・出力できます。'}.get(operation)
+    if operation=='custom_workflow':
+        labels={'guided_session':'目安時間を設定して練習を開始できます。','rating_summary':'評価の平均と回答数を確認できます。','checklist_progress':'状態別の進み具合を確認できます。','deadline_tracking':'期限と超過状況を確認できます。','cost_comparison':'登録した金額の比較に使えます。','faq_search':'登録した質問と回答を検索できます。','schedule_conflict':'登録済み予定との重なりを確認できます。','review_interval':'評価に応じた復習日の目安を確認できます。'}
+        special=' / '.join(labels[x] for x in capabilities)
+    guided='guided_session' in capabilities
+    timer_markup=('<section class="step" id="practicePanel"><b>練習タイマー</b><strong id="timerDisplay" aria-live="polite">準備完了</strong><div class="actions"><button id="startPractice" type="button">開始・再開</button><button id="pausePractice" type="button" class="secondary">一時停止</button><button id="resetPractice" type="button" class="secondary">リセット</button></div><p class="muted">入力した目安時間を計測します。音声・専門的な指導は行いません。</p></section>') if guided else ''
+    timer_script='''\nif(APP.capabilities.includes('guided_session')){let remaining=0,timerId=null;const duration=APP.fields.find(f=>f.role==='duration');const display=$('timerDisplay');const draw=()=>{display.textContent=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0')};$('startPractice').addEventListener('click',()=>{if(!remaining)remaining=Math.max(1,Math.min(180,Number($(duration.id).value)||Number(records[0]?.[duration.id])||5))*60;draw();if(timerId)return;timerId=setInterval(()=>{remaining=Math.max(0,remaining-1);draw();if(!remaining){clearInterval(timerId);timerId=null;display.textContent='終了'}} ,1000)});$('pausePractice').addEventListener('click',()=>{clearInterval(timerId);timerId=null});$('resetPractice').addEventListener('click',()=>{clearInterval(timerId);timerId=null;remaining=0;display.textContent='準備完了'})}'''
     connection_note=''
     if spec.get('delivery_mode')=='connected':
         dependencies=' / '.join(map(str,spec.get('dependencies',[]))) or '外部連携'
         message=('カレンダーの空き照会・招待送信・共同同期は未接続です。この画面では登録済み予定との重なりを確認できます。' if operation=='meeting' else '音声認識・AI発話評価・オンライン通話は未接続です。この画面ではフレーズ記録と復習目安を利用できます。' if operation=='english_lesson' else '配信サービスからの参加者自動取得は未接続です。この画面では出欠を手動記録できます。' if operation=='attendance' and 'オンライン授業' in name else '外部接続は未完了です。画面内の独立機能のみ利用できます。')
         connection_note='<div class="notice" role="note">'+esc(message+' 必要な接続: '+dependencies)+'</div>'
-    operation_markup=('<section class="faq-lookup"><h3>問い合わせへの回答を探す</h3><label class="field"><span>質問・キーワード</span><input id="faqQuery" type="search" placeholder="例：配送にかかる日数"></label><div class="actions"><button id="searchFaq" type="button">FAQを検索</button></div><div id="faqAnswer" class="notice" role="status"></div><h3>未解決の質問 <span id="unresolvedCount">0</span></h3><ul id="unresolvedList"></ul></section>') if operation=='faq' else ''
-    summary_label={'faq':'未解決質問','attendance':'出席率','task_board':'未完了タスク'}.get(operation,'集計')
+    operation_markup=('<section class="faq-lookup"><h3>問い合わせへの回答を探す</h3><label class="field"><span>質問・キーワード</span><input id="faqQuery" type="search" placeholder="例：配送にかかる日数"></label><div class="actions"><button id="searchFaq" type="button">FAQを検索</button></div><div id="faqAnswer" class="notice" role="status"></div><h3>未解決の質問 <span id="unresolvedCount">0</span></h3><ul id="unresolvedList"></ul></section>') if operation=='faq' or 'faq_search' in capabilities else timer_markup
+    summary_label={'faq':'未解決質問','attendance':'出席率','task_board':'未完了タスク','custom_workflow':'利用状況'}.get(operation,'集計')
     return f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escaped_title}</title><style>
 :root{{--accent:{accent};--ink:#1d2938;--muted:#68788a;--paper:#f5f8fc;--line:#dce5ef;--card:#fff}}*{{box-sizing:border-box}}body{{margin:0;background:linear-gradient(145deg,#edf5fb,#f8f7ff 60%,#fff7f0);color:var(--ink);font:16px/1.55 system-ui,"Yu Gothic",sans-serif}}.wrap{{max-width:1100px;margin:auto;padding:26px 18px 60px}}header{{background:linear-gradient(120deg,var(--accent),#23384e);color:white;border-radius:24px;padding:32px;box-shadow:0 18px 42px #20364d28}}.eyebrow{{font-size:13px;letter-spacing:.08em;opacity:.85}}h1{{font-size:clamp(28px,5vw,42px);line-height:1.2;margin:8px 0 10px}}header p{{max-width:720px;margin:0;color:#eaf3fb}}.steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0 24px}}.step,.card{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 8px 25px #23384e0d}}.step b{{color:var(--accent);display:block}}.layout{{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.6fr);gap:16px}}h2{{font-size:20px;margin:0 0 14px}}.fields{{display:grid;gap:12px}}.field span{{display:block;font-size:14px;font-weight:700;margin-bottom:5px}}input,textarea,select,button{{font:inherit}}input,textarea,select{{width:100%;border:1px solid #cbd7e4;border-radius:11px;padding:10px 12px;min-height:42px;background:#fff;color:var(--ink)}}input:focus,textarea:focus,select:focus{{outline:3px solid #79a9d344;border-color:var(--accent)}}button,.file-button{{border:0;border-radius:11px;padding:11px 15px;min-height:42px;background:var(--accent);color:white;font-weight:750;cursor:pointer}}button.secondary,.file-button{{background:#eaf0f6;color:#26374a}}button.danger{{background:#fff0ed;color:#a33228}}button:hover,.file-button:hover{{filter:brightness(.96)}}.actions,.toolbar{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.notice{{min-height:26px;color:var(--accent);font-weight:700;margin-top:8px}}.metric{{display:inline-flex;align-items:baseline;gap:8px;background:#eef4f9;border-radius:12px;padding:10px 13px;margin:0 8px 12px 0}}.metric strong{{font-size:22px}}.table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:12px}}table{{width:100%;border-collapse:collapse;min-width:620px;background:white}}th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}}th{{background:#f1f5f9;font-size:13px}}.row-actions{{white-space:nowrap}}.row-actions button{{min-height:34px;padding:6px 9px;font-size:13px}}.muted{{color:var(--muted);font-size:13px}}.hidden{{display:none!important}}#restoreFile{{display:none}}.layout{{min-width:0}}.layout>.card{{min-width:0;width:100%}}h1,h2,.field span{{overflow-wrap:anywhere}}@media(max-width:760px){{.wrap{{padding:14px 12px 40px;width:100%;min-width:0;overflow-x:hidden}}header{{padding:23px 20px;border-radius:19px}}.steps{{grid-template-columns:1fr}}.layout{{display:flex!important;flex-direction:column;width:100%;min-width:0;gap:12px}}.layout>.card{{padding:15px;width:100%!important;min-width:0!important;max-width:100%!important;margin:0}}.table-wrap{{max-width:100%;overflow-x:auto}}button,.file-button{{min-height:44px}}}}
 </style></head><body><main class="wrap"><header><div class="eyebrow">{record}を整理する</div><h1>{escaped_title}</h1><p>{escaped_intro}</p></header>{connection_note}<section class="steps" aria-label="使い方"><div class="step"><b>01 入力</b>必要な情報を登録します</div><div class="step"><b>02 整理</b>{esc(special)}</div><div class="step"><b>03 保存・共有</b>一覧を保存し、CSVで持ち出せます</div></section><div class="layout"><section class="card"><h2>{record}を登録</h2><form id="recordForm" class="fields">{''.join(field_markup)}<div class="actions"><button id="saveRecord" type="submit">{record}を保存</button><button id="clearForm" type="button" class="secondary">入力を消去</button></div></form><div id="result" class="notice" role="status"></div><div class="muted">保存先はこのブラウザです。共有サーバーとは同期しません。</div></section><section class="card"><h2>{record}一覧</h2><div class="metric"><span>登録数</span><strong id="recordCount">0</strong></div><div id="summary" class="metric"><span>{summary_label}</span><strong id="summaryValue">0</strong></div>{operation_markup}<label class="field"><span>一覧を検索</span><input id="searchRecords" type="search" placeholder="キーワードを入力"></label><div class="toolbar"><button id="downloadCsv" type="button" class="secondary">CSV出力</button><button id="downloadJson" type="button" class="secondary">バックアップ保存</button><label class="file-button" for="restoreFile">バックアップ復元</label><input id="restoreFile" type="file" accept="application/json,.json"></div><div id="listMessage" class="notice" role="status"></div><div class="table-wrap"><table><thead><tr>{cols}<th>操作</th></tr></thead><tbody id="recordRows"></tbody></table></div></section></div></main><script>
 const APP={app_json};const STORE='venture-records-'+{json.dumps(hashlib.sha256(name.encode()).hexdigest()[:12])};let records=[];let unresolved=[];let editing=-1;const $=id=>document.getElementById(id);const form=$('recordForm');
 function load(){{try{{const v=JSON.parse(localStorage.getItem(STORE)||'[]');records=Array.isArray(v)?v:(Array.isArray(v.records)?v.records:[]);unresolved=Array.isArray(v.unresolved)?v.unresolved:[]}}catch{{records=[];unresolved=[]}}render()}}
-function save(){{localStorage.setItem(STORE,JSON.stringify(APP.operation==='faq'?{{records,unresolved}}:records));render()}}
+function save(){{localStorage.setItem(STORE,JSON.stringify(APP.operation==='faq'||APP.capabilities.includes('faq_search')?{{records,unresolved}}:records));render()}}
 function esc(v){{return String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}
 function reviewDue(row){{const d=APP.fields.find(f=>f.role==='date'),r=APP.fields.find(f=>f.role==='rating');if(!row[d?.id])return '学習日を入力';const base=new Date(String(row[d.id])+'T12:00:00');if(Number.isNaN(base.getTime()))return '日付を確認';const score=Number(row[r?.id])||3;base.setDate(base.getDate()+(score<=2?1:score===3?3:7));return base.toLocaleDateString('ja-JP')}}
 function attendanceSummary(){{const f=APP.fields.find(x=>x.role==='status'),n=records.length;const present=records.filter(r=>['出席','遅刻','早退'].includes(r[f?.id])).length;const absent=records.filter(r=>r[f?.id]==='欠席').length;return n?Math.round(present/n*100)+'%（出席扱い'+present+'/'+n+'、欠席'+absent+'）':'—'}}
 function taskSummary(){{const f=APP.fields.find(x=>x.role==='status');const open=records.filter(r=>r[f?.id]!=='完了').length;const overdue=records.filter(r=>taskStatus(r)==='期限超過').length;return open+'件 / 期限超過'+overdue+'件'}}
 function taskStatus(row){{const due=APP.fields.find(f=>f.role==='date'),status=APP.fields.find(f=>f.role==='status');if(row[status?.id]==='完了')return '完了';const date=String(row[due?.id]||'');if(!date)return '期限未設定';const today=new Date();const key=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');return date<key?'期限超過':date===key?'本日期限':'期限内'}}
 function meetingStatus(row,index){{const d=APP.fields.find(f=>f.role==='date'),t=APP.fields.find(f=>f.role==='time'),m=APP.fields.find(f=>f.role==='duration');const start=new Date(String(row[d?.id]||'')+'T'+String(row[t?.id]||''));if(Number.isNaN(start.getTime()))return '日時を確認';const end=start.getTime()+Math.max(1,Number(row[m?.id])||30)*60000;const conflict=records.some((other,i)=>{{if(i===index||other[d?.id]!==row[d?.id])return false;const otherStart=new Date(String(other[d?.id]||'')+'T'+String(other[t?.id]||'')).getTime();const otherEnd=otherStart+Math.max(1,Number(other[m?.id])||30)*60000;return Number.isFinite(otherStart)&&start.getTime()<otherEnd&&otherStart<end}});return conflict?'予定が重複':'空き'}}
-function render(){{const q=$('searchRecords').value.trim().toLocaleLowerCase();const source=records.map((r,i)=>({{r,i}}));if(['schedule','meeting','attendance','task_board'].includes(APP.operation)){{const dateField=APP.fields.find(f=>f.role==='date');source.sort((a,b)=>String(a.r[dateField?.id]||'').localeCompare(String(b.r[dateField?.id]||'')))}}const shown=source.filter(x=>JSON.stringify(x.r).toLocaleLowerCase().includes(q));$('recordRows').innerHTML=shown.map(x=>'<tr>'+APP.fields.map(f=>'<td>'+esc(x.r[f.id])+'</td>').join('')+(APP.operation==='meeting'?'<td>'+meetingStatus(x.r,x.i)+'</td>':'')+(APP.operation==='english_lesson'?'<td>'+reviewDue(x.r)+'</td>':'')+(APP.operation==='task_board'?'<td>'+taskStatus(x.r)+'</td>':'')+'<td class="row-actions"><button type="button" class="secondary" data-edit="'+x.i+'">編集</button> <button type="button" class="danger" data-delete="'+x.i+'">削除</button></td></tr>').join('');$('recordCount').textContent=String(records.length);let value='—';if(APP.operation==='survey'){{const nums=records.map(r=>Number(r[APP.fields.find(f=>f.role==='rating')?.id])).filter(Number.isFinite);value=nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)+'/5':'—'}}else if(APP.operation==='compare'){{const f=APP.fields.find(x=>x.role==='amount');const nums=records.map(r=>Number(r[f?.id])).filter(Number.isFinite);value=nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString():'—'}}else if(APP.operation==='faq'){{value=String(unresolved.length)+'件';if($('unresolvedCount')){{$('unresolvedCount').textContent=String(unresolved.length);$('unresolvedList').innerHTML=unresolved.slice(0,20).map(x=>'<li>'+esc(x.question)+'</li>').join('')}}}}else if(APP.operation==='attendance')value=attendanceSummary();else if(APP.operation==='task_board')value=taskSummary();else if(['schedule','meeting'].includes(APP.operation))value=records.length?records.length+'件':'—';else value=String(records.length)+'件';$('summaryValue').textContent=value}}
+function render(){{const q=$('searchRecords').value.trim().toLocaleLowerCase();const source=records.map((r,i)=>({{r,i}}));if(['schedule','meeting','attendance','task_board','custom_workflow'].includes(APP.operation)){{const dateField=APP.fields.find(f=>f.role==='date');if(dateField)source.sort((a,b)=>String(a.r[dateField.id]||'').localeCompare(String(b.r[dateField.id]||'')))}}const shown=source.filter(x=>JSON.stringify(x.r).toLocaleLowerCase().includes(q));$('recordRows').innerHTML=shown.map(x=>'<tr>'+APP.fields.map(f=>'<td>'+esc(x.r[f.id])+'</td>').join('')+((APP.operation==='meeting'||APP.capabilities.includes('schedule_conflict'))?'<td>'+meetingStatus(x.r,x.i)+'</td>':'')+((APP.operation==='english_lesson'||APP.capabilities.includes('review_interval'))?'<td>'+reviewDue(x.r)+'</td>':'')+((APP.operation==='task_board'||APP.capabilities.includes('deadline_tracking'))?'<td>'+taskStatus(x.r)+'</td>':'')+'<td class="row-actions"><button type="button" class="secondary" data-edit="'+x.i+'">編集</button> <button type="button" class="danger" data-delete="'+x.i+'">削除</button></td></tr>').join('');$('recordCount').textContent=String(records.length);let value='—';if(APP.operation==='survey'||APP.capabilities.includes('rating_summary')){{const nums=records.map(r=>Number(r[APP.fields.find(f=>f.role==='rating')?.id])).filter(Number.isFinite);value=nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)+'/5':'—'}}else if(APP.operation==='compare'||APP.capabilities.includes('cost_comparison')){{const f=APP.fields.find(x=>x.role==='amount');const nums=records.map(r=>Number(r[f?.id])).filter(Number.isFinite);value=nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString():'—'}}else if(APP.operation==='faq'||APP.capabilities.includes('faq_search')){{value=String(unresolved.length)+'件';if($('unresolvedCount')){{$('unresolvedCount').textContent=String(unresolved.length);$('unresolvedList').innerHTML=unresolved.slice(0,20).map(x=>'<li>'+esc(x.question)+'</li>').join('')}}}}else if(APP.operation==='attendance')value=attendanceSummary();else if(APP.operation==='task_board')value=taskSummary();else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('checklist_progress')){{const f=APP.fields.find(x=>x.role==='status');const done=records.filter(r=>['完了','済み','実施済み'].includes(r[f?.id])).length;value=records.length?Math.round(done/records.length*100)+'% 完了':'—'}}else if(APP.operation==='custom_workflow'&&APP.capabilities.includes('deadline_tracking')){{value=String(records.filter(r=>taskStatus(r)==='期限超過').length)+'件 期限超過'}}else if(['schedule','meeting','custom_workflow'].includes(APP.operation))value=records.length?records.length+'件':'—';else value=String(records.length)+'件';$('summaryValue').textContent=value}}
 form.addEventListener('submit',e=>{{e.preventDefault();const row={{}};for(const f of APP.fields)row[f.id]=$(f.id).value.trim();if(APP.fields.some(f=>f.required&&!row[f.id])){{$('result').textContent='必須項目を入力してください';return}}if(APP.operation==='faq'&&editing<0){{const q=String(row[APP.fields.find(f=>f.role==='question').id]).toLocaleLowerCase();const found=records.find(r=>(String(r[APP.fields.find(f=>f.role==='question').id])+' '+String(r[APP.fields.find(f=>f.role==='answer').id])).toLocaleLowerCase().includes(q));if(found)$('result').textContent='登録済みFAQに一致する回答があります';else $('result').textContent='FAQを登録しました。質問の一致検索を利用できます'}}else $('result').textContent=editing<0?'保存しました':'変更を保存しました';if(editing<0)records.unshift(row);else records[editing]=row;editing=-1;form.reset();save()}});
 $('recordRows').addEventListener('click',e=>{{const edit=e.target.dataset.edit,del=e.target.dataset.delete;if(edit!==undefined){{editing=Number(edit);const r=records[editing];for(const f of APP.fields)$(f.id).value=r[f.id]??'';$('result').textContent='編集内容を保存してください'}}if(del!==undefined){{records.splice(Number(del),1);save();$('result').textContent='削除しました'}}}});
 $('clearForm').addEventListener('click',()=>{{form.reset();editing=-1;$('result').textContent='入力を消去しました'}});$('searchRecords').addEventListener('input',render);
-if(APP.operation==='faq')$('searchFaq').addEventListener('click',()=>{{const query=$('faqQuery').value.trim();if(!query){{$('faqAnswer').textContent='質問を入力してください';return}}const qid=APP.fields.find(f=>f.role==='question').id,aid=APP.fields.find(f=>f.role==='answer').id;const hit=records.find(r=>String(r[qid]).toLocaleLowerCase().includes(query.toLocaleLowerCase()));if(hit){{$('faqAnswer').textContent=hit[aid]}}else{{if(!unresolved.some(x=>x.question===query))unresolved.unshift({{question:query,created:new Date().toISOString()}});$('faqAnswer').textContent='該当する回答がありません。未解決の質問に記録しました。';save()}}}});
+if(APP.operation==='faq'||APP.capabilities.includes('faq_search'))$('searchFaq').addEventListener('click',()=>{{const query=$('faqQuery').value.trim();if(!query){{$('faqAnswer').textContent='質問を入力してください';return}}const qid=APP.fields.find(f=>f.role==='question').id,aid=APP.fields.find(f=>f.role==='answer').id;const hit=records.find(r=>String(r[qid]).toLocaleLowerCase().includes(query.toLocaleLowerCase()));if(hit){{$('faqAnswer').textContent=hit[aid]}}else{{if(!unresolved.some(x=>x.question===query))unresolved.unshift({{question:query,created:new Date().toISOString()}});$('faqAnswer').textContent='該当する回答がありません。未解決の質問に記録しました。';save()}}}});
 $('downloadCsv').addEventListener('click',()=>{{const cell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\\ufeff'+[APP.fields.map(f=>f.label),...records.map(r=>APP.fields.map(f=>r[f.id]))].map(row=>row.map(cell).join(',')).join('\\r\\n');download(csv,'text/csv;charset=utf-8','records.csv')}});
 $('downloadJson').addEventListener('click',()=>download(JSON.stringify({{version:1,records,unresolved}},null,2),'application/json','records-backup.json'));
 function download(data,type,name){{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{{type}}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}}
-$('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();
+$('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();{timer_script}
 </script></body></html>'''
 
 
@@ -582,11 +611,13 @@ def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
 PRODUCT_PATTERN_PROBES={
     'faq':'FAQ問い合わせ回答管理','survey':'顧客満足度アンケート','compare':'料金比較ツール',
     'meeting':'会議日程調整','english_lesson':'英会話レッスン','attendance':'授業出欠管理',
-    'task_board':'作業進捗タスクボード','schedule':'予定整理ボード','records':'作業メモ記録一覧'}
+    'task_board':'作業進捗タスクボード','schedule':'予定整理ボード','records':'作業メモ記録一覧',
+    'custom_workflow':'マインドフルネス練習タイマー'}
 PRODUCT_PATTERN_BEHAVIOR_MARKERS={
     'faq':('searchFaq','unresolvedList'),'survey':('toFixed(1)',),'compare':('toLocaleString()',),
     'meeting':('meetingStatus',),'english_lesson':('reviewDue',),'attendance':('attendanceSummary',),
-    'task_board':('taskStatus','taskSummary'),'schedule':("includes(APP.operation)",),'records':('recordRows',)}
+    'task_board':('taskStatus','taskSummary'),'schedule':("includes(APP.operation)",),'records':('recordRows',),
+    'custom_workflow':('startPractice','timerDisplay','APP.capabilities')}
 
 
 def audit_product_pattern_catalog():
@@ -602,7 +633,14 @@ def audit_product_pattern_catalog():
             differentiation='手作業の確認を減らす',workflow=['入力','処理','保存'],must_have=['入力','処理','保存'],
             acceptance=['入力値を変更','処理結果を照合','保存を再表示'],delivery_mode='browser_local',dependencies=[])
         if product_operation(name,spec)!=operation:raise ValueError('製品パターンの分類不一致: '+operation)
-        definition=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
+        if operation=='custom_workflow':
+            definition=dict(title='マインドフルネス練習ノート',intro='練習時間と手応えを記録し、自分のペースを振り返れます。',record_label='練習記録',capabilities=['guided_session','rating_summary'],fields=[
+                dict(id='practice_title',label='練習内容',type='text',role='title',required=True,options=[]),
+                dict(id='duration_minutes',label='目安時間（分）',type='number',role='duration',required=True,options=[]),
+                dict(id='rating',label='手応え（1〜5）',type='number',role='rating',required=True,options=[]),
+                dict(id='practice_notes',label='気づき・メモ',type='textarea',role='notes',required=False,options=[])])
+            definition=validate_product_interface(definition,name,spec)
+        else:definition=validate_product_interface(deterministic_product_interface(name,spec),name,spec)
         if not PRODUCT_OPERATION_REQUIREMENTS[operation].issubset({f['role'] for f in definition['fields']}):
             raise ValueError('必須データ役割の欠落: '+operation)
         page=render_product_interface(name,definition,spec);errors=validate_html(page,name)
@@ -1676,14 +1714,8 @@ def quality_development_cycle(job,cfg):
         name=row['name']
         if not development_allowed(name):continue
         if row['stage']=='操作パターン追加待ち':
-            marks=query('SELECT value FROM agent_settings WHERE key=?',('product_pattern_wait:'+name,))
-            try:marker=json.loads(marks[0]['value']) if marks else {}
-            except (ValueError,TypeError):marker={}
-            if marker.get('version')==APP_VERSION:
-                waiting['新しい操作パターンの追加待ち']=waiting.get('新しい操作パターンの追加待ち',0)+1
-                continue
             execute('DELETE FROM agent_settings WHERE key=?',('product_pattern_wait:'+name,))
-            product_development_state(name,'修正依頼あり','エージェント版の更新を検出。新しい操作パターンで再検証します',row['attempts'])
+            product_development_state(name,'修正依頼あり','未登録用途の待ち状態を解除し、原因診断と別の実装方針で自動再開します',row['attempts'])
             row=dict(row);row['stage']='修正依頼あり';row['updated']=''
         prior=get_product_spec(name)
         baseline_changed=bool(prior and prior.get('development_baseline')!=PRODUCT_DEVELOPMENT_BASELINE)
@@ -1745,7 +1777,7 @@ def quality_development_cycle(job,cfg):
                 product_development_state(name,'自動検証で要修正',qa_detail,attempts+qa_round)
                 event(job,name+': 検査不合格を保持して、その場で対象コードを修正・再検査します')
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-            stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else '操作パターン追加待ち' if '操作パターン未登録' in verdict else qa_stage
+            stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else '修正依頼あり' if ('機能部品の組み合わせ' in verdict or '操作パターン未登録' in verdict) else qa_stage
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+qa_round+1,assets[0]['path'] if assets else '')
             event(job,name+((': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
@@ -3187,6 +3219,20 @@ def validate_html(source, name):
     return errors
 
 
+def remove_unconnected_ai_brand_claim(source,name,spec=None):
+    """Keep an idea's internal AI branding out of an offline prototype's visible copy."""
+    if not isinstance(source,str) or not isinstance(name,str) or not name:return source
+    if not re.search(r'AI|人工知能',name,re.I):return source
+    safe=re.sub(r'AI(?:駆動型|搭載|活用|による|支援型)?|人工知能','',name,flags=re.I).strip(' ・：:―-')
+    safe=re.sub(r'^[の・\s]+','',safe)
+    if not safe:safe='試作アプリ'
+    # Keep scripts/styles byte-for-byte intact; only replace the internal idea name
+    # in the visible document so an offline page does not promise an AI capability.
+    parts=re.split(r'(<(?:script|style)\b[^>]*>[\s\S]*?</(?:script|style)\s*>)',source,flags=re.I)
+    for i in range(0,len(parts),2):parts[i]=parts[i].replace(name,safe)
+    return ''.join(parts)
+
+
 def legacy_placeholder_reason(name,source):
     """Identify the known one-field doubling stub, not arbitrary small useful apps."""
     spec=get_product_spec(name) or {}
@@ -3885,6 +3931,40 @@ def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
     return apply_product_edits(source,proposal),str(proposal.get('reason','局所修正'))[:600]
 
 
+def autonomous_recovery_plan(failure,stage=0):
+    """Choose a different build strategy from the observed failure, never repeat the same patch."""
+    text=str(failure).casefold()
+    if any(x in text for x in ('javascript','unexpected token','参照先id','構文エラー','置換元')):
+        kind='source_rebuild';instruction=('局所差分の継ぎ足しをやめ、保存済み完成条件・対象者・受入テストからHTML一式を再生成する。'
+            '最初にHTMLの全idとJavaScriptの参照を照合し、処理を関数単位で完成させてから出力する。')
+    elif any(x in text for x in ('横はみ出し','overflow','スマホ','画面検査','smallcontrols','文字サイズ')):
+        kind='responsive_redesign';instruction=('機能の仮修正ではなく、スマホ幅390pxとPC幅1280pxの画面構造から作り直す。'
+            '狭い幅では縦積み、表は内部スクロール、操作ボタンは指で押せる大きさにし、両幅で再検査する。')
+    elif any(x in text for x in ('保存','export','復元','csv','json')):
+        kind='data_flow_rebuild';instruction=('入力→用途固有の処理→結果→保存→再読込→出力の一連を先に設計し、'
+            '各操作に対応する要素IDとブラウザ実操作を受入条件へ追加して、データ処理を一式作り直す。')
+    elif any(x in text for x in ('競合','公式本文','比較調査','source_ref','source_quote')):
+        kind='competitor_research';instruction=('コード生成をいったん切り離し、同じ対象者の同じ作業に使う代替・競合を再調査する。'
+            '公式取得本文・URL・取得時点を先に揃え、画面の見た目を実見した資料と本文だけの資料を区別する。比較根拠が揃ったら画面設計を作り直す。')
+    elif any(x in text for x in ('api','接続','サーバー','検索データ')):
+        kind='integration_decomposition';instruction=('必要な外部接続をAPIごとに分解し、接続なしで完成できる利用画面・編集・保存・説明を先に実装する。'
+            '実データを必要とする結果は固定値で偽装せず、接続アダプターと実データの受入テストを明示する。')
+    else:
+        kind='workflow_decomposition';instruction=('アプリ全体を一般的な記録一覧に置き換えない。対象者の中心作業を入力・判断・結果・保存の小さな機能に分解し、'
+            'まだ機能部品がない場合は企画専用の処理を新規実装して、完成条件ごとに異なる入力で結果が変わる受入操作を作る。')
+    if stage==1:
+        kind='acceptance_rebuild';instruction=('失敗ログを受入条件の単位へ分解し、対象者の中心作業を最小の実行可能な流れに再設計する。'
+            '未実装の工程を曖昧に隠さず、独立して完成できる画面・処理は実装し、各受入条件に異なる入力と期待結果を割り当てて検査する。')
+    elif stage==2:
+        kind='component_composition';instruction=('自由生成の同じコード経路を使わず、検証済みの入力・検索・集計・スケジュール・練習・保存部品を選び直して組み合わせる。'
+            '用途固有の中心処理を最低1つ明示し、汎用記録一覧への置換はしない。必要なAPIは接続作業と分けて、接続前に使える部分を完成させる。')
+    elif stage>=3:
+        kind='novel_route';instruction=('過去に試した修正方針を繰り返さず、現在の完成条件と失敗した実物を比較して別の実装経路を設計する。'
+            '既存部品を無理に当てはめず、用途固有の処理を小さな動作単位に分けて実装し、各単位に入力例・期待結果・保存確認を割り当てる。'
+            '一つのHTML生成で解決できない処理は、未接続APIを偽装せず、ローカルで完成できる部分と接続が要る部分を明確に分離する。')
+    return {'kind':kind,'instruction':instruction}
+
+
 def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow_partial=False):
     history=query("SELECT validation FROM agent_assets WHERE idea=? AND kind IN ('品質改善候補HTML','試作品HTML') ORDER BY id DESC LIMIT 1",(name,))
     last=history[0]['validation'] if history else ''
@@ -3923,11 +4003,11 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         return '',detail,False
 
     configured_revisions=max(1,int(cfg['max_revisions']))
-    # Reserve two bounded same-cycle slots: one for a focused repair after a failed
-    # draft, and one fallback when that repair proposal itself cannot be applied.
-    # The final candidate remains unapproved unless every validation passes.
-    attempt_limit=configured_revisions+2
+    # Reserve recovery slots for materially different strategies. Repeated failure
+    # triggers a diagnosis and strategy change instead of breaking to the same fallback.
+    attempt_limit=configured_revisions+5
     force_full_generation_reason=''
+    recovery_count=min(4,int(repair_state.get('recovery_stage',0) or 0))
     for n in range(1, attempt_limit + 1):
         if not state()['enabled'] or not development_allowed(name):
             break
@@ -3963,6 +4043,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             'JavaScriptのgetElementByIdで参照するIDはHTMLに必ず存在させる。'
             'スクリプトはDOM構築後に実行する。イベント登録時のnullを防ぐ。\n'
             '過去の失敗理由を繰り返さない:\n' + past_failures + '\n'
+            '過去に試して失敗した回復方針（同じ方法を繰り返さない）:\n'
+            +json.dumps(repair_state.get('recovery_history',[]),ensure_ascii=False)[:1200]+'\n'
             '競合・代替との同じ作業の比較基準と仮説:\n'+json.dumps(competitive_context(name),ensure_ascii=False)[:4200]+'\n事業計画:\n' + plan[:2200]
             + '\n発信前に満たす完成条件（主機能を省略・縮小しない）:\n'+quality_requirements_text(name)[:5000]
             + '\n必ず実装する具体的な範囲:' + str(specification.get('mvp_scope',''))[:800]
@@ -4006,6 +4088,9 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
             page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
+        sanitized_page=remove_unconnected_ai_brand_claim(page,name,release_spec)
+        if sanitized_page!=page:event(job,name+': AI未接続の企画名表記を画面用名称から外し、未接続機能を約束しない表示へ調整')
+        page=sanitized_page
         errors = validate_html(page, name)+preserve_checkpoint_features(checkpoint,page)
         placeholder=legacy_placeholder_reason(name,page)
         if placeholder:errors.append('用途に合う中心機能がない旧サンプル: '+placeholder)
@@ -4064,14 +4149,45 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         event(job, f'{name}: {last[:160]}')
         signature = re.sub(r'\s+', ' ', last)[:350]
         repeated=signature in seen_failures or signature==repair_state.get('signature')
+        base_recovery=autonomous_recovery_plan(last,0)
+        if not repeated and repair_state.get('failure_class') and base_recovery['kind']!=repair_state.get('failure_class'):
+            recovery_count=0
+        elif not repeated and not repair_state.get('failure_class') and signature!=repair_state.get('signature'):
+            recovery_count=0
         diagnose_next=repeated
         if repeated:
-            event(job,name+': 同一エラーを検出。原因を再診断して用途別部品への切替へ')
+            if recovery_count<4:
+                recovery=autonomous_recovery_plan(last,recovery_count)
+                recovery_count+=1
+                recovery_history=list(repair_state.get('recovery_history',[]))
+                recovery_history.append(recovery['kind'])
+                force_full_generation_reason=('自動回復段階 '+str(recovery_count)+' / 方針 '+recovery['kind']+'\n'
+                    +'過去に試した方針:'+json.dumps(recovery_history[:-1],ensure_ascii=False)+'\n'
+                    +recovery['instruction']+'\n直前の検査失敗:\n'+last[:1800])
+                event(job,name+': 同じ失敗を検出。原因を分類し、解決方針「'+recovery['kind']+'」へ切替えて全体を再生成・再検査します')
+                previous_page=''
+                seen_failures.clear()
+                repair_state=dict(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
+                    recovery_stage=recovery_count,recovery_kind=recovery['kind'],recovery_history=recovery_history,
+                    failure_class=base_recovery['kind'],checked=now())
+                execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
+                continue
             if checkpoint:previous_page=checkpoint
-            event(job,name+': 同じ検査理由が続いたため自由生成を停止し、用途別の検証済み部品へ切り替えます')
+            # Start a fresh diagnosis next cycle while retaining the failed approaches.
+            # A persisted max stage would otherwise make every later cycle give up early.
+            exhausted=dict(repair_state)
+            exhausted.update(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
+                recovery_stage=0,recovery_history=list(repair_state.get('recovery_history',[])),
+                recovery_cycle_exhausted=now(),checked=now())
+            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
+                ('product_repair_state:'+name,json.dumps(exhausted,ensure_ascii=False)))
+            event(job,name+': 4種類の回復方針を試行。未合格候補は確認待ちにせず、失敗方針を記録して次サイクルで新しい診断から継続します')
             break
         seen_failures.add(signature)
-        repair_state=dict(signature=signature,repeat=int(repair_state.get('repeat',0))+1 if repeated else 0,checked=now())
+        next_state=dict(repair_state)
+        next_state.update(signature=signature,repeat=int(repair_state.get('repeat',0))+1 if repeated else 0,
+            recovery_stage=recovery_count,failure_class=base_recovery['kind'],checked=now())
+        repair_state=next_state
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
         if n < attempt_limit:
             event(job,name+': 検査不合格を保持し、直後の試行で修正して再検査します')
@@ -4084,9 +4200,15 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 event(job,name+': 自由生成が検査に通らないため、定義済み入力・保存・出力部品で再構成します')
                 return structured_product_fallback(job,name,cfg,plan,asset_kind,partial)
         except ProductPatternUnsupportedError as exc:
-            detail='操作パターン未登録。汎用画面を完成扱いにしません: '+str(exc)[:500]
+            detail='用途に合う機能部品の組み合わせが未登録・検証未完了のため、完成候補にはしません: '+str(exc)[:500]
+            previous=query('SELECT value FROM agent_settings WHERE key=?',('product_repair_state:'+name,))
+            try:state_row=json.loads(previous[0]['value']) if previous else {}
+            except (ValueError,TypeError):state_row={}
+            state_row.update(signature=detail[:350],repeat=int(state_row.get('repeat',0))+1,
+                recovery_stage=min(3,int(state_row.get('recovery_stage',0))+1),recovery_kind='component_extension',
+                failure_class=autonomous_recovery_plan(detail,0)['kind'],checked=now())
             execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
-                ('product_pattern_wait:'+name,json.dumps({'version':APP_VERSION,'reason':detail,'updated':now()},ensure_ascii=False)))
+                ('product_repair_state:'+name,json.dumps(state_row,ensure_ascii=False)))
             event(job,name+': '+detail)
             return final[0],detail,False
         except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
