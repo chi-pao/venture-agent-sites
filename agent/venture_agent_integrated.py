@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.25'
+APP_VERSION='2026.10.25.26'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -3962,7 +3962,18 @@ def autonomous_recovery_plan(failure,stage=0):
         kind='novel_route';instruction=('過去に試した修正方針を繰り返さず、現在の完成条件と失敗した実物を比較して別の実装経路を設計する。'
             '既存部品を無理に当てはめず、用途固有の処理を小さな動作単位に分けて実装し、各単位に入力例・期待結果・保存確認を割り当てる。'
             '一つのHTML生成で解決できない処理は、未接続APIを偽装せず、ローカルで完成できる部分と接続が要る部分を明確に分離する。')
-    return {'kind':kind,'instruction':instruction}
+    labels={
+        'source_rebuild':'完成条件から画面と処理を作り直す',
+        'responsive_redesign':'スマホ・PCの画面を再設計する',
+        'data_flow_rebuild':'入力から保存・復元までを作り直す',
+        'competitor_research':'競合と代替の根拠を再調査する',
+        'integration_decomposition':'外部接続を分解して実装範囲を整理する',
+        'workflow_decomposition':'中心作業を小さな機能に分解する',
+        'acceptance_rebuild':'受入条件から作業手順を設計し直す',
+        'component_composition':'検証済み部品の組み合わせを変える',
+        'novel_route':'失敗履歴を避けて別の実装経路を設計する',
+    }
+    return {'kind':kind,'label':labels.get(kind,kind),'instruction':instruction}
 
 
 def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow_partial=False):
@@ -4164,7 +4175,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 force_full_generation_reason=('自動回復段階 '+str(recovery_count)+' / 方針 '+recovery['kind']+'\n'
                     +'過去に試した方針:'+json.dumps(recovery_history[:-1],ensure_ascii=False)+'\n'
                     +recovery['instruction']+'\n直前の検査失敗:\n'+last[:1800])
-                event(job,name+': 同じ失敗を検出。原因を分類し、解決方針「'+recovery['kind']+'」へ切替えて全体を再生成・再検査します')
+                event(job,name+': 同じ失敗を検出。原因を分類し、解決方針「'+recovery['label']+'」へ切替えて全体を再生成・再検査します')
                 previous_page=''
                 seen_failures.clear()
                 repair_state=dict(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
