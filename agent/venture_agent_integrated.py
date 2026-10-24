@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.12'
+APP_VERSION='2026.10.24.13'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -3971,6 +3971,14 @@ def loop():
         except OSError: pass
 
 
+def tasklist_output_has_pid(output, pid):
+    """Match tasklist's ASCII PID field without decoding locale-specific names."""
+    if isinstance(output,str):
+        output=output.encode('ascii','ignore')
+    pid_bytes=str(int(pid)).encode('ascii')
+    return re.search(rb',"'+re.escape(pid_bytes)+rb'",',output or b'') is not None
+
+
 def running_pid():
     if not LOCK.exists(): return None
     try:
@@ -3978,8 +3986,8 @@ def running_pid():
         pid=int(data['pid'])
         if pid==os.getpid(): return pid
         if os.name=='nt':
-            r=subprocess.run(['tasklist','/FI',f'PID eq {pid}','/FO','CSV','/NH'],capture_output=True,text=True,timeout=5)
-            return pid if re.search(rf',"{pid}",',r.stdout) else None
+            r=subprocess.run(['tasklist','/FI',f'PID eq {pid}','/FO','CSV','/NH'],capture_output=True,timeout=5)
+            return pid if tasklist_output_has_pid(r.stdout,pid) else None
         os.kill(pid,0); return pid
     except Exception: return None
 
@@ -5151,8 +5159,8 @@ def process_alive(pid):
         if pid == os.getpid(): return True
         if os.name == 'nt':
             result = subprocess.run(['tasklist','/FI',f'PID eq {pid}','/FO','CSV','/NH'],
-                                    capture_output=True,text=True,timeout=5)
-            return bool(re.search(rf',"{pid}",', result.stdout))
+                                    capture_output=True,timeout=5)
+            return tasklist_output_has_pid(result.stdout,pid)
         os.kill(pid, 0)
         return True
     except PermissionError:
