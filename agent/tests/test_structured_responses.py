@@ -48,6 +48,36 @@ class StructuredResponseTests(unittest.TestCase):
   issue,next_action=app.development_brief(dict(stage='設計・修正待ち',details='JSONDecodeError: Extra data line 19 column 1'))
   self.assertIn('開発処理を進められていません',issue);self.assertIn('再生成',next_action)
 
+ def qa_plan(self):
+  def scenario(kind,steps,checks,covers):
+   return dict(kind=kind,steps=steps,checks=checks,acceptance=covers,rationale='完成条件の入力と結果を照合する')
+  checks=[dict(op='text_equals',selector='#result',value='記録を保存しました'),dict(op='visible',selector='#result')]
+  return dict(audience_quotes=['個人講師が使う出欠管理','名簿と出欠を簡単に整理'],result_selector='#result',scenarios=[
+   scenario('workflow',[dict(op='fill',selector='#name',value='青木'),dict(op='click',selector='#save')],checks,[0]),
+   scenario('variant',[dict(op='fill',selector='#name',value='佐藤'),dict(op='click',selector='#save')],checks,[1]),
+   scenario('reload',[dict(op='reload')],[dict(op='visible',selector='#result'),dict(op='visible',selector='#save')],[2]),
+   scenario('roundtrip',[dict(op='download_json',selector='#backup'),dict(op='fill',selector='#name',value='変更'),dict(op='click',selector='#save'),dict(op='cancel_restore',selector='#cancel'),dict(op='download_csv',selector='#csv',contains=['青木','佐藤']),dict(op='restore_file',selector='#restore')],checks,[0,1,2]),
+   scenario('invalid',[dict(op='restore_invalid',selector='#restore'),dict(op='fill',selector='#name',value=''),dict(op='click',selector='#save')],[dict(op='text_contains',selector='#error',value='入力'),dict(op='visible',selector='#error')],[0,1,2])])
+
+ def test_qa_plan_semantic_errors_are_repaired_before_retesting_same_app(self):
+  name='テスト計画を同じ運転中に直す';spec=self.complete_spec();app.store_product_spec(name,spec)
+  valid=self.qa_plan();answers=['{"scenarios":[]}',json.dumps(valid,ensure_ascii=False),json.dumps({'valid':True,'reasons':[]})]
+  with patch.object(app,'ai',side_effect=answers) as model:
+   plan=app.make_qa_plan(name,'<html><body><h1>個人講師が使う出欠管理</h1></body></html>',dict(app.DEFAULT))
+  self.assertEqual(plan['scenarios'][0]['kind'],'workflow');self.assertEqual(model.call_count,3)
+  self.assertIn('対象者と最初の使い方を確認する引用が不足',model.call_args_list[1].args[0])
+
+ def test_repeated_qa_plan_failure_is_bounded_then_returns_to_product_repair(self):
+  name='検証計画を無限に繰り返さない';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  failure=app.AutoQAPlanError('期待結果を仕様から確認できません')
+  with patch.object(app,'ensure_autoqa_environment'),patch.object(app,'ensure_competitive_brief',return_value={'design_patterns':[]}),patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'make_qa_plan',side_effect=failure),patch.object(app,'event'):
+   first=app.automated_product_qa(1,name,'<html><body><h1>出欠記録</h1></body></html>',dict(app.DEFAULT))
+   second=app.automated_product_qa(1,name,'<html><body><h1>出欠記録</h1></body></html>',dict(app.DEFAULT))
+  self.assertEqual(first[2],'自動検証の再試行待ち')
+  self.assertEqual(second[2],'自動検証で要修正')
+  self.assertNotIn(second[2],app.AUTO_QA_RETRY_STAGES)
+  self.assertIn('次の運転で製品側の改善に戻します',second[1])
+
  def test_planning_failure_is_visible_in_job_history_and_keeps_retry_state(self):
   name='履歴に出る設計失敗';app.execute('UPDATE autonomous_control SET enabled=1')
   app.execute('INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,1,?,?)',(name,app.now(),app.now()))
