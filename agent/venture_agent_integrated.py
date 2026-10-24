@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.26'
+APP_VERSION='2026.10.25.27'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1307,16 +1307,25 @@ def review_qa_images(name,browser_result,cfg):
             '\n制作設計:'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:2500]+
             '\n対象と完成条件:'+json.dumps(get_product_spec(name),ensure_ascii=False)[:5000]
             +'\n自動操作結果（売上や実利用ではない）:'+json.dumps(browser_result['scenarios'],ensure_ascii=False))
-        payload={'model':model,'prompt':prompt,'images':[base64.b64encode(Path(path).read_bytes()).decode() for path in browser_result['screenshots']],
-            'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1600,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
-        req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
-        with urllib.request.urlopen(req,timeout=600) as r:data=json.load(r)
-        if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
-        review=qa_json(data.get('response',''))
-        for key in ('audience','design','readability','mobile','usefulness'):
-            part=review.get(key,{})
-            if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<10:raise AutoQAPlanError('画像判定の根拠が不十分。検証を再試行します')
-        return review
+        images=[base64.b64encode(Path(path).read_bytes()).decode() for path in browser_result['screenshots']]
+        last_error='画像判定のJSONを読み取れません'
+        for retry in range(3):
+            retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
+            payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1800,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
+            req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
+            with urllib.request.urlopen(req,timeout=600) as r:data=json.load(r)
+            if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
+            try:
+                review=qa_json(data.get('response',''))
+                for key in ('audience','design','readability','mobile','usefulness'):
+                    part=review.get(key,{})
+                    if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<15:
+                        raise AutoQAPlanError('画像判定の根拠が不十分: '+key)
+                return review
+            except AutoQAPlanError as exc:
+                last_error=str(exc)
+        raise AutoQAPlanError(last_error+'（画像判定を3回再試行）')
     finally:release_runtime('local_ai',owner)
 
 
@@ -3946,6 +3955,10 @@ def autonomous_recovery_plan(failure,stage=0):
     elif any(x in text for x in ('競合','公式本文','比較調査','source_ref','source_quote')):
         kind='competitor_research';instruction=('コード生成をいったん切り離し、同じ対象者の同じ作業に使う代替・競合を再調査する。'
             '公式取得本文・URL・取得時点を先に揃え、画面の見た目を実見した資料と本文だけの資料を区別する。比較根拠が揃ったら画面設計を作り直す。')
+    elif any(x in text for x in ('外部連携のない機能','未接続のai','ai・リアルタイム','ai機能を実装済み')):
+        kind='claim_scope_rebuild';instruction=('未接続のAI・音声・リアルタイム機能を画面から外し、実装済みの独立機能に正確に言い換える。'
+            '接続前に実際に使える中心作業を省略せず実装し、未接続の機能は必要なAPIと未完了状態を具体的に示す。'
+            '機能を削って検査を通すのではなく、実装済み機能と未接続機能の境界を画面・コード・受入条件で一致させる。')
     elif any(x in text for x in ('api','接続','サーバー','検索データ')):
         kind='integration_decomposition';instruction=('必要な外部接続をAPIごとに分解し、接続なしで完成できる利用画面・編集・保存・説明を先に実装する。'
             '実データを必要とする結果は固定値で偽装せず、接続アダプターと実データの受入テストを明示する。')
@@ -3969,6 +3982,7 @@ def autonomous_recovery_plan(failure,stage=0):
         'competitor_research':'競合と代替の根拠を再調査する',
         'integration_decomposition':'外部接続を分解して実装範囲を整理する',
         'workflow_decomposition':'中心作業を小さな機能に分解する',
+        'claim_scope_rebuild':'未接続機能の表示と実装範囲を一致させる',
         'acceptance_rebuild':'受入条件から作業手順を設計し直す',
         'component_composition':'検証済み部品の組み合わせを変える',
         'novel_route':'失敗履歴を避けて別の実装経路を設計する',
@@ -4159,49 +4173,34 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         final = (page, verdict, False)
         event(job, f'{name}: {last[:160]}')
         signature = re.sub(r'\s+', ' ', last)[:350]
-        repeated=signature in seen_failures or signature==repair_state.get('signature')
         base_recovery=autonomous_recovery_plan(last,0)
-        if not repeated and repair_state.get('failure_class') and base_recovery['kind']!=repair_state.get('failure_class'):
-            recovery_count=0
-        elif not repeated and not repair_state.get('failure_class') and signature!=repair_state.get('signature'):
-            recovery_count=0
-        diagnose_next=repeated
-        if repeated:
-            if recovery_count<4:
-                recovery=autonomous_recovery_plan(last,recovery_count)
-                recovery_count+=1
-                recovery_history=list(repair_state.get('recovery_history',[]))
-                recovery_history.append(recovery['kind'])
-                force_full_generation_reason=('自動回復段階 '+str(recovery_count)+' / 方針 '+recovery['kind']+'\n'
-                    +'過去に試した方針:'+json.dumps(recovery_history[:-1],ensure_ascii=False)+'\n'
-                    +recovery['instruction']+'\n直前の検査失敗:\n'+last[:1800])
-                event(job,name+': 同じ失敗を検出。原因を分類し、解決方針「'+recovery['label']+'」へ切替えて全体を再生成・再検査します')
-                previous_page=''
-                seen_failures.clear()
-                repair_state=dict(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
-                    recovery_stage=recovery_count,recovery_kind=recovery['kind'],recovery_history=recovery_history,
-                    failure_class=base_recovery['kind'],checked=now())
-                execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
-                continue
-            if checkpoint:previous_page=checkpoint
-            # Start a fresh diagnosis next cycle while retaining the failed approaches.
-            # A persisted max stage would otherwise make every later cycle give up early.
-            exhausted=dict(repair_state)
-            exhausted.update(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
-                recovery_stage=0,recovery_history=list(repair_state.get('recovery_history',[])),
-                recovery_cycle_exhausted=now(),checked=now())
-            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
-                ('product_repair_state:'+name,json.dumps(exhausted,ensure_ascii=False)))
-            event(job,name+': 4種類の回復方針を試行。未合格候補は確認待ちにせず、失敗方針を記録して次サイクルで新しい診断から継続します')
-            break
-        seen_failures.add(signature)
-        next_state=dict(repair_state)
-        next_state.update(signature=signature,repeat=int(repair_state.get('repeat',0))+1 if repeated else 0,
-            recovery_stage=recovery_count,failure_class=base_recovery['kind'],checked=now())
-        repair_state=next_state
+        class_attempts=dict(repair_state.get('failure_class_attempts',{}))
+        prior_class_attempts=max(0,int(class_attempts.get(base_recovery['kind'],0) or 0))
+        recovery_stage=prior_class_attempts%4
+        recovery=autonomous_recovery_plan(last,recovery_stage)
+        class_attempts[base_recovery['kind']]=prior_class_attempts+1
+        recovery_history=list(repair_state.get('recovery_history',[]))
+        recovery_history.append(recovery['kind'])
+        force_full_generation_reason=('検査失敗に対する自動回復 '+str(prior_class_attempts+1)+' 回目 / 対象分類 '+base_recovery['kind']+' / 方針 '+recovery['kind']+'\n'
+            +'過去に試して失敗した方針:'+json.dumps(recovery_history[:-1],ensure_ascii=False)+'\n'
+            +recovery['instruction']+'\n直前の検査失敗:\n'+last[:1800])
+        event(job,name+': 検査失敗を分類し、解決方針「'+recovery['label']+'」で完成条件から作り直して再検査します')
+        repair_state=dict(repair_state)
+        repair_state.update(signature=signature,repeat=int(repair_state.get('repeat',0))+1,
+            recovery_stage=recovery_stage+1,recovery_kind=recovery['kind'],recovery_history=recovery_history,
+            failure_class=base_recovery['kind'],failure_class_attempts=class_attempts,checked=now())
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
+        # A failed candidate is never used as the base of another fragile patch.
+        # Every subsequent attempt is generated from the saved spec with this failure's plan.
+        previous_page=''
+        diagnose_next=True
         if n < attempt_limit:
-            event(job,name+': 検査不合格を保持し、直後の試行で修正して再検査します')
+            continue
+        if checkpoint:previous_page=checkpoint
+        repair_state['recovery_stage']=0
+        repair_state['recovery_cycle_exhausted']=now()
+        execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
+        event(job,name+': このサイクルの再生成回数を使い切りました。未合格のまま保持し、失敗分類と試行方針を次回へ引き継ぎます')
 
     if final and state()['enabled']:
         save(job, name, asset_kind, final[0], 'html', final[1])
