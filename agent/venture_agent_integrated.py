@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.17'
+APP_VERSION='2026.10.24.18'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -384,6 +384,130 @@ def normalize_product_connections(name,spec):
     spec['dependencies']=dependencies
     if dependencies:spec['delivery_mode']='connected'
     return spec
+
+
+PRODUCT_INTERFACE_SCHEMA={
+    'type':'object','properties':{
+        'title':{'type':'string','minLength':4,'maxLength':48},
+        'intro':{'type':'string','minLength':15,'maxLength':180},
+        'record_label':{'type':'string','minLength':2,'maxLength':24},
+        'fields':{'type':'array','minItems':3,'maxItems':8,'items':{'type':'object','properties':{
+            'id':{'type':'string','pattern':'^[a-z][a-z0-9_]{1,23}$'},
+            'label':{'type':'string','minLength':1,'maxLength':32},
+            'type':{'type':'string','enum':['text','textarea','date','time','number','select']},
+            'role':{'type':'string','enum':['title','question','answer','category','status','date','time','amount','rating','duration','location','notes','value']},
+            'required':{'type':'boolean'},
+            'options':{'type':'array','items':{'type':'string'},'maxItems':8}},
+            'required':['id','label','type','role','required','options']}}},
+    'required':['title','intro','record_label','fields']}
+
+
+def product_operation(name,spec):
+    text=(str(name)+' '+str(spec.get('requested_outcome',''))+' '+' '.join(spec.get('must_have',[]))).casefold()
+    if any(x in text for x in ('チャットボット','chatbot','faq','問い合わせ回答','よくある質問')):return 'faq'
+    if any(x in text for x in ('満足度','アンケート','調査','評価回答')):return 'survey'
+    if any(x in text for x in ('比較','費用','価格','金額')):return 'compare'
+    if any(x in text for x in ('予定','日程','スケジュール','旅行','期限','時間管理')):return 'schedule'
+    return 'records'
+
+
+def validate_product_interface(item,name,spec):
+    if not isinstance(item,dict):raise AutoQAPlanError('構造化画面定義がありません')
+    for key,minimum in (('title',4),('intro',15),('record_label',2)):
+        if not isinstance(item.get(key),str) or len(item[key].strip())<minimum:raise AutoQAPlanError('構造化画面の'+key+'が不足しています')
+    if re.search(r'AI|リアルタイム|自動応答|即時対応',item['title']+' '+item['intro'],re.I):
+        raise AutoQAPlanError('未接続のAI・リアルタイム機能を画面で約束できません')
+    fields=item.get('fields')
+    if not isinstance(fields,list) or not 3<=len(fields)<=8:raise AutoQAPlanError('入力項目は3〜8件必要です')
+    ids=[x.get('id') for x in fields if isinstance(x,dict)]
+    roles=[x.get('role') for x in fields if isinstance(x,dict)]
+    if len(ids)!=len(fields) or len(set(ids))!=len(ids) or any(not re.fullmatch(r'[a-z][a-z0-9_]{1,23}',str(x)) for x in ids):raise AutoQAPlanError('入力項目IDが不正または重複しています')
+    if any(not isinstance(x.get('label'),str) or not x['label'].strip() or x.get('type') not in ('text','textarea','date','time','number','select') or x.get('role') not in ('title','question','answer','category','status','date','time','amount','rating','duration','location','notes','value') or type(x.get('required')) is not bool for x in fields):raise AutoQAPlanError('入力項目のラベル・種類・役割・必須設定が不正です')
+    if len(set(roles))!=len(roles):raise AutoQAPlanError('入力項目の役割は重複できません')
+    if any(x['type']=='select' and (not isinstance(x['options'],list) or not 2<=len(x['options'])<=8) for x in fields):raise AutoQAPlanError('選択欄には2〜8件の選択肢が必要です')
+    operation=product_operation(name,spec);required={'faq':{'question','answer'},'survey':{'rating'},'compare':{'amount'},'schedule':{'date'},'records':set()}[operation]
+    if not required.issubset(set(roles)):raise AutoQAPlanError(operation+'に必要な専用入力欄が不足しています: '+', '.join(sorted(required-set(roles))))
+    if 'title' not in roles and 'question' not in roles:raise AutoQAPlanError('一覧を識別する名前または質問の欄が必要です')
+    return dict(item,operation=operation)
+
+
+def ensure_product_interface(name,cfg):
+    spec=get_product_spec(name) or {};scope=product_scope_sha(name)
+    key='product_interface:'+name+':'+scope
+    rows=query('SELECT value FROM agent_settings WHERE key=?',(key,))
+    if rows:
+        try:return validate_product_interface(json.loads(rows[0]['value']),name,spec)
+        except (ValueError,TypeError,KeyError):pass
+    operation=product_operation(name,spec)
+    prompt=('JSONだけでオフラインWebアプリの入力定義を作る。HTMLやJavaScriptは出力しない。'
+        'アプリ対象者と価値を表す短い画面タイトル・説明、3〜8個の具体的な入力欄を設計。'
+        '役割は title,question,answer,category,status,date,time,amount,rating,duration,location,notes,value から選び、重複不可。'
+        '選択欄は2〜8個のoptionsを付ける。外部接続のないAI・自動回答・リアルタイムを約束しない。'
+        'faqにはquestionとanswer、surveyにはrating、compareにはamount、scheduleにはdateを含める。'
+        'キー: title,intro,record_label,fields[{id,label,type,role,required,options}]。'
+        '\n操作種別:'+operation+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:4500]
+        +'\n制作設計:'+json.dumps(get_product_blueprint(name) or {},ensure_ascii=False)[:3500])
+    item=ai_json(prompt,coding_config(cfg,task='new'),1800,schema=PRODUCT_INTERFACE_SCHEMA,
+        validator=lambda value:validate_product_interface(value,name,spec))
+    item=validate_product_interface(item,name,spec)
+    execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',(key,json.dumps(item,ensure_ascii=False)))
+    return item
+
+
+def render_product_interface(name,item,spec):
+    """Render verified form, CRUD, search, persistence and file I/O from a small JSON contract."""
+    item=validate_product_interface(item,name,spec);fields=item['fields'];operation=item['operation']
+    def esc(value):return html.escape(str(value),quote=True)
+    field_markup=[]
+    for f in fields:
+        label=esc(f['label']);fid=esc(f['id']);required=' required' if f['required'] else ''
+        if f['type']=='textarea':control=f'<textarea id="{fid}" rows="3"{required}></textarea>'
+        elif f['type']=='select':control=f'<select id="{fid}"{required}><option value="">選択してください</option>'+''.join(f'<option value="{esc(v)}">{esc(v)}</option>' for v in f['options'])+'</select>'
+        else:control=f'<input id="{fid}" type="{esc(f["type"])}"'+(' min="1" max="5" step="1"' if f['role']=='rating' else '')+required+'>'
+        field_markup.append(f'<label class="field"><span>{label}</span>{control}</label>')
+    cols=''.join(f'<th>{esc(f["label"])}</th>' for f in fields)
+    escaped_title=esc(item['title']);escaped_intro=esc(item['intro']);record=esc(item['record_label'])
+    # Distinct, legible palettes by sector keep the common interaction model from looking cloned.
+    sector=project_registry(name)['sector'];accent={'travel_lifestyle':'#087f8c','education':'#7653c3','family_health':'#df6b50','real_estate':'#356f9c','business_ops':'#3858a8','media':'#bd4b79'}.get(sector,'#356f9c')
+    app_json=json.dumps(dict(fields=fields,operation=operation,name=name),ensure_ascii=False).replace('</','<\\/')
+    special={'faq':'質問を検索すると登録済みの回答を表示し、見つからない質問は未解決一覧に記録します。','survey':'回答を登録すると評価の平均と回答件数を集計します。','compare':'数値を登録し、未入力と合計を分けて比較します。','schedule':'日付順に予定を整理し、次の予定を確認します。','records':'入力した記録を検索・保存・出力できます。'}[operation]
+    operation_markup=('<section class="faq-lookup"><h3>問い合わせへの回答を探す</h3><label class="field"><span>質問・キーワード</span><input id="faqQuery" type="search" placeholder="例：配送にかかる日数"></label><div class="actions"><button id="searchFaq" type="button">FAQを検索</button></div><div id="faqAnswer" class="notice" role="status"></div><h3>未解決の質問 <span id="unresolvedCount">0</span></h3><ul id="unresolvedList"></ul></section>') if operation=='faq' else ''
+    return f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escaped_title}</title><style>
+:root{{--accent:{accent};--ink:#1d2938;--muted:#68788a;--paper:#f5f8fc;--line:#dce5ef;--card:#fff}}*{{box-sizing:border-box}}body{{margin:0;background:linear-gradient(145deg,#edf5fb,#f8f7ff 60%,#fff7f0);color:var(--ink);font:16px/1.55 system-ui,"Yu Gothic",sans-serif}}.wrap{{max-width:1100px;margin:auto;padding:26px 18px 60px}}header{{background:linear-gradient(120deg,var(--accent),#23384e);color:white;border-radius:24px;padding:32px;box-shadow:0 18px 42px #20364d28}}.eyebrow{{font-size:13px;letter-spacing:.08em;opacity:.85}}h1{{font-size:clamp(28px,5vw,42px);line-height:1.2;margin:8px 0 10px}}header p{{max-width:720px;margin:0;color:#eaf3fb}}.steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0 24px}}.step,.card{{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 8px 25px #23384e0d}}.step b{{color:var(--accent);display:block}}.layout{{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.6fr);gap:16px}}h2{{font-size:20px;margin:0 0 14px}}.fields{{display:grid;gap:12px}}.field span{{display:block;font-size:14px;font-weight:700;margin-bottom:5px}}input,textarea,select,button{{font:inherit}}input,textarea,select{{width:100%;border:1px solid #cbd7e4;border-radius:11px;padding:10px 12px;min-height:42px;background:#fff;color:var(--ink)}}input:focus,textarea:focus,select:focus{{outline:3px solid #79a9d344;border-color:var(--accent)}}button,.file-button{{border:0;border-radius:11px;padding:11px 15px;min-height:42px;background:var(--accent);color:white;font-weight:750;cursor:pointer}}button.secondary,.file-button{{background:#eaf0f6;color:#26374a}}button.danger{{background:#fff0ed;color:#a33228}}button:hover,.file-button:hover{{filter:brightness(.96)}}.actions,.toolbar{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.notice{{min-height:26px;color:var(--accent);font-weight:700;margin-top:8px}}.metric{{display:inline-flex;align-items:baseline;gap:8px;background:#eef4f9;border-radius:12px;padding:10px 13px;margin:0 8px 12px 0}}.metric strong{{font-size:22px}}.table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:12px}}table{{width:100%;border-collapse:collapse;min-width:620px;background:white}}th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}}th{{background:#f1f5f9;font-size:13px}}.row-actions{{white-space:nowrap}}.row-actions button{{min-height:34px;padding:6px 9px;font-size:13px}}.muted{{color:var(--muted);font-size:13px}}.hidden{{display:none!important}}#restoreFile{{display:none}}@media(max-width:760px){{.wrap{{padding:14px 12px 40px}}header{{padding:23px 20px;border-radius:19px}}.steps{{grid-template-columns:1fr}}.layout{{grid-template-columns:1fr}}.card{{padding:15px}}button,.file-button{{min-height:44px}}}}
+</style></head><body><main class="wrap"><header><div class="eyebrow">{record}を整理する</div><h1>{escaped_title}</h1><p>{escaped_intro}</p></header><section class="steps" aria-label="使い方"><div class="step"><b>01 入力</b>必要な情報を登録します</div><div class="step"><b>02 整理</b>{esc(special)}</div><div class="step"><b>03 保存・共有</b>一覧を保存し、CSVで持ち出せます</div></section><div class="layout"><section class="card"><h2>{record}を登録</h2><form id="recordForm" class="fields">{''.join(field_markup)}<div class="actions"><button id="saveRecord" type="submit">{record}を保存</button><button id="clearForm" type="button" class="secondary">入力を消去</button></div></form><div id="result" class="notice" role="status"></div><div class="muted">保存先はこのブラウザです。共有サーバーとは同期しません。</div></section><section class="card"><h2>{record}一覧</h2><div class="metric"><span>登録数</span><strong id="recordCount">0</strong></div><div id="summary" class="metric"><span>{'未解決質問' if operation=='faq' else '集計'}</span><strong id="summaryValue">0</strong></div>{operation_markup}<label class="field"><span>一覧を検索</span><input id="searchRecords" type="search" placeholder="キーワードを入力"></label><div class="toolbar"><button id="downloadCsv" type="button" class="secondary">CSV出力</button><button id="downloadJson" type="button" class="secondary">バックアップ保存</button><label class="file-button" for="restoreFile">バックアップ復元</label><input id="restoreFile" type="file" accept="application/json,.json"></div><div id="listMessage" class="notice" role="status"></div><div class="table-wrap"><table><thead><tr>{cols}<th>操作</th></tr></thead><tbody id="recordRows"></tbody></table></div></section></div></main><script>
+const APP={app_json};const STORE='venture-records-'+{json.dumps(hashlib.sha256(name.encode()).hexdigest()[:12])};let records=[];let unresolved=[];let editing=-1;const $=id=>document.getElementById(id);const form=$('recordForm');
+function load(){{try{{const v=JSON.parse(localStorage.getItem(STORE)||'[]');records=Array.isArray(v)?v:(Array.isArray(v.records)?v.records:[]);unresolved=Array.isArray(v.unresolved)?v.unresolved:[]}}catch{{records=[];unresolved=[]}}render()}}
+function save(){{localStorage.setItem(STORE,JSON.stringify(APP.operation==='faq'?{{records,unresolved}}:records));render()}}
+function esc(v){{return String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}
+function render(){{const q=$('searchRecords').value.trim().toLocaleLowerCase();const source=records.map((r,i)=>({{r,i}}));if(APP.operation==='schedule'){{const dateField=APP.fields.find(f=>f.role==='date');source.sort((a,b)=>String(a.r[dateField?.id]||'').localeCompare(String(b.r[dateField?.id]||'')))}}const shown=source.filter(x=>JSON.stringify(x.r).toLocaleLowerCase().includes(q));$('recordRows').innerHTML=shown.map(x=>'<tr>'+APP.fields.map(f=>'<td>'+esc(x.r[f.id])+'</td>').join('')+'<td class="row-actions"><button type="button" class="secondary" data-edit="'+x.i+'">編集</button> <button type="button" class="danger" data-delete="'+x.i+'">削除</button></td></tr>').join('');$('recordCount').textContent=String(records.length);let value='—';if(APP.operation==='survey'){{const nums=records.map(r=>Number(r[APP.fields.find(f=>f.role==='rating')?.id])).filter(Number.isFinite);value=nums.length?(nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(1)+'/5':'—'}}else if(APP.operation==='compare'){{const f=APP.fields.find(x=>x.role==='amount');const nums=records.map(r=>Number(r[f?.id])).filter(Number.isFinite);value=nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString():'—'}}else if(APP.operation==='faq'){{value=String(unresolved.length)+'件';if($('unresolvedCount')){{$('unresolvedCount').textContent=String(unresolved.length);$('unresolvedList').innerHTML=unresolved.slice(0,20).map(x=>'<li>'+esc(x.question)+'</li>').join('')}}}}else if(APP.operation==='schedule')value=records.length?records.length+'件':'—';else value=String(records.length)+'件';$('summaryValue').textContent=value}}
+form.addEventListener('submit',e=>{{e.preventDefault();const row={{}};for(const f of APP.fields)row[f.id]=$(f.id).value.trim();if(APP.fields.some(f=>f.required&&!row[f.id])){{$('result').textContent='必須項目を入力してください';return}}if(APP.operation==='faq'&&editing<0){{const q=String(row[APP.fields.find(f=>f.role==='question').id]).toLocaleLowerCase();const found=records.find(r=>(String(r[APP.fields.find(f=>f.role==='question').id])+' '+String(r[APP.fields.find(f=>f.role==='answer').id])).toLocaleLowerCase().includes(q));if(found)$('result').textContent='登録済みFAQに一致する回答があります';else $('result').textContent='FAQを登録しました。質問の一致検索を利用できます'}}else $('result').textContent=editing<0?'保存しました':'変更を保存しました';if(editing<0)records.unshift(row);else records[editing]=row;editing=-1;form.reset();save()}});
+$('recordRows').addEventListener('click',e=>{{const edit=e.target.dataset.edit,del=e.target.dataset.delete;if(edit!==undefined){{editing=Number(edit);const r=records[editing];for(const f of APP.fields)$(f.id).value=r[f.id]??'';$('result').textContent='編集内容を保存してください'}}if(del!==undefined){{records.splice(Number(del),1);save();$('result').textContent='削除しました'}}}});
+$('clearForm').addEventListener('click',()=>{{form.reset();editing=-1;$('result').textContent='入力を消去しました'}});$('searchRecords').addEventListener('input',render);
+if(APP.operation==='faq')$('searchFaq').addEventListener('click',()=>{{const query=$('faqQuery').value.trim();if(!query){{$('faqAnswer').textContent='質問を入力してください';return}}const qid=APP.fields.find(f=>f.role==='question').id,aid=APP.fields.find(f=>f.role==='answer').id;const hit=records.find(r=>String(r[qid]).toLocaleLowerCase().includes(query.toLocaleLowerCase()));if(hit){{$('faqAnswer').textContent=hit[aid]}}else{{if(!unresolved.some(x=>x.question===query))unresolved.unshift({{question:query,created:new Date().toISOString()}});$('faqAnswer').textContent='該当する回答がありません。未解決の質問に記録しました。';save()}}}});
+$('downloadCsv').addEventListener('click',()=>{{const cell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\\ufeff'+[APP.fields.map(f=>f.label),...records.map(r=>APP.fields.map(f=>r[f.id]))].map(row=>row.map(cell).join(',')).join('\\r\\n');download(csv,'text/csv;charset=utf-8','records.csv')}});
+$('downloadJson').addEventListener('click',()=>download(JSON.stringify({{version:1,records,unresolved}},null,2),'application/json','records-backup.json'));
+function download(data,type,name){{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{{type}}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}}
+$('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();
+</script></body></html>'''
+
+
+def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
+    """Use validated components when free-form code fails; full product QA still gates readiness."""
+    definition=ensure_product_interface(name,cfg)
+    page=render_product_interface(name,definition,get_product_spec(name) or {})
+    errors=validate_html(page,name)
+    if errors:raise ValueError('構造化部品のコード検査: '+' / '.join(errors))
+    ensure_autoqa_environment(job,cfg,vision=False)
+    passed,detail=browser_test(page)
+    if not passed:raise ValueError('構造化部品の操作検査: '+detail)
+    if partial:
+        layout_ok,layout_detail=review_connected_layout(job,name,page,cfg)
+        if not layout_ok:raise ValueError('構造化部品の画面検査: '+layout_detail)
+    validation=('構造化部品の入力・保存・検索・CSV/JSON・簡易操作検査合格。中心業務の完成条件は続けて実操作検査します。'
+        +(' 接続未完了・発信不可。' if partial else ' 製品QA・他社比較・利用価値の最終確認は未完了。'))
+    save(job,name,asset_kind,page,'html',validation)
+    event(job,name+': 自由生成の失敗後、構造化部品で操作可能な候補を作成。完成条件QAは続行中')
+    return page,validation,not partial
 
 
 def store_product_spec(name,spec,source='AI設計・未確認'):
@@ -3838,6 +3962,13 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
 
     if final and state()['enabled']:
         save(job, name, asset_kind, final[0], 'html', final[1])
+        try:
+            if not development_allowed(name):return final
+            if release_spec.get('delivery_mode')=='browser_local' or partial:
+                event(job,name+': 自由生成が検査に通らないため、定義済み入力・保存・出力部品で再構成します')
+                return structured_product_fallback(job,name,cfg,plan,asset_kind,partial)
+        except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
+            event(job,name+': 構造化部品の再構成も未完了。確認待ちにはしません: '+str(exc)[:700])
     return final if final else ('', '中断', False)
 
 def latest_metrics(name):
