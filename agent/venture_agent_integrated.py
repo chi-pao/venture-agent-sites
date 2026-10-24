@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.24.10'
+APP_VERSION='2026.10.24.11'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1452,17 +1452,28 @@ def quality_development_cycle(job,cfg):
             details=query('SELECT details FROM venture_product_development WHERE idea=?',(name,))
             notes=str(row.get('stage') or '')+' / '+(candidates[0]['validation'] if candidates else '')+' / '+(details[0]['details'] if details else '')
             connected=spec['delivery_mode']=='connected'
-            event(job,name+': 開発開始基準に沿って対象者・デザイン・操作・機能を改善')
-            page,verdict,passed=build(job,name,cfg,quality_requirements_text(name)+'\n前回の改善結果:'+notes,
-                asset_kind='品質改善候補HTML',existing_page=previous,allow_partial=connected)
-            if passed and not connected:
-                product_development_state(name,'自動実操作・画像検証中','コード検査を通過。操作と画面を自動検証します',attempts+1)
+            development_plan=quality_requirements_text(name)+'\n前回の改善結果:'+notes
+            page='';verdict='';passed=False;qa_round=0
+            while True:
+                event(job,name+': 開発開始基準に沿って対象者・デザイン・操作・機能を改善'+(' / 検査結果に基づく即時修正' if qa_round else ''))
+                page,verdict,passed=build(job,name,cfg,development_plan,
+                    asset_kind='品質改善候補HTML',existing_page=previous,allow_partial=connected)
+                if not passed or connected:break
+                product_development_state(name,'自動実操作・画像検証中','コード検査を通過。操作と画面を自動検証します',attempts+qa_round+1)
                 passed,qa_detail,qa_stage=automated_product_qa(job,name,page,cfg)
                 verdict+=' / '+qa_detail
+                # A broken workflow or poor screen is actionable immediately.
+                # Environment and plan-generation issues are not product-code
+                # defects, so retain the exact candidate and retry QA separately.
+                if passed or qa_stage in ('検証環境の準備待ち','自動検証の再試行待ち') or qa_round>=1:break
+                qa_round+=1;previous=page
+                development_plan+='\n今回の実ブラウザ・画面検査で見つけた不具合を、同じ開発運転の中で修正してください。\n検査結果:'+qa_detail[:2500]
+                product_development_state(name,'自動検証で要修正',qa_detail,attempts+qa_round)
+                event(job,name+': 検査不合格を保持して、その場で対象コードを修正・再検査します')
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
             stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else qa_stage
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
-            product_development_state(name,stage,detail,attempts+1,assets[0]['path'] if assets else '')
+            product_development_state(name,stage,detail,attempts+qa_round+1,assets[0]['path'] if assets else '')
             event(job,name+((': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
         except Exception as exc:
             detail=type(exc).__name__+': '+str(exc)[:300]

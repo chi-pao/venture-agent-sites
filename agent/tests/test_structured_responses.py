@@ -78,6 +78,27 @@ class StructuredResponseTests(unittest.TestCase):
   self.assertNotIn(second[2],app.AUTO_QA_RETRY_STAGES)
   self.assertIn('次の運転で製品側の改善に戻します',second[1])
 
+ def test_browser_failure_is_repaired_and_retested_in_the_same_development_cycle(self):
+  name='実ブラウザ失敗から即時修正';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  first='<!doctype html><html><body><h1>改善前の候補</h1></body></html>'
+  second='<!doctype html><html><body><h1>修正後の候補</h1></body></html>'
+  with patch.object(app,'product_source',return_value=''),patch.object(app,'build',side_effect=[(first,'コード検査合格',True),(second,'修正・再検査合格',True)]) as build,patch.object(app,'automated_product_qa',side_effect=[(False,'保存操作で例外が発生','自動検証で要修正'),(True,'実操作・画面検査合格','のぼるさん確認待ち')]) as qa,patch.object(app,'event'):
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  self.assertEqual(build.call_count,2);self.assertEqual(qa.call_count,2)
+  self.assertEqual(build.call_args_list[1].kwargs['existing_page'],first)
+  self.assertIn('保存操作で例外が発生',build.call_args_list[1].args[3])
+  self.assertEqual(app.query('SELECT stage FROM venture_product_development WHERE idea=?',(name,))[0]['stage'],'のぼるさん確認待ち')
+
+ def test_environment_failure_keeps_the_same_product_without_spurious_rebuild(self):
+  name='検証環境障害で製品を改変しない';baseline.FrameworkTests.add(self,name);app.execute('UPDATE autonomous_control SET enabled=1')
+  job=app.execute('INSERT INTO agent_jobs(started,state,details) VALUES(?,?,?)',(app.now(),'実行中',''))
+  page='<!doctype html><html><body><h1>検査対象の候補</h1></body></html>'
+  with patch.object(app,'product_source',return_value=''),patch.object(app,'build',return_value=(page,'コード検査合格',True)) as build,patch.object(app,'automated_product_qa',return_value=(False,'Playwrightの準備待ち','検証環境の準備待ち')) as qa,patch.object(app,'event'):
+   app.quality_development_cycle(job,dict(app.DEFAULT))
+  self.assertEqual(build.call_count,1);self.assertEqual(qa.call_count,1)
+  self.assertEqual(app.query('SELECT stage FROM venture_product_development WHERE idea=?',(name,))[0]['stage'],'検証環境の準備待ち')
+
  def test_planning_failure_is_visible_in_job_history_and_keeps_retry_state(self):
   name='履歴に出る設計失敗';app.execute('UPDATE autonomous_control SET enabled=1')
   app.execute('INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,1,?,?)',(name,app.now(),app.now()))
