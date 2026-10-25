@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from unittest.mock import patch
 from pathlib import Path
 
@@ -79,8 +80,14 @@ class FeaturePlanCompilerTests(unittest.TestCase):
                     delivery_mode='browser_local', dependencies=[],
                 )
                 app.store_product_spec(name, spec)
-                self.assertEqual(app.get_product_spec(name)['dependencies'], [])
-                self.assertEqual(app.get_product_spec(name)['delivery_mode'], 'browser_local')
+                old_spec = dict(app.get_product_spec(name),
+                    dependencies=['授業配信サービスとの出欠連携（手動登録は単独利用可能）'],
+                    delivery_mode='connected')
+                app.execute('UPDATE venture_product_specs SET spec=? WHERE idea=?',
+                    (json.dumps(old_spec, ensure_ascii=False), name))
+                recovered = app.ensure_product_spec(name, dict(app.DEFAULT))
+                self.assertEqual(recovered['dependencies'], [])
+                self.assertEqual(recovered['delivery_mode'], 'browser_local')
                 blueprint = blueprint_fixture(name)
                 with patch.object(app, 'ai_json', side_effect=TimeoutError('model request timed out')):
                     plan = app.ensure_implementation_plan(name, dict(app.DEFAULT), blueprint)
