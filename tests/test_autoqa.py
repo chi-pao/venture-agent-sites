@@ -61,6 +61,32 @@ class AutomaticQATests(ContinuationTests):
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)
+ def structured_candidate(self,name):
+  spec=dict(audience='小規模事業者・個人利用者',requested_outcome='中心作業を整理し、入力から結果・保存までを一続きで行う',differentiation='専用操作の結果を入力条件に応じて表示する',workflow=['対象情報を入力する','用途別処理を実行して結果を確認する','保存・検索・出力する'],must_have=['必須入力の検証','用途別処理と結果','保存・再読込','CSVとJSONバックアップ'],acceptance=['中心作業の具体値を入力し用途別の結果を確認できる','異なる入力値で結果の変化を確認できる','登録後に再読込して同じ記録を確認できる','CSVとJSONバックアップを取得して復元できる'],delivery_mode='browser_local',dependencies=[])
+  app.execute('INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)',(name,json.dumps({'customer_pain':'手作業の困りごと','target_customer':'小規模利用者'}),1,app.now(),app.now()))
+  app.store_product_spec(name,spec)
+  interface=app.deterministic_product_interface(name,spec)
+  return spec,app.render_product_interface(name,interface,spec)
+ def test_structured_planner_covers_registered_operations_without_model_calls(self):
+  names=['オンライン授業参加管理アプリ','会議スケジューリング助手','英会話フレーズ練習ノート','業務タスク管理','FAQ回答ライブラリ','会計業務自動化アプリ','返品対応管理アプリ','顧客満足度調査ツール','費用比較メモ','予定整理ボード','業務記録管理アプリ','オンラインマインドフルネス教室','音楽理論クイズ練習帳','顧客依頼案件管理']
+  with patch.object(app,'ai_json',side_effect=AssertionError('構造化画面のQA計画に生成AIを呼んではいけません')) as model:
+   for name in names:
+    with self.subTest(name=name):
+     spec,page=self.structured_candidate(name)
+     plan=app.make_qa_plan(name,page,dict(app.DEFAULT))
+     app.validate_qa_plan(plan,spec)
+     self.assertEqual(len(plan['scenarios']),5)
+     self.assertEqual(len(plan['feature_cases']),2*len(spec['acceptance']))
+  model.assert_not_called()
+ def test_generated_structured_plans_run_in_real_chromium(self):
+  for name in ('オンライン授業参加管理アプリ','会議スケジューリング助手'):
+   with self.subTest(name=name):
+    spec,page=self.structured_candidate(name);plan=app.make_qa_plan(name,page,dict(app.DEFAULT))
+    directory=self.root/name.replace('/','_');directory.mkdir()
+    result=app.execute_browser_qa(name,page,plan,directory)
+    self.assertTrue(result['passed'])
+    self.assertEqual(len(result['scenarios']),10+4*len(spec['acceptance']))
+    self.assertEqual(len(result['screenshots']),4)
  def test_connected_layout_uses_real_desktop_mobile_images_without_release(self):
   page=self.install(1);self.layout_patch.stop()
   visual={key:dict(score=4,reason='実画面の画像入力接続を模擬し顧客評価や実機能の合格とは扱いません') for key in ('audience','design','readability','mobile','usefulness')}
