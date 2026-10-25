@@ -74,10 +74,10 @@ class AutomaticQATests(ContinuationTests):
   source='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font:16px sans-serif}h1{font-size:28px}input,button{width:180px;height:20px;font:16px sans-serif}</style></head><body><h1>実践記録の確認ページ</h1><label for="inputValue">今日の記録</label><input id="inputValue"><button id="calculate">記録を確認する</button></body></html>'
   fixed=source.replace('height:20px','height:44px')
   visual={key:dict(score=4,reason='実画像の送信と検査経路を検証するためのモデル応答') for key in ('audience','design','readability','mobile','usefulness')}
-  with patch.object(app,'incremental_product_repair',side_effect=[(source,'最初の修正'),(fixed,'入力とボタンを44pxに修正')]) as repair,patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',side_effect=[(False,'入力とボタンが小さい'),(True,'簡易検査合格')]),patch.object(app,'review_qa_images',return_value=visual):
+  with patch.object(app,'incremental_product_repair',side_effect=[(source,'最初の修正'),(fixed,'入力とボタンを44pxに修正')]) as repair,patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',side_effect=[(False,'入力とボタンが小さい'),(True,'簡易検査合格')]),patch.object(app,'review_connected_layout',return_value=(True,'画面検査: 合格')),patch.object(app,'review_qa_images',return_value=visual):
    page,detail,ready=app.build(1,self.name,dict(app.DEFAULT,max_revisions=2),'画面を修正',existing_page=source.replace('実践記録','以前の記録'),allow_partial=True)
-  self.assertEqual(repair.call_count,2);self.assertIn('smallControls',repair.call_args.args[3]);self.assertIn('画面検査: 合格',detail)
-  self.assertEqual(page,fixed);self.assertFalse(ready);self.assertFalse(app.candidate_production_acceptance(self.name))
+  self.assertEqual(repair.call_count,2);self.assertIn('id=\"inputValue\"',repair.call_args.args[2]);self.assertIn('入力とボタンが小さい',repair.call_args.args[3]);self.assertIn('画面検査: 合格',detail)
+  self.assertIn('height:44px',page);self.assertFalse(ready);self.assertFalse(app.candidate_production_acceptance(self.name))
  def test_plan_forbidden_code_and_missing_coverage_rejected(self):
   self.install(1);plan=work_plan();plan['scenarios'][0]['steps'].append(step('evaluate','#title','alert(1)'))
   with self.assertRaises(app.AutoQAPlanError):app.validate_qa_plan(plan,app.get_product_spec(self.name))
