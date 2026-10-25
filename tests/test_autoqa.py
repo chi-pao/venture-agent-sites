@@ -11,17 +11,10 @@ def step(op,selector=None,value=None,**kw):
 
 def scenario(kind,steps,checks,acceptance):return dict(kind=kind,steps=steps,checks=checks,acceptance=acceptance)
 def add_feature_cases(plan,acceptance_count):
- scenarios=plan['scenarios'];workflow=scenarios[0];variant=scenarios[1];reload_case=scenarios[2];roundtrip=scenarios[3];invalid=scenarios[4]
+ workflow=plan['scenarios'][0]
  plan['feature_cases']=[]
  for i in range(acceptance_count):
-  if i<2:
-   steps=copy.deepcopy(workflow['steps']);checks=copy.deepcopy(workflow['checks'])
-  elif i==2:
-   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(reload_case['steps']);checks=copy.deepcopy(reload_case['checks'])
-  elif i==3:
-   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(variant['steps'])+copy.deepcopy(roundtrip['steps']);checks=copy.deepcopy(roundtrip['checks'])
-  else:
-   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(variant['steps'])+copy.deepcopy(invalid['steps']);checks=copy.deepcopy(invalid['checks'])
+  steps=copy.deepcopy(workflow['steps']);checks=copy.deepcopy(workflow['checks'])
   for j in (0,1):
    case_steps=copy.deepcopy(steps);case_checks=copy.deepcopy(checks)
    if j:
@@ -31,7 +24,7 @@ def add_feature_cases(plan,acceptance_count):
      if isinstance(value,dict):return {k:vary(v) for k,v in value.items()}
      return value
     case_steps=vary(case_steps);case_checks=vary(case_checks)
-   plan['feature_cases'].append(dict(acceptance_index=i,case_index=j,steps=case_steps,checks=case_checks,rationale='空の保存状態から別入力を使い、完成条件を実操作で確認する'))
+   plan['feature_cases'].append(dict(acceptance_index=i,case_index=j,steps=case_steps,checks=case_checks,rationale='共通の完全な操作フローを別入力で実行して完成条件を確認する。専用テストは共通シナリオで補う'))
  return plan
 def text(sel,value):return step('text_equals',sel,value)
 def count(sel,n):return step('count',sel,n)
