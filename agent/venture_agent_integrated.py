@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.49'
+APP_VERSION='2026.10.25.50'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1709,8 +1709,8 @@ def make_qa_plan(name,page,cfg):
         if not isinstance(scenarios,list) or len(scenarios)!=5 or [x.get('kind') for x in scenarios if isinstance(x,dict)]!=kinds:
             raise AutoQAPlanError('共通テストはworkflow/variant/reload/roundtrip/invalidの5件を別々に返してください')
         return value
-    base=ai_json(base_prompt,cfg,5000,max_attempts=1,
-        request_timeout=int(cfg.get('qa_planning_timeout',120)),validator=validate_base)
+    base=ai_json(base_prompt,cfg,2800,max_attempts=1,
+        request_timeout=int(cfg.get('qa_planning_timeout',180)),validator=validate_base)
     feature_cases=[];acceptance=spec.get('acceptance',[])
     for start in range(0,len(acceptance),2):
         indices=list(range(start,min(start+2,len(acceptance))))
@@ -1731,14 +1731,14 @@ def make_qa_plan(name,page,cfg):
                 def values(case):return [(s.get('op'),s.get('selector'),s.get('value',s.get('label'))) for s in case.get('steps',[]) if isinstance(s,dict) and s.get('op') in ('fill','select')]
                 if not values(pair[0]) or values(pair[0])==values(pair[1]):raise AutoQAPlanError('完成条件ごとの2ケースで入力値を変えてください: '+str(i))
             return cases
-        feature_cases.extend(ai_json(feature_prompt,cfg,3500,max_attempts=1,
-            request_timeout=int(cfg.get('qa_planning_timeout',120)),validator=validate_feature_batch))
+        feature_cases.extend(ai_json(feature_prompt,cfg,2200,max_attempts=1,
+            request_timeout=int(cfg.get('qa_planning_timeout',180)),validator=validate_feature_batch))
     plan=dict(result_selector=base.get('result_selector'),scenarios=base.get('scenarios'),feature_cases=feature_cases,audience_quotes=audience_quotes[:2])
     plan=validate_qa_plan(plan,spec)
     critique_payload=dict(acceptance=acceptance,result_selector=plan['result_selector'],
         scenarios=[dict(kind=x.get('kind'),acceptance=x.get('acceptance'),rationale=x.get('rationale','')) for x in plan['scenarios']],
         feature_cases=[dict(acceptance_index=x.get('acceptance_index'),case_index=x.get('case_index'),rationale=x.get('rationale',''),checks=x.get('checks',[])) for x in feature_cases])
-    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\n仕様:'+json.dumps(spec,ensure_ascii=False)[:5000]+'\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:9000],cfg,1400,max_attempts=1,request_timeout=int(cfg.get('qa_planning_timeout',120)))
+    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\n仕様:'+json.dumps(spec,ensure_ascii=False)[:3500]+'\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:5000],cfg,350,max_attempts=1,request_timeout=int(cfg.get('qa_planning_timeout',180)))
     if critique.get('valid') is not True:raise AutoQAPlanError('操作検証の計画を再作成: '+str(critique.get('reasons','根拠不足'))[:700])
     return plan
 
