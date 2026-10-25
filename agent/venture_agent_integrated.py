@@ -2023,6 +2023,8 @@ def execute_browser_qa(name,page_source,plan,directory):
                             else:
                                 with page.expect_file_chooser() as chooser:loc.click()
                                 chooser.value.set_files(str(selected_file))
+                            # The file input handler parses Blob.text() asynchronously before showing confirm().
+                            page.wait_for_timeout(250)
                             if op=='restore_file' and last_dialog_dismissed[0]:
                                 if snapshot()!=before_restore:raise ValueError('復元をキャンセルしたのに保存記録が変更されました')
                                 last_dialog_dismissed[0]=False
