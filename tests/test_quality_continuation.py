@@ -71,7 +71,7 @@ class ContinuationTests(unittest.TestCase):
   failed='<!doctype html><html><body><h1>検査失敗した候補</h1></body></html>'
   repaired='<!doctype html><html><body><h1>完成条件から作り直した候補</h1></body></html>'
   spec=app.get_product_spec(self.name)
-  with patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'ai',side_effect=[failed,repaired]) as model,patch.object(app,'incremental_product_repair',side_effect=AssertionError('失敗後に同じ局所修正経路を使ってはいけません')) as local_repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',side_effect=[(False,'検査失敗'),(True,'再生成版の操作検査合格')]),patch.object(app,'review_generated_product',return_value=(True,'品質検査合格')),patch.object(app,'event'):
+  with patch.object(app,'product_operation',return_value='custom_workflow'),patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'ai',side_effect=[failed,repaired]) as model,patch.object(app,'incremental_product_repair',side_effect=AssertionError('失敗後に同じ局所修正経路を使ってはいけません')) as local_repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',side_effect=[(False,'検査失敗'),(True,'再生成版の操作検査合格')]),patch.object(app,'review_generated_product',return_value=(True,'品質検査合格')),patch.object(app,'event'):
    page,detail,passed=app.build(1,self.name,dict(app.DEFAULT,max_revisions=3),'',allow_partial=False)
   self.assertTrue(passed);self.assertEqual(page,repaired);self.assertEqual(model.call_count,2);local_repair.assert_not_called()
   self.assertIn('検査失敗に対する自動回復',model.call_args_list[1].args[0])
