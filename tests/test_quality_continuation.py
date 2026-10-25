@@ -88,7 +88,7 @@ class ContinuationTests(unittest.TestCase):
   self.assertEqual(page,'');self.assertFalse(passed)
   self.assertIn('比較・画面設計待ち',reason)
   model.assert_not_called()
- def test_blueprint_role_repairs_invalid_design_contract_before_build(self):
+ def test_blueprint_uses_deterministic_repair_after_one_invalid_model_response(self):
   self.blueprint_patch.stop()
   valid=blueprint_fixture(self.name)
   invalid=dict(valid,core_flows=[dict(valid['core_flows'][0],acceptance=[999])])
@@ -98,8 +98,10 @@ class ContinuationTests(unittest.TestCase):
    design_patterns=[dict(source_url=u,evidence_type='official_text',pattern='公式本文で確認した情報整理の説明を使います。',adapt='対象者の入力と結果を同じ画面に配置します。',improvement='対象者が比較結果を見失わないレイアウトにします。',acceptance='別の入力例を使い結果表示までを操作します。') for u in urls])
   with patch.object(app,'ensure_competitive_brief',return_value=brief),patch.object(app,'get_product_blueprint',return_value=None),patch.object(app,'ai',side_effect=[json.dumps(invalid,ensure_ascii=False),json.dumps(valid,ensure_ascii=False)]) as model:
    result=app.ensure_product_blueprint(self.name,dict(app.DEFAULT))
-  self.assertEqual(model.call_count,2)
-  self.assertEqual(result['core_flows'],valid['core_flows'])
+  self.assertEqual(model.call_count,1)
+  self.assertEqual(result['design_method'],'requirements_compiler_fallback')
+  self.assertTrue(app.validate_product_blueprint(result,app.get_product_spec(self.name),brief))
+  self.assertGreaterEqual(len(result['core_flows']),3)
 
  def test_implementation_contract_covers_each_acceptance_with_distinct_cases(self):
   spec=app.get_product_spec(self.name);bp=blueprint_fixture(self.name);plan=implementation_plan_fixture(self.name)
