@@ -68,7 +68,7 @@ class AutomaticQATests(ContinuationTests):
   interface=app.deterministic_product_interface(name,spec)
   return spec,app.render_product_interface(name,interface,spec)
  def test_structured_planner_covers_registered_operations_without_model_calls(self):
-  names=['オンライン授業参加管理アプリ','会議スケジューリング助手','英会話フレーズ練習ノート','業務タスク管理','FAQ回答ライブラリ','会計業務自動化アプリ','返品対応管理アプリ','顧客満足度調査ツール','費用比較メモ','予定整理ボード','業務記録管理アプリ','オンラインマインドフルネス教室','音楽理論クイズ練習帳','顧客依頼案件管理']
+  names=['オンライン授業参加管理アプリ','会議スケジューリング助手','英会話フレーズ練習ノート','業務タスク管理','FAQ回答ライブラリ','会計業務自動化アプリ','返品対応管理アプリ','顧客満足度調査ツール','費用比較メモ','予定整理ボード','業務記録管理アプリ','オンラインマインドフルネス教室','音楽理論クイズ練習帳','顧客依頼案件管理','在宅ワーク支援アプリ']
   with patch.object(app,'ai_json',side_effect=AssertionError('構造化画面のQA計画に生成AIを呼んではいけません')) as model:
    for name in names:
     with self.subTest(name=name):
@@ -79,7 +79,7 @@ class AutomaticQATests(ContinuationTests):
      self.assertEqual(len(plan['feature_cases']),2*len(spec['acceptance']))
   model.assert_not_called()
  def test_generated_structured_plans_run_in_real_chromium(self):
-  for name in ('オンライン授業参加管理アプリ','会議スケジューリング助手'):
+  for name in ('オンライン授業参加管理アプリ','会議スケジューリング助手','在宅ワーク支援アプリ'):
    with self.subTest(name=name):
     spec,page=self.structured_candidate(name);plan=app.make_qa_plan(name,page,dict(app.DEFAULT))
     directory=self.root/name.replace('/','_');directory.mkdir()
