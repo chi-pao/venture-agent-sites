@@ -58,6 +58,30 @@ class ResearchIndependentBuildTests(unittest.TestCase):
         bundle = app.development_design_reference_bundle(name, "調査待ち")
         self.assertFalse(app.competitive_design_ready(bundle))
 
+    def test_related_design_references_need_not_be_exact_competitors(self):
+        name = "独自の家族旅行計画アプリ"
+        urls = app.competitive_reference_candidates(name)[:2]
+        patterns = [
+            dict(source_url=url, evidence_type="official_text",
+                 pattern="参考サービスにある機能情報のまとまりを確認する。",
+                 adapt="家族の希望を整理する用途へ情報のまとまりを取り入れる。",
+                 improvement="家族の到着時刻や休憩条件に合わせた提案を加える。",
+                 acceptance="条件を入力し希望に沿う候補と旅程が表示されるか試す。")
+            for url in urls
+        ]
+        brief = dict(
+            policy=app.COMPETITIVE_POLICY,
+            sources=[dict(url=url, content_sha="a" * 64) for url in urls],
+            comparisons=[
+                dict(source_url=url, reference_type="design_reference",
+                     relevance="旅行の一覧や共有画面の設計を考える参考事例。",
+                     comparison="完全一致の競合ではなく、家族向け機能の設計参考として活用する。")
+                for url in urls
+            ],
+            design_patterns=patterns,
+        )
+        self.assertTrue(app.competitive_design_ready(brief))
+
 
 if __name__ == "__main__":
     unittest.main()
