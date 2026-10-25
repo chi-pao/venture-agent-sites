@@ -648,7 +648,7 @@ form.addEventListener('submit',e=>{{e.preventDefault();const row={{}};for(const 
 $('recordRows').addEventListener('click',e=>{{const edit=e.target.dataset.edit,del=e.target.dataset.delete;if(edit!==undefined){{editing=Number(edit);const r=records[editing];for(const f of APP.fields)$(f.id).value=r[f.id]??'';$('result').textContent='編集内容を保存してください'}}if(del!==undefined){{records.splice(Number(del),1);save();$('result').textContent='削除しました'}}}});
 $('clearForm').addEventListener('click',()=>{{form.reset();editing=-1;$('result').textContent='入力を消去しました'}});$('searchRecords').addEventListener('input',render);if($('accountingPeriod'))$('accountingPeriod').addEventListener('change',render);if($('loadAccountingSample'))$('loadAccountingSample').addEventListener('click',()=>{{records=[{{transaction_title:'架空サンプル 売上',transaction_date:dateOffset(-3),direction:'収入',account_category:'売上',amount:'120000',payment_status:'済',transaction_notes:'架空データ'}} ,{{transaction_title:'架空サンプル 通信費',transaction_date:dateOffset(-2),direction:'支出',account_category:'通信費',amount:'6800',payment_status:'済',transaction_notes:'架空データ'}} ,{{transaction_title:'架空サンプル 未入金',transaction_date:dateOffset(-1),direction:'収入',account_category:'売上',amount:'35000',payment_status:'未',transaction_notes:'架空データ'}}];save();$('listMessage').textContent='架空のサンプルを表示しています'}});if($('loadReturnSample'))$('loadReturnSample').addEventListener('click',()=>{{records=[{{return_item:'架空サンプル スニーカー',order_number:'SAMPLE-001',response_deadline:dateOffset(2),return_status:'返送待ち',refund_amount:'8900',return_notes:'架空データ・期限内'}} ,{{return_item:'架空サンプル バッグ',order_number:'SAMPLE-002',response_deadline:dateOffset(-2),return_status:'確認中',refund_amount:'5400',return_notes:'架空データ・期限超過'}} ,{{return_item:'架空サンプル 雑貨',order_number:'SAMPLE-003',response_deadline:dateOffset(-1),return_status:'返金済み',refund_amount:'1200',return_notes:'架空データ・処理済み'}}];save();$('listMessage').textContent='架空のサンプルを表示しています'}});
 if(APP.operation==='faq'||APP.capabilities.includes('faq_search'))$('searchFaq').addEventListener('click',()=>{{const query=$('faqQuery').value.trim();if(!query){{$('faqAnswer').textContent='質問を入力してください';return}}const qid=APP.fields.find(f=>f.role==='question').id,aid=APP.fields.find(f=>f.role==='answer').id;const hit=records.find(r=>String(r[qid]).toLocaleLowerCase().includes(query.toLocaleLowerCase()));if(hit){{$('faqAnswer').textContent=hit[aid]}}else{{if(!unresolved.some(x=>x.question===query))unresolved.unshift({{question:query,created:new Date().toISOString()}});$('faqAnswer').textContent='該当する回答がありません。未解決の質問に記録しました。';save()}}}});
-$('downloadCsv').addEventListener('click',()=>{{const cell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\\ufeff'+[APP.fields.map(f=>f.label),...records.map(r=>APP.fields.map(f=>r[f.id]))].map(row=>row.map(cell).join(',')).join('\\r\\n');download(csv,'text/csv;charset=utf-8','records.csv')}});
+$('downloadCsv').addEventListener('click',()=>{{const cell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv='\\ufeff'+[APP.fields.map(f=>f.label),...records.map(r=>APP.fields.map(f=>r[f.id]))].map(row=>row.map(cell).join(',')).join('\\r\n');download(csv,'text/csv;charset=utf-8','records.csv')}});
 $('downloadJson').addEventListener('click',()=>download(JSON.stringify({{version:1,records,unresolved}},null,2),'application/json','records-backup.json'));
 function download(data,type,name){{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{{type}}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}}
 $('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[0];if(!file)return;try{{const v=JSON.parse(await file.text());if(!v||v.version!==1||!Array.isArray(v.records)||v.records.some(r=>!r||typeof r!=='object'||APP.fields.some(f=>typeof r[f.id]!=='string'))||v.unresolved!==undefined&&!Array.isArray(v.unresolved))throw new Error('形式');if(confirm(v.records.length+'件の記録で現在の一覧を置き換えますか？')){{records=v.records;unresolved=Array.isArray(v.unresolved)?v.unresolved:[];save();$('listMessage').textContent='バックアップを復元しました'}}}}catch{{$('listMessage').textContent='バックアップを読み込めません。JSON形式を確認してください'}}finally{{e.target.value=''}}}});load();{timer_script}{quiz_script}
@@ -789,7 +789,7 @@ def product_spec_from_business_rationale(name,item,reason):
         '対象者の中心作業を入力から結果・保存まで短い導線で行えるようにする'))).strip()
     raw=item.get('mvp_scope') or item.get('must_have') or []
     if isinstance(raw,str):
-        candidates=[v.strip(' ・-') for v in re.split(r'[、。;；\\n]+',raw) if len(v.strip(' ・-'))>=4]
+        candidates=[v.strip(' ・-') for v in re.split(r'[、。;；\n]+',raw) if len(v.strip(' ・-'))>=4]
     elif isinstance(raw,list):
         candidates=[str(v).strip() for v in raw if str(v).strip()]
     else:candidates=[]
@@ -848,7 +848,7 @@ def ensure_product_spec(name,cfg,plan=''):
         '必要な検索・共同編集を単なる外部リンクやコピーに縮小しない。実装済みとは書かない。'
         'キー: audience,requested_outcome,differentiation（文字列）、workflow,must_have,acceptance（具体的な文字列の配列、各3件以上）、'
         'delivery_mode（browser_local または connected）、dependencies（必要なAPI・サーバー等の配列。不要なら空）。'
-        '\\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\\n計画:'+plan[:2500])
+        '\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\n計画:'+plan[:2500])
     try:
         designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,validator=validate_product_spec)
         return store_product_spec(name,designed)
@@ -1716,7 +1716,7 @@ def make_qa_plan(name,page,cfg):
     critique_payload=dict(acceptance=acceptance,result_selector=plan['result_selector'],
         scenarios=[dict(kind=x.get('kind'),acceptance=x.get('acceptance'),rationale=x.get('rationale','')) for x in plan['scenarios']],
         feature_cases=[dict(acceptance_index=x.get('acceptance_index'),case_index=x.get('case_index'),rationale=x.get('rationale',''),checks=x.get('checks',[])) for x in feature_cases])
-    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\\n仕様:'+json.dumps(spec,ensure_ascii=False)[:5000]+'\\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:9000],cfg,1400)
+    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\n仕様:'+json.dumps(spec,ensure_ascii=False)[:5000]+'\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:9000],cfg,1400)
     if critique.get('valid') is not True:raise AutoQAPlanError('操作検証の計画を再作成: '+str(critique.get('reasons','根拠不足'))[:700])
     return plan
 
@@ -6917,7 +6917,7 @@ def coding_config(cfg,task='new'):
 
 def benchmark_tasks():
     # The repair source contains the two actual failure classes found in the supplied project stub.
-    broken='''<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>作業の登録</title></head><body><h1>個人の作業記録</h1><form id="projectForm"><label for="taskName">タスク名</label><input id="taskName" required><label for="priority">優先度</label><input id="priority" type="number" min="1" max="5" required><label for="dueDate">期限</label><input id="dueDate" type="date" required><button id="addTask">追加</button></form><span id="taskCount">0</span><table><tbody id="tasks"></tbody></table><div id="result"></div><button id="downloadCsv">CSV</button><script>document.getElementById('projectForm').onsubmit=function(e){e.preventDefault();const taskName=document.getElementById('taskName').value;document.getElementById('result').innerHTML='<p>'+taskName+'</p>'; <p>タスク名: ${taskName}</p> `;};document.getElementById('downloadCsv').onclick=function(){const csv='タスク名,優先度,期限\\n';csv+='記録';};</script></body></html>'''
+    broken='''<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>作業の登録</title></head><body><h1>個人の作業記録</h1><form id="projectForm"><label for="taskName">タスク名</label><input id="taskName" required><label for="priority">優先度</label><input id="priority" type="number" min="1" max="5" required><label for="dueDate">期限</label><input id="dueDate" type="date" required><button id="addTask">追加</button></form><span id="taskCount">0</span><table><tbody id="tasks"></tbody></table><div id="result"></div><button id="downloadCsv">CSV</button><script>document.getElementById('projectForm').onsubmit=function(e){e.preventDefault();const taskName=document.getElementById('taskName').value;document.getElementById('result').innerHTML='<p>'+taskName+'</p>'; <p>タスク名: ${taskName}</p> `;};document.getElementById('downloadCsv').onclick=function(){const csv='タスク名,優先度,期限\n';csv+='記録';};</script></body></html>'''
     return [('new','新規作成',MODEL_BENCHMARK_REQUIREMENTS),('repair','不具合の修正',MODEL_BENCHMARK_REQUIREMENTS+'\n次の壊れたコードを修理し、必須仕様を満たす完全なHTMLを返す。JS内のHTMLタグとconstへの再代入を直し、一覧・保存・CSVを実装する。\n対象コード:\n'+broken)]
 
 
