@@ -4749,9 +4749,10 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             recovery_stage=recovery_stage+1,recovery_kind=recovery['kind'],recovery_history=recovery_history,
             failure_class=base_recovery['kind'],failure_class_attempts=class_attempts,checked=now())
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_repair_state:'+name,json.dumps(repair_state,ensure_ascii=False)))
-        # A failed candidate is never used as the base of another fragile patch.
-        # Every subsequent attempt is generated from the saved spec with this failure's plan.
-        previous_page=''
+        # Preserve the failed artifact so the next attempt can repair the exact
+        # defect and rerun the same browser checks. If the patch is malformed,
+        # the exception path above falls back to a fresh requirements-based build.
+        previous_page=page
         diagnose_next=True
         if n < attempt_limit:
             continue
