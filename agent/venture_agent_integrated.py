@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.32'
+APP_VERSION='2026.10.25.33'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -984,6 +984,91 @@ def ensure_product_blueprint(name,cfg):
     return item
 
 
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-1'
+
+
+def get_implementation_plan(name):
+    rows=query('SELECT value FROM agent_settings WHERE key=?',('implementation_plan:'+name+':'+product_scope_sha(name),))
+    try:return json.loads(rows[0]['value']) if rows else None
+    except (ValueError,TypeError):return None
+
+
+def validate_implementation_plan(item,spec,blueprint):
+    """Require a traceable build and test contract for every declared product outcome."""
+    if not isinstance(item,dict):raise AutoQAPlanError('機能別の実装設計がありません')
+    for key in ('architecture','data_flow','offline_boundary'):
+        if not isinstance(item.get(key),str) or len(item[key].strip())<25:
+            raise AutoQAPlanError('画面・データの流れ・未接続範囲を具体化してください: '+key)
+    features=item.get('features')
+    acceptance=spec.get('acceptance',[])
+    if not isinstance(features,list) or not len(acceptance)<=len(features)<=min(24,len(acceptance)*2):
+        raise AutoQAPlanError('完成条件ごとの独立機能を漏れなく設計してください')
+    coverage=set()
+    for feature in features:
+        if not isinstance(feature,dict):raise AutoQAPlanError('機能設計はJSONオブジェクトで指定してください')
+        index=feature.get('acceptance_index')
+        if type(index) is not int or not 0<=index<len(acceptance):raise AutoQAPlanError('機能と完成条件の対応番号が不正です')
+        coverage.add(index)
+        for key in ('name','user_action','inputs','processing','outputs','persistence','failure_behavior'):
+            value=feature.get(key)
+            if not isinstance(value,str) or len(value.strip())<20:
+                raise AutoQAPlanError('機能ごとの操作・入力・処理・結果・保存・失敗時の挙動が不足: '+key)
+        cases=feature.get('test_cases')
+        if not isinstance(cases,list) or len(cases)<2 or len(cases)>5:
+            raise AutoQAPlanError('各機能に異なる入力を使う操作テストを2件以上指定してください')
+        for case in cases:
+            if not isinstance(case,dict) or any(not isinstance(case.get(k),str) or len(case[k].strip())<12 for k in ('input','action','expected')):
+                raise AutoQAPlanError('各機能のテスト例に入力・操作・期待結果が必要です')
+    if coverage!=set(range(len(acceptance))):raise AutoQAPlanError('受入条件を全て機能とテストに対応づけてください')
+    links=item.get('screen_links')
+    if not isinstance(links,list) or len(links)<3 or any(not isinstance(link,dict) or
+        any(not isinstance(link.get(k),str) or len(link[k].strip())<12 for k in ('screen','purpose','next_action')) for link in links):
+        raise AutoQAPlanError('初回・作業中・結果後の画面と次の行動を設計してください')
+    blueprint_screens={str(s.get('purpose','')) for s in blueprint.get('screen_sections',[]) if isinstance(s,dict)}
+    if not blueprint_screens or any(not any(screen in link['screen'] or link['screen'] in screen for screen in blueprint_screens)
+        for link in links):
+        raise AutoQAPlanError('画面設計と機能別の実装計画が一致していません')
+    return item
+
+
+def ensure_implementation_plan(name,cfg,blueprint=None):
+    """Separate technical decomposition from UX and code generation."""
+    spec=get_product_spec(name) or {};blueprint=blueprint or ensure_product_blueprint(name,cfg)
+    cached=get_implementation_plan(name)
+    if cached and cached.get('policy')==IMPLEMENTATION_PLAN_POLICY and cached.get('blueprint_checked')==blueprint.get('checked'):
+        return validate_implementation_plan(cached,spec,blueprint)
+    feature_schema={'type':'object','properties':{
+        'acceptance_index':{'type':'integer','enum':list(range(len(spec.get('acceptance',[]))))},
+        **{key:{'type':'string','minLength':20,'maxLength':600} for key in ('name','user_action','inputs','processing','outputs','persistence','failure_behavior')},
+        'test_cases':{'type':'array','minItems':2,'maxItems':5,'items':{'type':'object','properties':{
+            key:{'type':'string','minLength':12,'maxLength':400} for key in ('input','action','expected')},
+            'required':['input','action','expected'],'additionalProperties':False}},
+        'required':['acceptance_index','name','user_action','inputs','processing','outputs','persistence','failure_behavior','test_cases'],
+        'additionalProperties':False}}
+    plan_schema={'type':'object','properties':{
+        'architecture':{'type':'string','minLength':25,'maxLength':900},
+        'data_flow':{'type':'string','minLength':25,'maxLength':900},
+        'offline_boundary':{'type':'string','minLength':25,'maxLength':900},
+        'features':{'type':'array','minItems':len(spec.get('acceptance',[])),'maxItems':min(24,max(1,len(spec.get('acceptance',[]))*2)),'items':feature_schema},
+        'screen_links':{'type':'array','minItems':3,'maxItems':8,'items':{'type':'object','properties':{
+            key:{'type':'string','minLength':12,'maxLength':400} for key in ('screen','purpose','next_action')},
+            'required':['screen','purpose','next_action'],'additionalProperties':False}},
+        'required':['architecture','data_flow','offline_boundary','features','screen_links'],'additionalProperties':False}}
+    prompt=('あなたは技術設計担当。コードを書かず、検証済みの製品要件と画面設計を機能単位の実装・テスト契約に分解する。'
+        '全ての完成条件を、実際の入力・処理・結果・保存・エラー対応を持つ機能へ最低1回ずつ対応づける。'
+        '機能名の言い換えだけ、記録一覧だけ、接続予定の説明だけを機能と数えない。各テストは異なる具体値と期待結果を指定し、コード実装後にブラウザで再現可能にする。'
+        '未接続APIが必要な場合は、独立して動かせる機能とAPI待ちの範囲を分け、実データを作ったことにしない。'
+        'キー: architecture（画面・機能をどう分割し、どの順で作るか）、data_flow（入力→検証→処理→表示→保存のデータ流）、offline_boundary（オフラインで動く範囲と未接続機能）、'
+        'features:[{acceptance_index:完成条件の0始まり番号,name:固有機能,user_action:利用者の操作,inputs:具体的な入力,processing:業務固有の処理,outputs:確認できる結果,persistence:保存・再読込, failure_behavior:誤入力・失敗時の扱い,test_cases:[{input,action,expected}]}],'
+        'screen_links:[{screen,purpose,next_action}]。'
+        '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500])
+    item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
+        validator=lambda value:validate_implementation_plan(value,spec,blueprint))
+    item.update(policy=IMPLEMENTATION_PLAN_POLICY,scope_sha=product_scope_sha(name),blueprint_checked=blueprint.get('checked'),checked=now())
+    execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('implementation_plan:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
+    return item
+
+
 def owner_decision_material(name,report):
     blueprint=report.get('blueprint',{});brief=report.get('competitive_brief',{});idea=idea_details(name);spec=get_product_spec(name) or {}
     return dict(content_sha=report.get('content_sha'),scope_sha=report.get('scope_sha'),
@@ -1848,7 +1933,7 @@ def quality_development_cycle(job,cfg):
                 return
         if row['updated'] and row['stage']!='修正依頼あり':
             try:
-                retry_seconds=180 if row['stage'] in AUTO_QA_FAILURE_STAGES or row['stage'] in ('修正中','設計・修正待ち','画面改善中・接続未完了') else 1800
+                retry_seconds=180 if row['stage'] in AUTO_QA_FAILURE_STAGES or row['stage'] in ('修正中','設計・修正待ち','画面改善中・接続未完了','比較・画面設計待ち','機能設計待ち') else 1800
                 if same and (policy_clock()-datetime.fromisoformat(row['updated'])).total_seconds()<retry_seconds:
                     waiting['再試行待ち']=waiting.get('再試行待ち',0)+1
                     continue
@@ -1889,11 +1974,13 @@ def quality_development_cycle(job,cfg):
                 event(job,name+': 検査不合格を保持して、その場で対象コードを修正・再検査します')
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
             stage=('比較・画面設計待ち' if '比較・画面設計待ち' in verdict else
+                '機能設計待ち' if '機能設計待ち' in verdict else
                 ('画面改善中・接続未完了' if '画面検査: 合格' not in verdict else qa_stage) if connected else
                 '修正依頼あり' if ('機能部品の組み合わせ' in verdict or '操作パターン未登録' in verdict) else qa_stage)
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+qa_round+1,assets[0]['path'] if assets else '')
             event(job,name+(': 比較根拠・画面設計が未完了。試作生成には進めず調査・設計を再試行' if stage=='比較・画面設計待ち' else
+                ': 全受入条件の機能分解・テスト設計が未完了。該当項目を修正して再試行' if stage=='機能設計待ち' else
                 (': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else
                 ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
         except Exception as exc:
@@ -4124,14 +4211,23 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
     except Exception as exc:
         return '', '完成条件の設計待ち: '+type(exc).__name__, False
     try:
-        # Research and product design are upstream deliverables, not optional
-        # decoration. Never create a low-confidence screen-only app when either
-        # role has not produced a validated brief and blueprint.
-        ensure_product_blueprint(name,cfg)
+        blueprint=ensure_product_blueprint(name,cfg)
     except Exception as exc:
-        detail='比較・画面設計待ち: '+type(exc).__name__+': '+str(exc)[:700]
-        action_record(name,'製品設計','比較・画面設計待ち',detail)
-        event(job,name+': '+detail+'。設計を通過するまでHTML生成へ進みません')
+        stage='比較・画面設計待ち'
+        detail=stage+': '+type(exc).__name__+': '+str(exc)[:700]
+        action_record(name,'製品設計',stage,detail)
+        event(job,name+': '+detail+'。機能ごとの設計を通過するまでHTML生成へ進みません')
+        return '',detail,False
+    try:
+        # Research, UX, and feature-level engineering contracts are required
+        # inputs. Do not generate a screen until every acceptance item has a
+        # concrete implementation path and browser-test examples.
+        implementation_plan=ensure_implementation_plan(name,cfg,blueprint)
+    except Exception as exc:
+        stage='機能設計待ち'
+        detail=stage+': '+type(exc).__name__+': '+str(exc)[:700]
+        action_record(name,'製品設計',stage,detail)
+        event(job,name+': '+detail+'。機能ごとの設計を通過するまでHTML生成へ進みません')
         return '',detail,False
     legacy_reason=legacy_placeholder_reason(name,previous_page) if previous_page else ''
     if legacy_reason and not candidate_production_acceptance(name):
@@ -4162,6 +4258,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             'あなたは実装担当。検証済みの比較資料・UX設計・製品要件を実際に動く画面と処理へ落とし込む。'
             '要件と設計にない独自機能を足して中心作業を曖昧にしない。別担当の不足を推測で埋めない。\n'
             '先に決めた制作設計（画面と主機能へ具体的に反映）:\n'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:4500]+'\n'
+            +'機能別の実装・テスト契約（各受入条件の具体処理を全て実装。各テスト例と同じ操作をQAで確認）:\n'+json.dumps(implementation_plan,ensure_ascii=False)[:9000]+'\n'
             +f'「{name}」の無料で使える実用ブラウザアプリを'
             '単一HTML/CSS/JavaScriptで実装してください。\n'
             '対象顧客に必要な本物の処理、入力検証、操作結果、'
