@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.42'
+APP_VERSION='2026.10.25.43'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1132,7 +1132,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     return item
 
 
-IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-5'
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-6'
 
 
 def get_implementation_plan(name):
@@ -1234,9 +1234,9 @@ def implementation_plan_from_requirements(name,spec,blueprint,reason):
         offline_boundary=('外部接続先「'+'、'.join(dependencies)+'」は未接続として分離する。試作中は架空サンプルで中心操作を完遂できる。'
             if dependencies else '本試作の中心操作・保存・再読込はブラウザ内で動かし、未接続の外部機能は約束しない。'),
         features=features,
-        screen_links=[dict(screen='この画面: '+str(section.get('purpose') or '用途別の画面'),
-            purpose='この画面で'+str(section.get('action') or '利用者の操作')+'を行い、'+str(section.get('result') or '結果を確認する'),
-            next_action='画面の案内に沿って'+str(section.get('action') or '次の操作')+'を行い、結果を確認する。') for section in sections[:8]],
+        screen_links=[dict(screen='対象画面「'+str(section.get('purpose') or '用途別の画面')+'」の操作画面',
+            purpose='利用者が「'+str(section.get('action') or '画面の操作')+'」を行い、「'+str(section.get('result') or '結果')+'」を確認する画面の目的',
+            next_action='画面の案内に従って「'+str(section.get('action') or '次の操作')+'」を行い、結果を確かめて次へ進む。') for section in sections[:8]],
         design_method='requirements_compiler_fallback',design_recovery_reason=str(reason)[:900])
     return validate_implementation_plan(plan,spec,blueprint)
 
