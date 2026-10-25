@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_5298436803bbb13fe7f2c74f:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プロジェクト管理ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { text-align: center; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; }
+        .result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; }
+        .error { color: red; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <div class="container">
+        <h1>プロジェクト管理ツール</h1>
+        <div id="input-group" class="input-group">
+            <label for="task">タスク名:</label>
+            <input type="text" id="task" required>
+        </div>
+        <div id="input-group" class="input-group">
+            <label for="priority">優先度:</label>
+            <input type="number" id="priority" min="1" max="5" required>
+        </div>
+        <div id="input-group" class="input-group">
+            <label for="dueDate">期限:</label>
+            <input type="date" id="dueDate" required>
+        </div>
+        <button id="addTask">追加</button>
+        <div id="result" class="result"></div>
+        <button id="saveData">保存</button>
+        <button id="loadData">復元</button>
+        <button id="exportCsv">CSV出力</button>
+    </div>
+
+    <script>
+        document.getElementById('addTask').addEventListener('click', addTask);
+        document.getElementById('saveData').addEventListener('click', saveData);
+        document.getElementById('loadData').addEventListener('click', loadData);
+        document.getElementById('exportCsv').addEventListener('click', exportCsv);
+
+        function addTask() {
+            const task = document.getElementById('task').value;
+            const priority = document.getElementById('priority').value;
+            const dueDate = document.getElementById('dueDate').value;
+
+            if (task && priority && dueDate) {
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML += `<p>${task} (優先度: ${priority}, 期限: ${dueDate})</p>`;
+                document.getElementById('task').value = '';
+                document.getElementById('priority').value = '';
+                document.getElementById('dueDate').value = '';
+            } else {
+                document.getElementById('result').innerHTML = '<p class="error">入力が不完全です。</p>';
+            }
+        }
+
+        function saveData() {
+            const tasks = document.getElementById('result').innerHTML;
+            localStorage.setItem('tasks', tasks);
+            document.getElementById('result').innerHTML = '<p>データが保存されました。</p>';
+        }
+
+        function loadData() {
+            const tasks = localStorage.getItem('tasks');
+            if (tasks) {
+                document.getElementById('result').innerHTML = tasks;
+            } else {
+                document.getElementById('result').innerHTML = '<p>データは保存されていません。</p>';
+            }
+        }
+
+        function exportCsv() {
+            const tasks = document.getElementById('result').innerHTML;
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(tasks);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = csvContent;
+            downloadLink.download = 'tasks.csv';
+            downloadLink.click();
+        }
+    </script>
+</body>
+</html>
