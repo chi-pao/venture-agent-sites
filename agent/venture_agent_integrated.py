@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.29'
+APP_VERSION='2026.10.25.30'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1424,10 +1424,13 @@ def review_connected_layout(job,name,page_source,cfg):
 
 def automated_product_qa(job,name,page,cfg):
     spec=get_product_spec(name) or {};digest=hashlib.sha256(page.encode()).hexdigest();scope=product_scope_sha(name)
-    if spec.get('delivery_mode')!='browser_local' or spec.get('dependencies'):return False,'接続・主要機能が未完成。自動合格にはしません','画面改善中・接続未完了'
     project=project_registry(name);directory=OUT/'sectors'/project['sector']/'projects'/project['project_id']/'04_reviews'/'autoqa'/digest[:16]/uuid.uuid4().hex
     directory.mkdir(parents=True,exist_ok=True)
-    report={'policy':AUTO_QA_POLICY,'content_sha':digest,'scope_sha':scope,'passed':False,'checked':now()}
+    dependencies=list(spec.get('dependencies') or [])
+    report={'policy':AUTO_QA_POLICY,'content_sha':digest,'scope_sha':scope,'passed':False,'checked':now(),
+        'connection_scope':{'delivery_mode':spec.get('delivery_mode'),'required':dependencies,
+            'status':'未接続・未検証' if dependencies else '外部接続不要',
+            'note':'実操作合格は画面内で確認した範囲だけ。未接続の外部API・共有機能を実装済みとは扱わない。'}}
     stage='自動検証で要修正'
     try:
         event(job,name+': 実操作・PC/スマホ画面の自動検証を開始')
@@ -1444,6 +1447,7 @@ def automated_product_qa(job,name,page,cfg):
         if issues:raise ValueError('画像判定で改善が必要: '+' / '.join(issues))
         if product_scope_sha(name)!=scope or not development_allowed(name) or not state()['enabled']:raise AutoQAEnvironmentError('検証中に要件・運転設定が変わったため再確認します')
         report['passed']=True;stage='のぼるさん確認待ち';detail='自動実操作・画像検証: 合格。実利用・収益性は未検証。発信はのぼるさんのOK後'
+        if dependencies:detail+=' / 外部接続は未検証: '+' / '.join(dependencies)
         execute('DELETE FROM agent_settings WHERE key=?',('autoqa_plan_retry:'+name+':'+digest,))
     except AutoQAEnvironmentError as exc:detail=str(exc);stage='検証環境の準備待ち'
     except AutoQAPlanError as exc:
@@ -1470,7 +1474,7 @@ def automated_product_qa(job,name,page,cfg):
             'save_reload':'両画面幅で再読込後の保存記録と期待結果を確認済み。',
             'export_restore':'CSV実ファイルの値を照合し、JSON実ファイルの取得→別データへ変更→元の全記録に復元を両画面幅で照合。',
             'invalid_input':'誤入力の実行後に期待するエラーと保存記録が変わらないことを両画面幅で検証。',
-            'connections':'外部接続を必要としない製品仕様と照合し、外部通信を遮断した独立ブラウザで検証。'}
+            'connections':('未接続として明示: '+' / '.join(dependencies)+'。外部通信を遮断して確認し、API実応答・共有機能は検証していない。' if dependencies else '外部接続を必要としない製品仕様と照合し、外部通信を遮断した独立ブラウザで検証。')}
         record={'policy':PRODUCT_QUALITY_POLICY,'content_sha':digest,'scope_sha':scope,'delivery_mode':spec['delivery_mode'],
             'reviewer':'自動実操作・画像検証','checks':checks,'checked':now(),'report':str(report_path),'report_sha':hashlib.sha256(report_path.read_bytes()).hexdigest(),
             'screenshots':{path:hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in report['browser']['screenshots']},
@@ -1836,7 +1840,12 @@ def quality_development_cycle(job,cfg):
                 event(job,name+': 開発開始基準に沿って対象者・デザイン・操作・機能を改善'+(' / 検査結果に基づく即時修正' if qa_round else ''))
                 page,verdict,passed=build(job,name,cfg,development_plan,
                     asset_kind='品質改善候補HTML',existing_page=previous,allow_partial=connected)
-                if not passed or connected:break
+                # A connected app may pass the initial visual gate while its main
+                # workflow is still untested. Run the same end-to-end product QA
+                # when the offline page and responsive screen are ready; do not
+                # stop at a visual-only result.
+                connected_screen_ready=connected and '画面検査: 合格' in verdict
+                if not passed and not connected_screen_ready:break
                 product_development_state(name,'自動実操作・画像検証中','コード検査を通過。操作と画面を自動検証します',attempts+qa_round+1)
                 passed,qa_detail,qa_stage=automated_product_qa(job,name,page,cfg)
                 verdict+=' / '+qa_detail
@@ -1849,7 +1858,7 @@ def quality_development_cycle(job,cfg):
                 product_development_state(name,'自動検証で要修正',qa_detail,attempts+qa_round)
                 event(job,name+': 検査不合格を保持して、その場で対象コードを修正・再検査します')
             assets=query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1",(name,))
-            stage=('画面検査済み・API接続確認待ち' if '画面検査: 合格' in verdict else '画面改善中・接続未完了') if connected else '修正依頼あり' if ('機能部品の組み合わせ' in verdict or '操作パターン未登録' in verdict) else qa_stage
+            stage=('画面改善中・接続未完了' if '画面検査: 合格' not in verdict else qa_stage) if connected else '修正依頼あり' if ('機能部品の組み合わせ' in verdict or '操作パターン未登録' in verdict) else qa_stage
             detail=verdict+(' / 必要な接続・主要機能は未完成。公開・SNS不可: '+' / '.join(map(str,spec.get('dependencies',[]))) if connected else '')
             product_development_state(name,stage,detail,attempts+qa_round+1,assets[0]['path'] if assets else '')
             event(job,name+((': 画面検査は通過。接続機能・実操作は未完成' if '画面検査: 合格' in verdict else ': 画面・独立機能の改善は未完了。修正・検証を継続') if connected else ': 自動品質検証を通過。判断待ち' if passed else ': 品質改善の修正を継続'))
