@@ -24,7 +24,7 @@ class RequirementsPlanFallbackTests(unittest.TestCase):
             workflow=["CSVを読み込む", "期間と商品を選ぶ", "集計結果を保存して出力する"],
             must_have=["CSV列の対応付け", "期間別・商品別の集計", "結果と対応判断の保存"],
             acceptance=[
-                "CSVの列を対応付けて読み込める",
+                "CSV読込",
                 "期間と商品を変えて集計結果を比較できる",
                 "集計結果と次の対応を保存・出力できる",
             ],
@@ -45,6 +45,7 @@ class RequirementsPlanFallbackTests(unittest.TestCase):
             set(range(len(spec["acceptance"]))),
         )
         self.assertEqual(len(plan["features"]), len(spec["acceptance"]))
+        self.assertGreaterEqual(len(plan["features"][0]["name"]), 20)
         self.assertIn("期間と商品", plan["features"][1]["user_action"])
         self.assertEqual(len(plan["screen_links"]), len(blueprint["screen_sections"]))
 
