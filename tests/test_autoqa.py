@@ -173,10 +173,10 @@ class AutomaticQATests(ContinuationTests):
    return io.BytesIO(json.dumps({'response':json.dumps(visual)}).encode())
   with patch.object(app.urllib.request,'urlopen',side_effect=response):
    got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
-  self.assertEqual(got,visual);self.assertEqual(len(calls[-1]['images']),4)
+  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),4)
   processed=app.base64.b64decode(calls[-1]['images'][0])
   self.assertTrue(processed.startswith(bytes([255,216,255])))
-  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(768,494))
+  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(640,411))
   self.assertFalse(calls[-1]['stream'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
