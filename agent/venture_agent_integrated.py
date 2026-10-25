@@ -4662,9 +4662,9 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
     # Previously projects spent most of their budget on monolithic HTML before
     # trying these validated components as a last resort.
     structured_seed_attempted=False
-    if not previous_page and product_operation(name,release_spec) in PRODUCT_OPERATION_REQUIREMENTS:
+    if not previous_page and product_operation(name,release_spec) in PRODUCT_OPERATION_REQUIREMENTS and product_operation(name,release_spec)!='custom_workflow':
         structured_seed_attempted=True
-        event(job,name+': 用途別の検証済み機能部品から先に組み立て、完成条件の全QAを実施します')
+        event(job,name+': 用途別の検証済み機能部品から先に組み立て、全受入条件の実ブラウザQAへ回します')
         try:
             seed_page,seed_detail,seed_ready=structured_product_fallback(
                 job,name,cfg,plan,asset_kind,partial)
@@ -4675,9 +4675,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             event(job,name+': 用途別の初期版をQAに通せませんでした。HTML生成・検証を続行します: '+str(exc)[:260])
 
     configured_revisions=max(1,int(cfg['max_revisions']))
-    # Bound work by distinct recovery routes. A candidate gets the configured
-    # product revisions plus one full rebuild, capped at four total attempts;
-    # repeated free-form generations are not a substitute for a working workflow.
+    # Bound work to one initial implementation plus one distinct repair route.
+    # Repeatedly asking the model to rewrite the same large file did not improve pass rates.
     attempt_limit=min(configured_revisions+1,2)
     force_full_generation_reason=''
     recovery_count=min(4,int(repair_state.get('recovery_stage',0) or 0))
