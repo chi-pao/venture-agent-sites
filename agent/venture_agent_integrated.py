@@ -657,17 +657,25 @@ $('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[
 
 
 def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
-    """Use validated components and run the same full product QA as generated code."""
+    """Start from a verified task-specific interface; the caller runs full product QA."""
     definition=ensure_product_interface(name,cfg)
     page=apply_generated_layout_safety(render_product_interface(name,definition,get_product_spec(name) or {}))
     errors=validate_html(page,name)
     if errors:raise ValueError('構造化部品のコード検査: '+' / '.join(errors))
-    # A cheap smoke test is insufficient for the user's review queue. Use the
-    # full desktop/mobile, workflow, persistence, export/restore and visual gate.
-    passed,detail,stage=automated_product_qa(job,name,page,cfg)
-    validation='構造化部品 / '+stage+' / '+detail
-    if not passed:event(job,name+': 構造化部品は生成しましたが、実操作・画面・比較条件の全検査を通過していません: '+detail[:220])
-    return page,validation,bool(passed and stage=='のぼるさん確認待ち')
+    try:
+        ensure_autoqa_environment(job,cfg,vision=False)
+        passed,detail=browser_test(page)
+    except Exception as exc:
+        raise AutoQAEnvironmentError('構造化部品のブラウザ検証環境を準備できません: '+str(exc)[:400]) from exc
+    if not passed:raise ValueError('構造化部品の操作検査: '+detail)
+    if partial:
+        layout_ok,layout_detail=review_connected_layout(job,name,page,cfg)
+        if not layout_ok:raise ValueError('構造化部品の画面検査: '+layout_detail)
+    validation=('構造化部品の入力・保存・検索・CSV/JSON・簡易操作検査合格。'
+        +(' 接続未完了・発信不可。' if partial else ' 製品QA・他社比較・利用価値の最終確認はこれから実施。'))
+    save(job,name,asset_kind,page,'html',validation)
+    event(job,name+': 用途別の構造化部品から候補を作成。完成条件の実操作・画面QAは次工程で継続')
+    return page,validation,not partial
 
 
 
