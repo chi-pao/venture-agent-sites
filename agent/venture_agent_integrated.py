@@ -1365,7 +1365,7 @@ def qa_json(text):
 def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
     """Feed validation errors back; fall back from rejected JSON Schema to JSON mode."""
     structured_cfg=dict(cfg,_json_response=schema if schema is not None else True)
-    base_prompt=prompt+('\\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
+    base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
     request=base_prompt;limit=3 if validator else 2;schema_fallback=False
     # Some Ollama/model combinations reject a valid but large JSON Schema with HTTP 400.
     # Retry in JSON mode while retaining the required keys and Python-side validation.
@@ -1381,7 +1381,7 @@ def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
             if schema is not None and exc.code==400 and not schema_fallback:
                 schema_fallback=True
                 structured_cfg=dict(cfg,_json_response='json')
-                base_prompt=prompt+'\\nJSON Schema形式を利用できない環境のため、同じ必須キーと制約を守ったJSONオブジェクト1件だけを返してください。'
+                base_prompt=prompt+'\nJSON Schema形式を利用できない環境のため、同じ必須キーと制約を守ったJSONオブジェクト1件だけを返してください。'
                 request=base_prompt
                 continue
             detail=(' / '+body[:700]) if body else ''
@@ -1389,9 +1389,9 @@ def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
         except ValueError as exc:
             if attempt+1==total_attempts:
                 raise AutoQAPlanError('AI設計・回答の修正を'+str(total_attempts)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
-            request=(base_prompt+'\\n前回の検査で次の不足が見つかりました。要件を減らさず具体的に修正してください。\\n検査結果: '+str(exc)[:2000]
-                +'\\n前回のJSON: '+(json.dumps(value,ensure_ascii=False)[:10000] if value is not None else '回答形式が不正で読み取り不可')
-                +'\\n説明・思考過程・Markdown・2つ目の候補は出さず、必要なキーを全て含む完成したJSONオブジェクト1件だけを返してください。')
+            request=(base_prompt+'\n前回の検査で次の不足が見つかりました。要件を減らさず具体的に修正してください。\n検査結果: '+str(exc)[:2000]
+                +'\n前回のJSON: '+(json.dumps(value,ensure_ascii=False)[:10000] if value is not None else '回答形式が不正で読み取り不可')
+                +'\n説明・思考過程・Markdown・2つ目の候補は出さず、必要なキーを全て含む完成したJSONオブジェクト1件だけを返してください。')
 
 
 def qa_setup_command(job,args):
