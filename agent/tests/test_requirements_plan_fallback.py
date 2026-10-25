@@ -16,7 +16,7 @@ class RequirementsPlanFallbackTests(unittest.TestCase):
 
     def test_ai_failure_compiles_a_feature_for_each_product_acceptance(self):
         name = "小規模事業者向け売上CSV分析"
-        self.add(name)
+        baseline.FrameworkTests.add(self, name)
         spec = app.validate_product_spec(dict(
             audience="毎月の売上CSVを確認する小規模EC事業者",
             requested_outcome="売上傾向と確認点を把握して次の対応を決める",
