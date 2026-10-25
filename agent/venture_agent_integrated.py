@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.40'
+APP_VERSION='2026.10.25.41'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1132,7 +1132,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     return item
 
 
-IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-3'
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-4'
 
 
 def get_implementation_plan(name):
@@ -1183,6 +1183,64 @@ def validate_implementation_plan(item,spec,blueprint):
     return item
 
 
+def implementation_plan_from_requirements(name,spec,blueprint,reason):
+    """Compile a traceable, product-specific plan when the model cannot structure one."""
+    audience=str(spec.get('audience') or '対象利用者')
+    workflow=[str(x) for x in spec.get('workflow',[]) if str(x).strip()]
+    must_have=[str(x) for x in spec.get('must_have',[]) if str(x).strip()]
+    acceptance=[str(x) for x in spec.get('acceptance',[]) if str(x).strip()]
+    if not acceptance or not workflow:
+        raise AutoQAPlanError('要件から機能設計を組み立てるには受入条件と利用手順が必要です')
+    flows=[x for x in blueprint.get('core_flows',[]) if isinstance(x,dict)]
+    if not flows:
+        raise AutoQAPlanError('要件から機能設計を組み立てる画面操作の根拠がありません')
+    dependencies=[str(x) for x in spec.get('dependencies',[]) if str(x).strip()]
+    prototype_mode='sample' if dependencies else 'local'
+    features=[]
+    for index,criterion in enumerate(acceptance):
+        flow=flows[index%len(flows)]
+        task=workflow[index%len(workflow)]
+        supporting=must_have[index%len(must_have)] if must_have else criterion
+        source_input=str(flow.get('input') or task)
+        action=str(flow.get('operation') or task)
+        result=str(flow.get('expected_result') or criterion)
+        prototype=('サンプルデータと明記した架空データで、'+action+'を最後まで操作し、'+result+'を確認できる。'
+            if dependencies else 'ブラウザ内の入力例で'+action+'を最後まで操作し、'+result+'を確認できる。')
+        cases=[
+            dict(input='ケースA: '+source_input+'。対象条件は「'+supporting+'」。',
+                action='画面からケースAを入力し、「'+action+'」を実行する。',
+                expected='「'+criterion+'」に対応するケースAの処理結果と次の操作が表示される。'),
+            dict(input='ケースB: '+source_input+'。ケースAと異なる値を使い「'+supporting+'」を確認する。',
+                action='ケースAと異なる条件で「'+action+'」を実行し、結果を比較する。',
+                expected='入力差分が結果へ反映され、「'+criterion+'」を別ケースでも確認できる。')]
+        features.append(dict(acceptance_index=index,
+            name=criterion+'を実現する用途別の中心機能',
+            user_action=audience+'が「'+task+'」を行い、結果を確認して次の操作へ進む。',
+            inputs='「'+task+'」で使う具体値。操作例: '+source_input,
+            processing='入力の形式と必須値を検査し、要件「'+criterion+'」と関連する条件「'+supporting+'」に沿って用途固有の処理を行う。',
+            outputs='要件「'+criterion+'」に対応する結果「'+result+'」と、次に行う「'+action+'」を表示する。',
+            persistence='この機能の入力・処理結果・確認状態をブラウザへ保存し、再読込後に再表示する。',
+            failure_behavior='不足値や形式違いでは処理を止め、該当入力欄と直し方を示す。既存保存データは消さない。',
+            prototype_mode=prototype_mode,prototype_behavior=prototype,
+            connection_boundary=('未接続の外部機能: '+'、'.join(dependencies)+'。試作では架空サンプルのみを使い、実データ取得済みとは表示しない。'
+                if dependencies else '外部APIを使わないローカル処理として実装する。'),
+            test_cases=cases))
+    sections=[x for x in blueprint.get('screen_sections',[]) if isinstance(x,dict)]
+    if len(sections)<3:
+        raise AutoQAPlanError('機能計画に対応する初回・作業中・結果後の画面設計が不足しています')
+    plan=dict(
+        architecture='「'+' → '.join(workflow)+'」を画面・用途別処理・保存の層に分け、受入条件ごとの機能を同じ利用手順へ接続する。',
+        data_flow='「'+workflow[0]+'」で入力された値を検査し、受入条件ごとの処理を行い、画面へ結果を返して保存・再読込する。',
+        offline_boundary=('外部接続先「'+'、'.join(dependencies)+'」は未接続として分離する。試作中は架空サンプルで中心操作を完遂できる。'
+            if dependencies else '本試作の中心操作・保存・再読込はブラウザ内で動かし、未接続の外部機能は約束しない。'),
+        features=features,
+        screen_links=[dict(screen='この画面: '+str(section.get('purpose') or '用途別の画面'),
+            purpose='この画面で'+str(section.get('action') or '利用者の操作')+'を行い、'+str(section.get('result') or '結果を確認する'),
+            next_action='画面の案内に沿って'+str(section.get('action') or '次の操作')+'を行い、結果を確認する。') for section in sections[:8]],
+        design_method='requirements_compiler_fallback',design_recovery_reason=str(reason)[:900])
+    return validate_implementation_plan(plan,spec,blueprint)
+
+
 def ensure_implementation_plan(name,cfg,blueprint=None):
     """Separate technical decomposition from UX and code generation."""
     spec=get_product_spec(name) or {};blueprint=blueprint or ensure_product_blueprint(name,cfg)
@@ -1217,8 +1275,11 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
         'features:[{acceptance_index:完成条件の0始まり番号,name:固有機能,user_action:利用者の操作,inputs:具体的な入力,processing:業務固有の処理,outputs:確認できる結果,persistence:保存・再読込,failure_behavior:誤入力・失敗時の扱い,prototype_mode:localまたはsample,prototype_behavior:API接続前でも完遂できる操作。sampleならサンプルと明記,connection_boundary:後から接続するAPIの機能と未接続中に約束しないこと,test_cases:[{input,action,expected}]}],'
         'screen_links:[{screen,purpose,next_action}]。'
         '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500])
-    item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
-        validator=lambda value:validate_implementation_plan(value,spec,blueprint))
+    try:
+        item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
+            validator=lambda value:validate_implementation_plan(value,spec,blueprint))
+    except AutoQAPlanError as exc:
+        item=implementation_plan_from_requirements(name,spec,blueprint,str(exc))
     item.update(policy=IMPLEMENTATION_PLAN_POLICY,scope_sha=product_scope_sha(name),blueprint_checked=blueprint.get('checked'),checked=now())
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('implementation_plan:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
     return item
@@ -1755,6 +1816,8 @@ def automated_product_qa(job,name,page,cfg):
         report['blueprint']=ensure_product_blueprint(name,cfg,allow_unverified=bool(research_gap),competitive_brief=brief)
         validate_product_blueprint(report['blueprint'],spec,report['competitive_brief'])
         report['implementation_plan']=ensure_implementation_plan(name,cfg,report['blueprint'])
+        if report['implementation_plan'].get('design_method')=='requirements_compiler_fallback':
+            event(job,name+': AI機能設計が条件未達のため、製品要件から受入条件別の計画を再構成。実装・操作検査は続行します')
         validate_implementation_plan(report['implementation_plan'],spec,report['blueprint'])
         plan=make_qa_plan(name,page,cfg);report['plan']=plan
         browser_result=execute_browser_qa(name,page,plan,directory);report['browser']=browser_result
