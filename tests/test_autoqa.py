@@ -138,8 +138,9 @@ class AutomaticQATests(ContinuationTests):
   with patch.object(app,'ensure_competitive_brief',return_value=design_brief(self.name)),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'execute_browser_qa',return_value=dict(scenarios=[],screenshots=[])),patch.object(app,'review_qa_images',side_effect=cancel),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
   self.assertFalse(passed);self.assertEqual(stage,'検証環境の準備待ち')
- def test_vision_request_contains_actual_png_bytes(self):
-  shot=self.root/'test.png';shot.write_bytes(b'test-image-bytes');calls=[]
+ def test_vision_request_contains_compacted_real_image_bytes(self):
+  from PIL import Image
+  shot=self.root/'test.png';Image.new('RGB',(1400,900),'white').save(shot,format='PNG');calls=[]
   visual={key:dict(score=4,reason='画像APIの構造だけを模擬して確認しています') for key in ('audience','design','readability','mobile','usefulness')}
   def response(request,**kw):
    value=json.loads(request.data);calls.append(value)
@@ -147,7 +148,9 @@ class AutomaticQATests(ContinuationTests):
   with patch.object(app.urllib.request,'urlopen',side_effect=response):
    got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
   self.assertEqual(got,visual);self.assertEqual(len(calls[-1]['images']),4)
-  self.assertEqual(app.base64.b64decode(calls[-1]['images'][0]),shot.read_bytes())
+  processed=app.base64.b64decode(calls[-1]['images'][0])
+  self.assertTrue(processed.startswith(bytes([255,216,255])))
+  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(768,494))
   self.assertFalse(calls[-1]['stream'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
