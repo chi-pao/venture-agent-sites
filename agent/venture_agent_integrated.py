@@ -779,6 +779,58 @@ def store_product_spec(name,spec,source='AI設計・未確認'):
     return spec
 
 
+def product_spec_from_business_rationale(name,item,reason):
+    """Compile a transparent, product-specific draft when structured AI planning fails."""
+    audience=str(item.get('audience') or item.get('target_customer') or item.get('customer_segment')
+        or item.get('category') or (name+'の想定利用者（要検証）')).strip()
+    outcome=str(item.get('requested_outcome') or item.get('hypothesis') or item.get('customer_pain')
+        or (name+'で中心作業を完了する')).strip()
+    difference=str(item.get('differentiation') or ('未検証の差別化仮説: '+str(item.get('mvp_scope') or
+        '対象者の中心作業を入力から結果・保存まで短い導線で行えるようにする'))).strip()
+    raw=item.get('mvp_scope') or item.get('must_have') or []
+    if isinstance(raw,str):
+        candidates=[v.strip(' ・-') for v in re.split(r'[、。;；\\n]+',raw) if len(v.strip(' ・-'))>=4]
+    elif isinstance(raw,list):
+        candidates=[str(v).strip() for v in raw if str(v).strip()]
+    else:candidates=[]
+    must_have=list(dict.fromkeys(candidates))[:8]
+    defaults=[
+        name+'の対象情報を入力し、必須項目と形式を確認する',
+        '入力内容に応じて用途固有の中心処理を実行し、結果を画面に表示する',
+        '結果と入力を保存し、再読込後も確認してCSV等で出力する',
+    ]
+    for value in defaults:
+        if len(must_have)>=3:break
+        if value not in must_have:must_have.append(value)
+    workflow=item.get('workflow') if isinstance(item.get('workflow'),list) else []
+    workflow=[str(v).strip() for v in workflow if str(v).strip()]
+    if len(workflow)<3:
+        workflow=[
+            '対象者が最初の画面で必要情報を入力し、入力エラーを確認する',
+            '中心機能を実行し、入力を変えた場合に結果がどう変わるか確認する',
+            '結果を保存し、再読込・編集・出力で後から使えることを確認する',
+        ]
+    acceptance=item.get('acceptance') if isinstance(item.get('acceptance'),list) else []
+    acceptance=[str(v).strip() for v in acceptance if str(v).strip()]
+    if len(acceptance)<3:
+        acceptance=[
+            '異なる入力値を2組使い、中心機能の結果が入力に応じて変わる',
+            '不正または不足した入力を与え、原因と修正方法が画面に表示される',
+            '登録した内容を保存・再読込し、編集後にCSV出力できる',
+        ]
+    draft={
+        'audience':audience,'requested_outcome':outcome,
+        'differentiation':difference,'workflow':workflow[:8],
+        'must_have':must_have[:8],'acceptance':acceptance[:12],
+        'delivery_mode':'browser_local',
+        'dependencies':list(item.get('dependencies') or []) if isinstance(item.get('dependencies'),list) else [],
+        'requirements_method':'requirements_compiler_fallback',
+        'requirements_recovery_reason':str(reason)[:700],
+    }
+    draft=normalize_product_connections(name,draft)
+    return validate_product_spec(draft)
+
+
 def ensure_product_spec(name,cfg,plan=''):
     existing=get_product_spec(name)
     if existing:
@@ -796,9 +848,13 @@ def ensure_product_spec(name,cfg,plan=''):
         '必要な検索・共同編集を単なる外部リンクやコピーに縮小しない。実装済みとは書かない。'
         'キー: audience,requested_outcome,differentiation（文字列）、workflow,must_have,acceptance（具体的な文字列の配列、各3件以上）、'
         'delivery_mode（browser_local または connected）、dependencies（必要なAPI・サーバー等の配列。不要なら空）。'
-        '\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\n計画:'+plan[:2500])
-    designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,validator=validate_product_spec)
-    return store_product_spec(name,designed)
+        '\\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\\n計画:'+plan[:2500])
+    try:
+        designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,validator=validate_product_spec)
+        return store_product_spec(name,designed)
+    except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError, ValueError, TypeError) as exc:
+        designed=product_spec_from_business_rationale(name,item,str(exc))
+        return store_product_spec(name,designed,source='要件コンパイラー（AI設計失敗後の仮説）')
 
 
 COMPETITIVE_POLICY='2026-10-25-reference-led-design-3'
@@ -1137,7 +1193,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     try:
         item=ai_json(prompt,cfg,3200,validator=lambda value:validate_product_blueprint(value,spec,brief))
         item['design_method']='ai_structured_design'
-    except AutoQAPlanError as exc:
+    except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError) as exc:
         item=blueprint_from_product_requirements(name,spec,brief,str(exc))
         validate_product_blueprint(item,spec,brief)
     item.update(policy=PRODUCT_BLUEPRINT_POLICY,scope_sha=product_scope_sha(name),competitive_checked=brief.get('checked'),
