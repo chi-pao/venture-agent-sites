@@ -11,7 +11,27 @@ def step(op,selector=None,value=None,**kw):
 
 def scenario(kind,steps,checks,acceptance):return dict(kind=kind,steps=steps,checks=checks,acceptance=acceptance)
 def add_feature_cases(plan,acceptance_count):
- plan['feature_cases']=[dict(acceptance_index=i,case_index=j,steps=copy.deepcopy(plan['scenarios'][j]['steps']),checks=copy.deepcopy(plan['scenarios'][j]['checks']),rationale='別入力の実操作で完成条件を確認する') for i in range(acceptance_count) for j in (0,1)]
+ scenarios=plan['scenarios'];workflow=scenarios[0];variant=scenarios[1];reload_case=scenarios[2];roundtrip=scenarios[3];invalid=scenarios[4]
+ plan['feature_cases']=[]
+ for i in range(acceptance_count):
+  if i<2:
+   steps=copy.deepcopy(workflow['steps']);checks=copy.deepcopy(workflow['checks'])
+  elif i==2:
+   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(reload_case['steps']);checks=copy.deepcopy(reload_case['checks'])
+  elif i==3:
+   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(variant['steps'])+copy.deepcopy(roundtrip['steps']);checks=copy.deepcopy(roundtrip['checks'])
+  else:
+   steps=copy.deepcopy(workflow['steps'])+copy.deepcopy(variant['steps'])+copy.deepcopy(invalid['steps']);checks=copy.deepcopy(invalid['checks'])
+  for j in (0,1):
+   case_steps=copy.deepcopy(steps);case_checks=copy.deepcopy(checks)
+   if j:
+    def vary(value):
+     if isinstance(value,str):return value.replace('検証A','検証A2')
+     if isinstance(value,list):return [vary(x) for x in value]
+     if isinstance(value,dict):return {k:vary(v) for k,v in value.items()}
+     return value
+    case_steps=vary(case_steps);case_checks=vary(case_checks)
+   plan['feature_cases'].append(dict(acceptance_index=i,case_index=j,steps=case_steps,checks=case_checks,rationale='空の保存状態から別入力を使い、完成条件を実操作で確認する'))
  return plan
 def text(sel,value):return step('text_equals',sel,value)
 def count(sel,n):return step('count',sel,n)
@@ -61,7 +81,7 @@ class AutomaticQATests(ContinuationTests):
   source='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>body{font:16px sans-serif}h1{font-size:28px}input,button{width:180px;height:20px;font:16px sans-serif}</style></head><body><h1>実践記録の確認ページ</h1><label for="inputValue">今日の記録</label><input id="inputValue"><button id="calculate">記録を確認する</button></body></html>'
   fixed=source.replace('height:20px','height:44px')
   visual={key:dict(score=4,reason='実画像の送信と検査経路を検証するためのモデル応答') for key in ('audience','design','readability','mobile','usefulness')}
-  with patch.object(app,'incremental_product_repair',side_effect=[(source,'最初の修正'),(fixed,'入力とボタンを44pxに修正')]) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査合格')),patch.object(app,'review_qa_images',return_value=visual):
+  with patch.object(app,'incremental_product_repair',side_effect=[(source,'最初の修正'),(fixed,'入力とボタンを44pxに修正')]) as repair,patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',side_effect=[(False,'入力とボタンが小さい'),(True,'簡易検査合格')]),patch.object(app,'review_qa_images',return_value=visual):
    page,detail,ready=app.build(1,self.name,dict(app.DEFAULT,max_revisions=2),'画面を修正',existing_page=source.replace('実践記録','以前の記録'),allow_partial=True)
   self.assertEqual(repair.call_count,2);self.assertIn('smallControls',repair.call_args.args[3]);self.assertIn('画面検査: 合格',detail)
   self.assertEqual(page,fixed);self.assertFalse(ready);self.assertFalse(app.candidate_production_acceptance(self.name))
