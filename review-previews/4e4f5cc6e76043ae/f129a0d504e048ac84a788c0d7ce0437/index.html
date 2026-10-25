@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_847d81f86ebc16b2203e05c5:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>データ分析サービス</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>データ分析サービス</h1>
+    <form id="dataForm">
+        <label for="inputData">データ入力 (例: 10, 20, 30, 40, 50)</label>
+        <input type="text" id="inputData" required>
+        <button type="button" onclick="analyzeData()">分析</button>
+    </form>
+    <div id="result" style="margin-top: 20px;"></div>
+    <div id="savedResults" style="margin-top: 20px;"></div>
+    <button type="button" onclick="downloadResults()">CSVダウンロード</button>
+
+    <script>
+        function analyzeData() {
+            const input = document.getElementById('inputData').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            if (input) {
+                const numbers = input.split(',').map(Number);
+                const sum = numbers.reduce((acc, val) => acc + val, 0);
+                const average = sum / numbers.length;
+
+                resultDiv.innerHTML = `合計: ${sum}<br>平均: ${average.toFixed(2)}<br>分析日: ${new Date().toLocaleDateString()}`;
+                saveResult(sum, average);
+            }
+        }
+
+        function saveResult(sum, average) {
+            const savedResultsDiv = document.getElementById('savedResults');
+            savedResultsDiv.innerHTML = '';
+
+            const result = `合計: ${sum}<br>平均: ${average.toFixed(2)}`;
+            savedResultsDiv.innerHTML = result;
+            localStorage.setItem('analysisResult', result);
+        }
+
+        function downloadResults() {
+            const savedResults = localStorage.getItem('analysisResult');
+            if (savedResults) {
+                const blob = new Blob([savedResults], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'analysis_results.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        }
+    </script>
+</body>
+</html>
