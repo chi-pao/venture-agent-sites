@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_fe7ca48aa1825ebed4106927:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顧客エンゲージメント計算ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { width: 80%; margin: 0 auto; padding: 20px; }
+        input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        #result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>顧客エンゲージメント計算ツール</h1>
+        <form>
+            <label for="inputValue">入力値:</label>
+            <input type="text" id="inputValue" placeholder="入力してください">
+            <button type="button" onclick="calculate()">計算</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function calculate() {
+            const inputValue = document.getElementById('inputValue').value;
+            const resultDiv = document.getElementById('result');
+
+            if (inputValue) {
+                const result = parseInt(inputValue) * 2; if (inputValue === '特定の入力値') { result = '動的な結果: ' + inputValue; } // 簡単な計算例
+                resultDiv.textContent = `結果: ${result}`;
+                localStorage.setItem('lastInput', inputValue);
+                localStorage.setItem('lastResult', result);
+                downloadCSV(result);
+            } else {
+                resultDiv.textContent = '入力値を入力してください。';
+            }
+        }
+
+        function downloadCSV(result) {
+            const csvContent = `結果：${result}\n`;
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'result.csv';
+            a.click();
+        }
+
+        window.onload = function() {
+            const lastInput = localStorage.getItem('lastInput');
+            const lastResult = localStorage.getItem('lastResult');
+            if (lastInput && lastResult) {
+                document.getElementById('inputValue').value = lastInput;
+                document.getElementById('result').textContent = `結果: ${lastResult}`;
+            }
+        };
+    </script>
+</body>
+</html>
