@@ -195,6 +195,7 @@ class AutomaticQATests(ContinuationTests):
         '条件の入力や検索、集計、共有など、掲載ページで確認できた内容だけを比較の根拠として扱います。' * 2)
   def reference(url):return dict(url=url,status='本文取得',text=text,checked_at=app.now(),content_sha='a'*64)
   # The evidence-backed compiler must avoid the model transcription bottleneck.
+  self.research_patch.stop()
   with patch.object(app,'read_research_reference',side_effect=reference):
    result=app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
   self.assertTrue(app.competitive_design_ready(result))
