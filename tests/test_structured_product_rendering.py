@@ -18,22 +18,19 @@ class StructuredProductRenderingTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_attendance_and_workday_structured_pages_have_valid_javascript(self):
-        cases = (
-            ("オンライン授業参加管理アプリ", {"requested_outcome": "名簿から出欠を集計する", "must_have": ["名簿", "出欠", "集計"]}),
-            ("在宅ワーク支援アプリ", {"requested_outcome": "予定と実績時間を管理する", "must_have": ["予定時間", "実績時間", "超過計算"]}),
+    def test_every_registered_structured_pattern_has_valid_javascript(self):
+        spec = dict(
+            audience="小規模な利用者",
+            requested_outcome="入力値を整理して、次の対応を判断する",
+            differentiation="中心作業の入力から結果までを一画面で確認する",
+            workflow=["対象の情報を入力する", "結果を確認して記録する", "保存した内容を後で見直す"],
+            must_have=["必要な項目を入力する", "状況に応じた結果を表示する", "結果を保存して出力する"],
+            acceptance=["必要情報を入力し、誤入力を修正できる", "異なる入力に応じて結果が変わる", "結果を保存・再読込・出力できる"],
+            delivery_mode="browser_local",
+            dependencies=[],
         )
-        for name, details in cases:
-            with self.subTest(name=name):
-                spec = dict(
-                    audience="小規模な利用者",
-                    differentiation="中心作業の入力から結果までを整理する",
-                    workflow=["入力する", "結果を見る", "保存して読み直す"],
-                    acceptance=["入力と結果を確認する", "保存と復元を確認する"],
-                    delivery_mode="browser_local",
-                    dependencies=[],
-                    **details,
-                )
+        for operation, name in app.PRODUCT_PATTERN_PROBES.items():
+            with self.subTest(operation=operation, name=name):
                 item = app.deterministic_product_interface(name, spec)
                 page = app.render_product_interface(name, item, spec)
                 errors = app.validate_html(page, name)
