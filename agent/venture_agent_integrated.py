@@ -369,11 +369,11 @@ def required_product_connections(name,spec):
     required=[]
     if any(term in text for term in ('チャットボット','chatbot','自動応答','対話型サポート')):
         required.append('チャット回答処理のサーバー接続（AI回答を表示する場合はAI推論API）')
-    if any(term in text for term in ('会議','打ち合わせ','meeting')):
+    if any(term in text for term in ('カレンダー連携','カレンダー同期','空き時間照会','会議招待','招待送信','google calendar','outlook calendar')):
         required.append('カレンダー連携API（空き時間照会・招待送信）')
-    if any(term in text for term in ('英会話','英語レッスン','語学レッスン','english conversation')):
+    if any(term in text for term in ('音声認識','発音評価','リアルタイム通話','オンライン通話','speech recognition')):
         required.append('音声認識・AI発話評価・オンライン通話の接続')
-    if any(term in text for term in ('オンライン授業','オンライン講座','online class')):
+    if any(term in text for term in ('授業配信サービス連携','google classroom連携','zoom出欠連携','teams出欠連携','自動出欠連携')):
         required.append('授業配信サービスとの出欠連携（手動登録は単独利用可能）')
     if any(term in text for term in ('共同編集','リアルタイム共有','複数人で同時','同行者と共有')):
         required.append('共同編集・共有用サーバー')
@@ -385,10 +385,24 @@ def required_product_connections(name,spec):
 def normalize_product_connections(name,spec):
     spec=dict(spec)
     dependencies=list(spec.get('dependencies') or [])
+    # Remove legacy dependencies that older releases inferred from broad labels.
+    # A generic online-class or meeting app can work locally; only explicit
+    # sync, invitation, voice, route, or shared-editing requirements need APIs.
+    explicit_terms={
+        'カレンダー連携API（空き時間照会・招待送信）':('カレンダー連携','カレンダー同期','空き時間照会','会議招待','招待送信','google calendar','outlook calendar'),
+        '音声認識・AI発話評価・オンライン通話の接続':('音声認識','発音評価','リアルタイム通話','オンライン通話','speech recognition'),
+        '授業配信サービスとの出欠連携（手動登録は単独利用可能）':('授業配信サービス連携','google classroom連携','zoom出欠連携','teams出欠連携','自動出欠連携'),
+    }
+    text=(str(name)+' '+str(spec.get('requested_outcome',''))+' '+str(spec.get('differentiation',''))).casefold()
+    for dependency,terms in explicit_terms.items():
+        if dependency in dependencies and not any(term.casefold() in text for term in terms):
+            dependencies.remove(dependency)
     for required in required_product_connections(name,spec):
         if required not in dependencies:dependencies.append(required)
     spec['dependencies']=dependencies
     if dependencies:spec['delivery_mode']='connected'
+    elif spec.get('delivery_mode')=='connected':
+        spec['delivery_mode']='browser_local'
     return spec
 
 
@@ -1278,7 +1292,10 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
     try:
         item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
             validator=lambda value:validate_implementation_plan(value,spec,blueprint))
-    except AutoQAPlanError as exc:
+    except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError) as exc:
+        # A slow/unavailable model is a planning failure, not a reason to block
+        # implementation. Compile a traceable plan from the already accepted
+        # product requirements and UX blueprint, then keep the same browser QA.
         item=implementation_plan_from_requirements(name,spec,blueprint,str(exc))
     item.update(policy=IMPLEMENTATION_PLAN_POLICY,scope_sha=product_scope_sha(name),blueprint_checked=blueprint.get('checked'),checked=now())
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('implementation_plan:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
