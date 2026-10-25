@@ -1048,7 +1048,8 @@ def ensure_competitive_brief(name,cfg):
         validate_competitive_design(item,sources)
         if len({p.get('source_url') for p in comparisons})<2:raise AutoQAPlanError('役割の異なる場合も含め、関連する参考資料を2件以上確認してください')
         return item
-    item=ai_json(prompt,cfg,3600,schema=reference_schema,validator=validate_comparison)
+    item=ai_json(prompt,cfg,3600,schema=reference_schema,max_attempts=1,
+        request_timeout=int(cfg.get('planning_request_timeout',120)),validator=validate_comparison)
     item.update(policy=COMPETITIVE_POLICY,scope_sha=product_scope_sha(name),checked=now(),measured_advantage=False,
         sources=[{k:r.get(k) for k in ('url','checked_at','content_sha')} for r in valid])
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('competitive_brief:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
@@ -1440,7 +1441,8 @@ def review_generated_product(name,page,previous,cfg):
         'differenceはAI搭載や機能の列挙を根拠にせず、同じ対象者の具体作業を改善する実処理で評価する。競合との差の仮説と実測の優位性を混同しない。'
         '\n要件:'+quality_requirements_text(name)[:7000]+'\nHTML:'+page[:30000])
     try:
-        review=ai_json(prompt,cfg,2000)
+        review=ai_json(prompt,cfg,2000,max_attempts=1,
+            request_timeout=int(cfg.get('planning_request_timeout',120)))
         issues=[]
         for key in criteria:
             item=review.get(key,{})
@@ -1510,6 +1512,7 @@ def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None,max_attempts=None,
     base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
     request=base_prompt;limit=(max(1,int(max_attempts)) if max_attempts is not None else (3 if validator else 2));schema_fallback=False
     request_cfg=dict(structured_cfg)
+    request_cfg.setdefault('_request_timeout',max(30,int(cfg.get('ai_json_request_timeout',180))))
     if request_timeout is not None:request_cfg['_request_timeout']=max(1,int(request_timeout))
     # Some Ollama/model combinations reject a valid but large JSON Schema with HTTP 400.
     # Retry in JSON mode while retaining the required keys and Python-side validation.
@@ -1699,7 +1702,8 @@ def make_qa_plan(name,page,cfg):
         if not isinstance(scenarios,list) or len(scenarios)!=5 or [x.get('kind') for x in scenarios if isinstance(x,dict)]!=kinds:
             raise AutoQAPlanError('共通テストはworkflow/variant/reload/roundtrip/invalidの5件を別々に返してください')
         return value
-    base=ai_json(base_prompt,cfg,5000,validator=validate_base)
+    base=ai_json(base_prompt,cfg,5000,max_attempts=1,
+        request_timeout=int(cfg.get('qa_planning_timeout',120)),validator=validate_base)
     feature_cases=[];acceptance=spec.get('acceptance',[])
     for start in range(0,len(acceptance),2):
         indices=list(range(start,min(start+2,len(acceptance))))
@@ -1720,13 +1724,14 @@ def make_qa_plan(name,page,cfg):
                 def values(case):return [(s.get('op'),s.get('selector'),s.get('value',s.get('label'))) for s in case.get('steps',[]) if isinstance(s,dict) and s.get('op') in ('fill','select')]
                 if not values(pair[0]) or values(pair[0])==values(pair[1]):raise AutoQAPlanError('完成条件ごとの2ケースで入力値を変えてください: '+str(i))
             return cases
-        feature_cases.extend(ai_json(feature_prompt,cfg,3500,validator=validate_feature_batch))
+        feature_cases.extend(ai_json(feature_prompt,cfg,3500,max_attempts=1,
+            request_timeout=int(cfg.get('qa_planning_timeout',120)),validator=validate_feature_batch))
     plan=dict(result_selector=base.get('result_selector'),scenarios=base.get('scenarios'),feature_cases=feature_cases,audience_quotes=audience_quotes[:2])
     plan=validate_qa_plan(plan,spec)
     critique_payload=dict(acceptance=acceptance,result_selector=plan['result_selector'],
         scenarios=[dict(kind=x.get('kind'),acceptance=x.get('acceptance'),rationale=x.get('rationale','')) for x in plan['scenarios']],
         feature_cases=[dict(acceptance_index=x.get('acceptance_index'),case_index=x.get('case_index'),rationale=x.get('rationale',''),checks=x.get('checks',[])) for x in feature_cases])
-    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\n仕様:'+json.dumps(spec,ensure_ascii=False)[:5000]+'\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:9000],cfg,1400)
+    critique=ai_json('独立QA担当としてテスト計画を短く監査する。正解の根拠が仕様にない、入力を変えない、保存・復元・誤入力を実行しない、完成条件を試さない場合だけ invalid。JSON {"valid":true/false,"reasons":[理由]}。\n仕様:'+json.dumps(spec,ensure_ascii=False)[:5000]+'\n計画:'+json.dumps(critique_payload,ensure_ascii=False)[:9000],cfg,1400,max_attempts=1,request_timeout=int(cfg.get('qa_planning_timeout',120)))
     if critique.get('valid') is not True:raise AutoQAPlanError('操作検証の計画を再作成: '+str(critique.get('reasons','根拠不足'))[:700])
     return plan
 
@@ -4546,7 +4551,8 @@ def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
     def validate_edits(proposal):
         apply_product_edits(source,proposal)
         return proposal
-    proposal=ai_json(prompt,cfg,4200,validator=validate_edits)
+    proposal=ai_json(prompt,cfg,4200,max_attempts=1,
+        request_timeout=int(cfg.get('planning_request_timeout',120)),validator=validate_edits)
     return apply_product_edits(source,proposal),str(proposal.get('reason','局所修正'))[:600]
 
 
