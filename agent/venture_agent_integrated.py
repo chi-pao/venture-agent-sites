@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.47'
+APP_VERSION='2026.10.25.48'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1892,12 +1892,12 @@ def review_qa_images(name,browser_result,cfg):
             +'\n自動操作結果（売上や実利用ではない）:'+json.dumps(browser_result['scenarios'],ensure_ascii=False))
         images=[base64.b64encode(Path(path).read_bytes()).decode() for path in browser_result['screenshots']]
         last_error='画像判定のJSONを読み取れません'
-        for retry in range(3):
+        for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
                 'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1800,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
-            with urllib.request.urlopen(req,timeout=600) as r:data=json.load(r)
+            with urllib.request.urlopen(req,timeout=180) as r:data=json.load(r)
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
             try:
                 review=qa_json(data.get('response',''))
@@ -1908,7 +1908,7 @@ def review_qa_images(name,browser_result,cfg):
                 return review
             except AutoQAPlanError as exc:
                 last_error=str(exc)
-        raise AutoQAPlanError(last_error+'（画像判定を3回再試行）')
+        raise AutoQAPlanError(last_error+'（画像判定の修正を1回試行後も未解決）')
     finally:release_runtime('local_ai',owner)
 
 
