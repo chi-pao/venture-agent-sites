@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from test_preview import app
@@ -51,6 +52,41 @@ class FeaturePlanCompilerTests(unittest.TestCase):
                 app.validate_implementation_plan(short_plan, app.get_product_spec(name), short_blueprint)
                 self.assertTrue(all(len(link['purpose']) >= 12 for link in short_plan['screen_links']))
                 self.assertTrue(all(len(link['next_action']) >= 12 for link in short_plan['screen_links']))
+            finally:
+                app.DB, app.OUT = old_db, old_out
+
+
+    def test_ai_timeout_compiles_plan_and_generic_online_class_stays_local(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old_db, old_out = app.DB, app.OUT
+            try:
+                app.DB = Path(directory) / 'test.db'
+                app.OUT = Path(directory) / 'out'
+                app.OUT.mkdir()
+                app.init()
+                name = 'オンライン授業参加管理アプリ'
+                app.execute(
+                    'INSERT INTO autonomous_ideas(name,attempts,created,updated) VALUES(?,1,?,?)',
+                    (name, app.now(), app.now()),
+                )
+                spec = dict(
+                    audience='個人講師と少人数スクールの管理者',
+                    requested_outcome='授業単位の出欠と集計を短い操作で記録する',
+                    differentiation='出欠入力から出席率・CSV出力まで一画面で完了する',
+                    workflow=['受講者を登録する', '授業の出欠を記録する', '集計とCSVを確認する'],
+                    must_have=['名簿登録', '授業ごとの出欠', '出席率集計と保存'],
+                    acceptance=['受講者を登録・修正できる', '出欠入力で出席率が再計算される', '再読込後も記録を確認してCSV出力できる'],
+                    delivery_mode='browser_local', dependencies=[],
+                )
+                app.store_product_spec(name, spec)
+                self.assertEqual(app.get_product_spec(name)['dependencies'], [])
+                self.assertEqual(app.get_product_spec(name)['delivery_mode'], 'browser_local')
+                blueprint = blueprint_fixture(name)
+                with patch.object(app, 'ai_json', side_effect=TimeoutError('model request timed out')):
+                    plan = app.ensure_implementation_plan(name, dict(app.DEFAULT), blueprint)
+                self.assertEqual(plan['design_method'], 'requirements_compiler_fallback')
+                self.assertEqual(len(plan['features']), len(spec['acceptance']))
+                self.assertTrue(app.get_implementation_plan(name))
             finally:
                 app.DB, app.OUT = old_db, old_out
 
