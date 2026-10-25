@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.30'
+APP_VERSION='2026.10.25.31'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -4197,8 +4197,10 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         errors = validate_html(page, name)+preserve_checkpoint_features(checkpoint,page)
         placeholder=legacy_placeholder_reason(name,page)
         if placeholder:errors.append('用途に合う中心機能がない旧サンプル: '+placeholder)
-        # Partial drafts may disclose missing connections, but cannot be approved or released.
-        if partial:errors=[e for e in errors if e!='未実装の痕跡']
+        # A connected/partial draft may disclose that an API is not connected,
+        # but that does not excuse TODOs, mock results, or unfinished local work.
+        # Keep every implementation error in the gate; only external connection
+        # behavior is deferred to the separately reported connection scope.
 
         if errors:
             browser_ok = False
