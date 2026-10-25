@@ -6971,3 +6971,49 @@ def render_dashboard():
                     expenses=st.number_input('費用（円・累計）',min_value=0,value=int(last.get('expenses',0)))
                     costs_confirmed=st.checkbox('費用・手数料・返金を確認済み',value=False)
                     if st.form_submit_button('実測値を保存・再判定'):
+                        execute('''INSERT INTO autonomous_metrics(idea,measured,views,leads,sales,revenue,expenses,source)
+                                   VALUES(?,?,?,?,?,?,?,?)''',(selected,now(),views,leads,sales,revenue,expenses,'手動入力（費用・返金確認済）' if costs_confirmed else '手動入力'))
+                        phase,reason=decide(selected,cfg)
+                        execute('UPDATE autonomous_ideas SET phase=?,updated=? WHERE name=?',(phase,now(),selected))
+                        st.success(f'{phase}: {reason}')
+            else: st.info('まず継続運転を開始してください。')
+            st.caption('外部連携設定があればアクセス・Stripe決済を自動取得。未接続項目や手数料は未計測です。実際の数値のみ入力してください。')
+        with t4:
+            render_product_review_ui(cfg)
+            st.write('**判断方針:** 困りごとの解決・便利さ・面白さ・時間短縮から企画。差別化と収益への道筋がある案は、売上前も反応を見て育てます。売上ゼロや閲覧数だけでは中止しません。')
+            st.write('**運転の流れ:** 先行市場調査→完成条件の設計→試作・修正・自動チェック→のぼるさんの確認とOK→公開内容の確認→SNS紹介→利用反応の確認→改善案の作成→再確認。接続が必要な機能は、実装・接続待ちとして表示します。')
+            st.write('**接続後に可能:** GitHubへのコード保存と商用公開先の反映確認、訪問者数取得、Stripe事業別決済集計、接続済みSNSへの投稿。決済・納品は商品と接続の準備後に開始します。')
+            st.write('**自動では行わない:** 実績の捏造、品質未確認の試作のSNS紹介、外部アカウントの無断作成、料金発生、連携していない本番サイトの変更。')
+            st.write('**注意:** 市場見出しは弱い需要シグナル。Plausibleは計測開始からの訪問者、Stripeは総売上で、手数料・税・原価は未集計。未接続・未計測を利益ゼロや成功として扱いません。')
+            st.subheader('公開検証・計測の状況')
+            quality=query('SELECT idea AS 事業,status AS 製品品質,reason AS 確認内容,checked AS 確認日時 FROM venture_product_quality ORDER BY checked DESC')
+            if quality:
+                st.dataframe(quality,hide_index=True,width='stretch')
+            st.caption('公開HTMLの一致と、利用者に紹介できる製品品質は別々に確認します。製品品質は別途レビューが必要です。品質未確認の試作はSNS紹介を保留し、需要不足や中止とは区別します。')
+            checks = query('''SELECT idea,github_saved,public_verified,checked,details,expected_url,
+                              acquisition,metrics_status FROM autonomous_checks ORDER BY checked DESC LIMIT 50''')
+            if checks:
+                st.dataframe(checks,hide_index=True,width='stretch')
+            else:
+                st.info('公開検証の履歴はまだありません。')
+            st.caption('公開確認はHTMLの一致まで。顧客による実用性、集客実績、売上の証明ではありません。')
+            st.subheader('集客・計測・改善タスク')
+            actions=query('SELECT idea,action,status,details,created FROM autonomous_actions ORDER BY created DESC LIMIT 80')
+            if actions: st.dataframe(actions,hide_index=True,width='stretch')
+            else: st.info('タスクは次のサイクルから記録されます。')
+            st.caption('既存DB: '+str(DB)+' / 保存先: '+str(OUT))
+        with t5:
+            render_value_learning_ui(cfg)
+        with t6:
+            render_sns_ui(cfg)
+        with t7:
+            render_research_ui(cfg)
+        with t8:
+            render_media_business_ui(cfg)
+        if st.button('画面を更新'): st.rerun()
+
+
+if __name__ == "__main__":
+    if any(arg in sys.argv[1:] for arg in ('--research','--research-status','--stop-research','--doctor')):
+        raise SystemExit(research_cli())
+    render_dashboard()
