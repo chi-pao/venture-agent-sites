@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.33'
+APP_VERSION='2026.10.25.34'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -984,7 +984,7 @@ def ensure_product_blueprint(name,cfg):
     return item
 
 
-IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-1'
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-2'
 
 
 def get_implementation_plan(name):
@@ -1009,10 +1009,14 @@ def validate_implementation_plan(item,spec,blueprint):
         index=feature.get('acceptance_index')
         if type(index) is not int or not 0<=index<len(acceptance):raise AutoQAPlanError('機能と完成条件の対応番号が不正です')
         coverage.add(index)
-        for key in ('name','user_action','inputs','processing','outputs','persistence','failure_behavior'):
+        for key in ('name','user_action','inputs','processing','outputs','persistence','failure_behavior','prototype_behavior','connection_boundary'):
             value=feature.get(key)
             if not isinstance(value,str) or len(value.strip())<20:
                 raise AutoQAPlanError('機能ごとの操作・入力・処理・結果・保存・失敗時の挙動が不足: '+key)
+        if feature.get('prototype_mode') not in ('local','sample'):
+            raise AutoQAPlanError('API接続前でも試せるローカル動作または明示的なサンプル動作を設計してください')
+        if feature['prototype_mode']=='sample' and not any(mark in feature['prototype_behavior'] for mark in ('サンプル','架空','デモ')):
+            raise AutoQAPlanError('未接続機能の体験方法は、サンプル・架空・デモと明記してください')
         cases=feature.get('test_cases')
         if not isinstance(cases,list) or len(cases)<2 or len(cases)>5:
             raise AutoQAPlanError('各機能に異なる入力を使う操作テストを2件以上指定してください')
@@ -1040,10 +1044,13 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
     feature_schema={'type':'object','properties':{
         'acceptance_index':{'type':'integer','enum':list(range(len(spec.get('acceptance',[]))))},
         **{key:{'type':'string','minLength':20,'maxLength':600} for key in ('name','user_action','inputs','processing','outputs','persistence','failure_behavior')},
+        'prototype_mode':{'type':'string','enum':['local','sample']},
+        'prototype_behavior':{'type':'string','minLength':20,'maxLength':600},
+        'connection_boundary':{'type':'string','minLength':20,'maxLength':600},
         'test_cases':{'type':'array','minItems':2,'maxItems':5,'items':{'type':'object','properties':{
             key:{'type':'string','minLength':12,'maxLength':400} for key in ('input','action','expected')},
             'required':['input','action','expected'],'additionalProperties':False}},
-        'required':['acceptance_index','name','user_action','inputs','processing','outputs','persistence','failure_behavior','test_cases'],
+        'required':['acceptance_index','name','user_action','inputs','processing','outputs','persistence','failure_behavior','prototype_mode','prototype_behavior','connection_boundary','test_cases'],
         'additionalProperties':False}}
     plan_schema={'type':'object','properties':{
         'architecture':{'type':'string','minLength':25,'maxLength':900},
@@ -1055,11 +1062,11 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
             'required':['screen','purpose','next_action'],'additionalProperties':False}},
         'required':['architecture','data_flow','offline_boundary','features','screen_links'],'additionalProperties':False}}
     prompt=('あなたは技術設計担当。コードを書かず、検証済みの製品要件と画面設計を機能単位の実装・テスト契約に分解する。'
-        '全ての完成条件を、実際の入力・処理・結果・保存・エラー対応を持つ機能へ最低1回ずつ対応づける。'
+        '全ての完成条件を、実際の入力・処理・結果・保存・エラー対応を持つ機能へ最低1回ずつ対応づける。APIが必要という理由で、試作の画面や中心操作を空欄・説明だけにしない。'
         '機能名の言い換えだけ、記録一覧だけ、接続予定の説明だけを機能と数えない。各テストは異なる具体値と期待結果を指定し、コード実装後にブラウザで再現可能にする。'
-        '未接続APIが必要な場合は、独立して動かせる機能とAPI待ちの範囲を分け、実データを作ったことにしない。'
+        'APIが必要な機能も、まずはサンプル・架空・デモデータを明確に表示し、検索条件の選択・結果の選定・日程への追加など中心操作を最後まで試せる試作動作を設計する。API接続後だけ可能な外部実取得・同期を明確に区別し、実データを作ったことにしない。全機能でprototype_modeはlocalまたはsampleとし、requires_connectionを試作の停止理由にしない。'
         'キー: architecture（画面・機能をどう分割し、どの順で作るか）、data_flow（入力→検証→処理→表示→保存のデータ流）、offline_boundary（オフラインで動く範囲と未接続機能）、'
-        'features:[{acceptance_index:完成条件の0始まり番号,name:固有機能,user_action:利用者の操作,inputs:具体的な入力,processing:業務固有の処理,outputs:確認できる結果,persistence:保存・再読込, failure_behavior:誤入力・失敗時の扱い,test_cases:[{input,action,expected}]}],'
+        'features:[{acceptance_index:完成条件の0始まり番号,name:固有機能,user_action:利用者の操作,inputs:具体的な入力,processing:業務固有の処理,outputs:確認できる結果,persistence:保存・再読込,failure_behavior:誤入力・失敗時の扱い,prototype_mode:localまたはsample,prototype_behavior:API接続前でも完遂できる操作。sampleならサンプルと明記,connection_boundary:後から接続するAPIの機能と未接続中に約束しないこと,test_cases:[{input,action,expected}]}],'
         'screen_links:[{screen,purpose,next_action}]。'
         '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500])
     item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
@@ -1171,7 +1178,7 @@ def local_product_review(name,digest):
 PRODUCTION_CHECKS=('audience_instructions','primary_workflow','desktop_visual','mobile_visual','save_reload','export_restore','invalid_input','connections')
 
 
-AUTO_QA_POLICY='2026-10-24-blueprint-and-vision-3'
+AUTO_QA_POLICY='2026-10-25-blueprint-feature-contract-and-vision-4'
 # Only failures that prevent the test from running belong in this retry bucket.
 # A malformed test plan or an app/browser failure must return to development.
 AUTO_QA_RETRY_STAGES=('制作側の実操作・見た目検証待ち','自動検証の再試行待ち','検証環境の準備待ち')
@@ -1318,6 +1325,10 @@ def validate_qa_plan(plan,spec):
 
 def make_qa_plan(name,page,cfg):
     spec=get_product_spec(name)
+    build_plan=get_implementation_plan(name) or {}
+    test_contract=[dict(acceptance_index=f.get('acceptance_index'),name=f.get('name'),prototype_mode=f.get('prototype_mode'),
+        prototype_behavior=f.get('prototype_behavior'),connection_boundary=f.get('connection_boundary'),test_cases=f.get('test_cases',[]))
+        for f in build_plan.get('features',[]) if isinstance(f,dict)]
     markup=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)>','',page,flags=re.S|re.I)
     prompt=('製品の完成条件から、実ブラウザで実行する独立した操作テストをJSONだけで設計。HTMLは要素の指定用で、期待値は仕様と具体的な数字・記録から導く。'
         '既存コードの計算式を正解として写さない。実装不足でテストを書けない場合は {"blocked_features":["不足機能"]}。'
@@ -1327,10 +1338,13 @@ def make_qa_plan(name,page,cfg):
         'cancel_restoreは復元のキャンセルボタンを押し記録が変わらないことを確認する。roundtripで一度キャンセルしてから、同じファイルを再選択し確定する。download_csvはCSVボタンから実ファイルを取得しcontains:[出力に含まれる具体的な名前や数値2件以上]で照合。restore_invalidは不正JSONを復元選択して元記録を保護することを検証する。download_jsonはバックアップボタンを押して実JSONを保持、restore_fileはファイル選択ボタン（またはinput）からそのJSONを選ぶ。'
         'checksは {op:text_equals/text_contains/value_equals/count/invalid/visible,selector:CSS,value:期待文字列}。countのvalueは整数。各scenarioで2件以上。'
         'workflowとvariantは別の具体値を入力し、計算・集計後の正解をtext_equalsで確認。result_selectorの処理結果も必ず変える。'
+        '機能別設計のtest_casesを読み、全ての完成条件・固有機能を実際に操作するよう5シナリオへ統合する。可能な限り異なる入力例と期待結果を再利用し、形式だけの完成条件カバレッジにしない。'
+        'prototype_modeがsampleの機能は、画面のサンプルデータ切替・選択・結果反映を実際に操作し、サンプルと明示されたことと結果の変化を確認する。外部通信は遮断したままAPI応答を捏造しない。'
         'reloadでは直前の記録が実際に残ること。roundtripではCSV実ファイル取得と値の照合に加え、JSON取得→別データに変更→実JSON復元→元の記録へ戻ること。'
         'invalidではrestore_invalidで不正JSON拒否も試し、不正値を入れ、保存データが変わらずエラーかHTML妥当性エラーを確認。5件全体で完成条件すべてを網羅。'
         'body/html/*のような広すぎるセレクタは禁止。シナリオは順に実行する。最初に既存サンプルを使ってもよいが、具体値の変更と結果の照合は省かない。'
-        '\n比較仮説と同じ作業の検証計画:'+json.dumps(competitive_context(name),ensure_ascii=False)[:4500]+'\n仕様:'+json.dumps(spec,ensure_ascii=False)[:8000]+'\nHTML画面要素:'+markup[:22000])
+        '\n機能別の実装・テスト契約（全件を操作確認へ反映）:'+json.dumps(test_contract,ensure_ascii=False,separators=(',',':'))
+        +'\n比較仮説と同じ作業の検証計画:'+json.dumps(competitive_context(name),ensure_ascii=False)[:4500]+'\n仕様:'+json.dumps(spec,ensure_ascii=False)[:8000]+'\nHTML画面要素:'+markup[:22000])
     def validate_plan_response(plan):
         if plan.get('blocked_features'):
             raise AutoQAPlanError('実装不足でテスト不能: '+' / '.join(map(str,plan['blocked_features']))[:700])
@@ -1554,6 +1568,8 @@ def automated_product_qa(job,name,page,cfg):
         if not competitive_design_ready(report['competitive_brief']):raise AutoQAPlanError('同業2件の設計比較と改善の具体化が未完了です')
         report['blueprint']=ensure_product_blueprint(name,cfg)
         validate_product_blueprint(report['blueprint'],spec,report['competitive_brief'])
+        report['implementation_plan']=ensure_implementation_plan(name,cfg,report['blueprint'])
+        validate_implementation_plan(report['implementation_plan'],spec,report['blueprint'])
         plan=make_qa_plan(name,page,cfg);report['plan']=plan
         browser_result=execute_browser_qa(name,page,plan,directory);report['browser']=browser_result
         event(job,name+': 操作・入力差分・保存復元を検証。画面画像を判定中')
@@ -1624,6 +1640,9 @@ def valid_automatic_qa_record(item):
             and report.get('blueprint',{}).get('policy')==PRODUCT_BLUEPRINT_POLICY
             and report['blueprint'].get('scope_sha')==item['scope_sha']
             and bool(validate_product_blueprint(report['blueprint'],get_product_spec_from_scope(item['scope_sha']),report['competitive_brief']))
+            and report.get('implementation_plan',{}).get('policy')==IMPLEMENTATION_PLAN_POLICY
+            and report['implementation_plan'].get('scope_sha')==item['scope_sha']
+            and bool(validate_implementation_plan(report['implementation_plan'],get_product_spec_from_scope(item['scope_sha']),report['blueprint']))
             and report.get('content_sha')==item['content_sha'] and report.get('scope_sha')==item['scope_sha']
             and len(report.get('browser',{}).get('scenarios',[]))==10 and report['browser'].get('passed') is True
             and {(r.get('width'),r.get('kind')) for r in report['browser']['scenarios']}=={(w,k) for w in (1280,390) for k in ('workflow','variant','reload','roundtrip','invalid')}
@@ -4258,7 +4277,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             'あなたは実装担当。検証済みの比較資料・UX設計・製品要件を実際に動く画面と処理へ落とし込む。'
             '要件と設計にない独自機能を足して中心作業を曖昧にしない。別担当の不足を推測で埋めない。\n'
             '先に決めた制作設計（画面と主機能へ具体的に反映）:\n'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:4500]+'\n'
-            +'機能別の実装・テスト契約（各受入条件の具体処理を全て実装。各テスト例と同じ操作をQAで確認）:\n'+json.dumps(implementation_plan,ensure_ascii=False)[:9000]+'\n'
+            +'機能別の実装・テスト契約（各受入条件の具体処理を全て実装。各テスト例と同じ操作をQAで確認）:\n'+json.dumps(implementation_plan,ensure_ascii=False,separators=(',',':'))+'\n'
             +f'「{name}」の無料で使える実用ブラウザアプリを'
             '単一HTML/CSS/JavaScriptで実装してください。\n'
             '対象顧客に必要な本物の処理、入力検証、操作結果、'
@@ -4294,9 +4313,10 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         if legacy_reason:
             requirements += '\n作り直しの理由:'+legacy_reason+'。入力値・計算・結果だけの汎用サンプルを再生成しない。対象者の実際の作業を具体的な項目と処理にする。'
         if partial:
-            requirements += ('\n今回は発信不可の開発途中版。外部接続なしで独立して動く画面・入力・日程計算・保存等を改善する。'
-                '接続が必要な検索・共同編集は未接続と正確に表示し、成功や検索結果を捏造しない。'
-                '未実装を隠さない。この開発途中版に限り未接続の明示を許可する。完成条件は削除しない。')
+            requirements += ('\nAPI接続前の確認用試作として、中心作業を説明画面だけにせず最後まで操作できる状態にする。'
+                'API依存機能は明示的な「サンプルデータ」モードを用意し、入力・条件選択・候補選定・結果反映・保存・共有用出力まで操作可能にする。'
+                'サンプルは架空と明示し、実際に検索・取得・同期したと誤認させない。接続前でも、サンプルで便利さ・導線・時間短縮を評価できるようにする。'
+                'API接続後に置き換わる境界だけを説明し、接続待ちを理由にボタンや主要フローを未実装にしない。完成条件を削除・縮小しない。')
         if any('チャット回答処理のサーバー接続' in item for item in release_spec.get('dependencies',[])):
             requirements += ('\nチャット回答処理はサーバー接続が必要で、現在は未接続です。'
                 'この版はFAQ回答ライブラリとして作り、FAQの追加・編集・検索・一致回答の表示・未登録質問の記録・CSV出力・JSON保存復元を実装してください。'
