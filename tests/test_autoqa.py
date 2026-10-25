@@ -191,24 +191,23 @@ class AutomaticQATests(ContinuationTests):
 
  def test_competitive_quote_must_match_actual_reference(self):
   urls=app.competitive_context(self.name)['official_comparison_candidates'][:2]
-  text='これは比較先の公式本文のテスト用取得内容です。表計算で予定を整理できます。'
+  text=('公式ページの機能説明を取得したテスト用本文です。利用者が予定や作業を記録し、一覧で整理し、必要な情報を確認できる仕組みを紹介しています。'
+        '条件の入力や検索、集計、共有など、掲載ページで確認できた内容だけを比較の根拠として扱います。' * 2)
   def reference(url):return dict(url=url,status='本文取得',text=text,checked_at=app.now(),content_sha='a'*64)
-  item=dict(comparisons=[dict(source_url=u,source_quote=text[:24],reference_type='design_reference',relevance='旅行の希望や予定を整理する画面設計の参考になる事例です。',comparison='表計算の条件入力と結果一覧の構成を取り入れ、家族向けに操作を簡単にする仮説。') for u in urls],target_task='家族で同じ旅行の予定を比較して保存する具体的な作業',proposed_advantage='条件の入力から比較結果までの手順を減らす改善仮説です。',own_acceptance_index=0,benchmark={k:'同じ入力条件をそろえ完了時間と迷う箇所を記録して判断します。' for k in ('scenario','measure','continue_if','reconsider_if')},research_gaps=['直接競合の調査は不足'],design_patterns=design_brief(self.name)['design_patterns'])
-  for part,u in zip(item['design_patterns'],urls):part.update(source_url=u,source_quote=text[:24])
-  # Run the real research implementation rather than the base test's network isolation stub.
-  self.research_patch.stop()
-  with patch.object(app,'read_research_reference',side_effect=reference),patch.object(app,'ai',return_value=json.dumps(item)) as model:
+  # The evidence-backed compiler must avoid the model transcription bottleneck.
+  with patch.object(app,'read_research_reference',side_effect=reference):
    result=app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
-  contract=model.call_args.args[1]['_json_response']
-  self.assertEqual(contract['properties']['comparisons']['minItems'],2)
-  self.assertIn('reference_type',contract['properties']['comparisons']['items']['properties'])
-  self.assertIn('adjacent_service',contract['properties']['comparisons']['items']['properties']['reference_type']['enum'])
-  self.assertEqual(contract['properties']['design_patterns']['minItems'],2)
-  self.assertTrue(app.competitive_design_ready(result));self.assertFalse(result['measured_advantage'])
-  app.request_product_changes(self.name,'別の比較機能も追加して完成条件に含めてほしい')
-  item['design_patterns'][0]['source_quote']='実際には取得していない競合の機能の説明です'
-  with patch.object(app,'read_research_reference',side_effect=reference),patch.object(app,'ai',return_value=json.dumps(item)):
-   with self.assertRaises(app.AutoQAPlanError):app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
+  self.assertTrue(app.competitive_design_ready(result))
+  self.assertGreaterEqual(len(result['comparisons']),2)
+  self.assertEqual(result['summary_method'],'official_text_rules')
+  self.assertFalse(result['measured_advantage'])
+  for part in result['design_patterns']:
+   self.assertIn(part['source_quote'],text)
+  broken=dict(result)
+  broken['design_patterns']=[dict(part) for part in result['design_patterns']]
+  broken['design_patterns'][0]['source_quote']='実際には取得していない競合の機能の説明です'
+  with self.assertRaises(app.AutoQAPlanError):
+   app.validate_competitive_design(broken,{url:reference(url) for url in urls})
  def test_missing_or_single_design_source_never_passes(self):
   brief=design_brief(self.name);self.assertTrue(app.competitive_design_ready(brief))
   brief['design_patterns'][1]['source_url']=brief['design_patterns'][0]['source_url']
