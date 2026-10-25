@@ -2041,7 +2041,12 @@ def execute_browser_qa(name,page_source,plan,directory):
                         if not ok:raise ValueError(scenario['kind']+'の期待結果と不一致: '+json.dumps(check,ensure_ascii=False))
                     if scenario['kind'] in ('workflow','variant'):output.append(page.locator(plan['result_selector']).inner_text())
                     if scenario['kind']=='reload' and not snapshot():raise ValueError('再読込後の保存記録が空です')
-                    if scenario['kind']=='roundtrip' and (not restored or snapshot()!=backup_state):raise ValueError('バックアップから元の記録へ復元できていません')
+                    if scenario['kind']=='roundtrip':
+                        if not restored:raise ValueError('バックアップ復元の確定ダイアログが完了していません')
+                        current=snapshot()
+                        if current!=backup_state:
+                            changed=sorted(k for k in set(current)|set(backup_state or {}) if current.get(k)!=(backup_state or {}).get(k))
+                            raise ValueError('バックアップから元の記録へ復元できていません。差分キー: '+','.join(changed))
                     if scenario['kind']=='invalid' and snapshot()!=before:raise ValueError('誤入力によって保存記録が変更されました')
                     if errors:raise ValueError('実操作中のJavaScriptエラー: '+errors[0][:300])
                     result=dict(width=width,kind=scenario['kind'],passed=True,checks=len(scenario['checks']))
@@ -2050,7 +2055,8 @@ def execute_browser_qa(name,page_source,plan,directory):
                 if len(output)!=2 or not output[0].strip() or output[0]==output[1]:raise ValueError('具体的な入力を変えても主処理の結果が変わりません')
                 page.locator(plan['result_selector']).scroll_into_view_if_needed();page.wait_for_timeout(150)
                 layout=page.evaluate(QA_LAYOUT_SCRIPT);layouts.append(layout)
-                if layout['overflow'] or layout['smallControls'] or layout['tinyText']:raise ValueError('操作結果の画面で配置・文字・ボタンに不足があります')
+                if layout['overflow'] or layout['smallControls'] or layout['tinyText']:
+                    raise ValueError('操作結果の画面で配置・文字・ボタンに不足があります: '+json.dumps({k:layout.get(k) for k in ('width','overflow','overflowNodes','smallControls','tinyText')},ensure_ascii=False))
                 shot=directory/('result-'+str(width)+'.png');page.screenshot(path=str(shot));shots.append(str(shot))
                 context.close()
         finally:browser.close()
