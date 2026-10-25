@@ -1,8 +1,18 @@
-from test_preview import app
+import importlib.util
 from unittest.mock import patch
 from pathlib import Path
+import sys
 import tempfile
 import unittest
+
+ROOT = Path(__file__).resolve().parent
+SOURCE = ROOT / 'agent' / 'venture_agent_integrated.py'
+if not SOURCE.is_file():
+    SOURCE = ROOT / 'delivery' / 'venture_agent_integrated.py'
+spec = importlib.util.spec_from_file_location('custom_workflow_app', SOURCE)
+app = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = app
+spec.loader.exec_module(app)
 
 
 class CustomWorkflowRebuildTests(unittest.TestCase):
