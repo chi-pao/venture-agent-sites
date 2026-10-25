@@ -53,6 +53,7 @@ def main():
                ai_context=8192, autoqa_setup=False, max_revisions=2,
                max_active=2, publish=False)
     summaries = []
+    failures = []
     for name, rationale in PRODUCTS:
         app.execute(
             "INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)",
@@ -63,23 +64,31 @@ def main():
             "無料で試せる日本語ブラウザアプリ。対象者の困りごとを解決する具体的な操作を提供する。"
             "収益性・競合優位・利用者の評価は未検証の仮説と明記し、実績を捏造しない。"
         )
-        page, build_detail, ready = app.build(
-            0, name, cfg, business_plan, asset_kind="ライブ生成検証HTML",
-            allow_partial=False,
-        )
-        if not page:
-            raise RuntimeError(f"{name}: generated page missing: {build_detail}")
-        if not ready:
-            raise RuntimeError(f"{name}: build/review did not pass: {build_detail}")
-        passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
-        if not passed or stage != "のぼるさん確認待ち":
-            raise RuntimeError(f"{name}: end-to-end browser QA did not pass ({stage}): {qa_detail}")
-        summaries.append({"name": name, "build": build_detail, "qa": qa_detail,
-                          "stage": stage, "characters": len(page)})
-        print("LIVE_PRODUCT_PASS " + json.dumps(summaries[-1], ensure_ascii=False))
+        try:
+            page, build_detail, ready = app.build(
+                0, name, cfg, business_plan, asset_kind="ライブ生成検証HTML",
+                allow_partial=True,
+            )
+            if not page:
+                raise RuntimeError(f"generated page missing: {build_detail}")
+            if not ready:
+                raise RuntimeError(f"build/review did not pass: {build_detail}")
+            passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
+            if not passed or stage != "のぼるさん確認待ち":
+                raise RuntimeError(f"end-to-end browser QA did not pass ({stage}): {qa_detail}")
+            summaries.append({"name": name, "status": "pass", "build": build_detail, "qa": qa_detail,
+                              "stage": stage, "characters": len(page)})
+            print("LIVE_PRODUCT_PASS " + json.dumps(summaries[-1], ensure_ascii=False), flush=True)
+        except Exception as exc:
+            result={"name":name,"status":"fail","reason":f"{type(exc).__name__}: {exc}"[:1800]}
+            summaries.append(result);failures.append(result)
+            print("LIVE_PRODUCT_FAIL " + json.dumps(result, ensure_ascii=False), flush=True)
+        (root / "live-progress.json").write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = root / "live-summary.json"
     summary.write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("LIVE_GENERATION_SUMMARY " + json.dumps(summaries, ensure_ascii=False))
+    print("LIVE_GENERATION_SUMMARY " + json.dumps(summaries, ensure_ascii=False), flush=True)
+    if failures:
+        raise RuntimeError(f"{len(failures)} of {len(PRODUCTS)} live product builds failed; see live-summary.json")
 
 
 if __name__ == "__main__":
