@@ -5,7 +5,8 @@ import sys
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent if HERE.name == 'tests' else HERE
 SOURCE = ROOT / 'agent' / 'venture_agent_integrated.py'
 if not SOURCE.is_file():
     SOURCE = ROOT / 'delivery' / 'venture_agent_integrated.py'
