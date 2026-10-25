@@ -42,7 +42,7 @@ class RequirementsPlanFallbackTests(unittest.TestCase):
         self.assertEqual(plan["design_method"], "requirements_compiler_fallback")
         self.assertEqual(
             {feature["acceptance_index"] for feature in plan["features"]},
-            set(range(len(spec["acceptance"])),
+            set(range(len(spec["acceptance"]))),
         )
         self.assertEqual(len(plan["features"]), len(spec["acceptance"]))
         self.assertIn("期間と商品", plan["features"][1]["user_action"])
