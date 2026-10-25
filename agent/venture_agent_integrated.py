@@ -2337,7 +2337,7 @@ def production_acceptance(name,digest):
         spec=get_product_spec(name) or {}
         if (item.get('policy')==PRODUCT_QUALITY_POLICY and item.get('content_sha')==digest
                 and item.get('scope_sha') and item.get('scope_sha')==product_scope_sha(name)
-                and (item.get('reviewer')=='Codex実操作検証' or (item.get('reviewer')=='自動実操作・画像検証' and valid_automatic_qa_record(item)))
+                and (item.get('reviewer')=='Codex実操作検証' or (item.get('reviewer') in ('自動実操作・画像検証','自動実操作・画像AI検証','自動実操作・画面構造検証') and valid_automatic_qa_record(item)))
                 and spec.get('delivery_mode') in ('browser_local','connected') and item.get('delivery_mode')==spec.get('delivery_mode')
                 and all(isinstance(item.get('checks',{}).get(k),str) and len(item['checks'][k])>=15 for k in PRODUCTION_CHECKS)):
             return item
