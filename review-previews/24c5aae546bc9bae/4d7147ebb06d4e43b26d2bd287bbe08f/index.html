@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_af81bd7d659e3b1408ce68d4:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO最適化ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #result { margin-top: 20px; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <h1>SEO最適化ツール</h1>
+    <form id="inputForm">
+        <label for="keyword">キーワード:</label>
+        <input type="text" id="keyword" required>
+        <br>
+        <label for="url">ウェブサイトURL:</label>
+        <input type="url" id="url" required>
+        <br>
+        <button type="button" id="analyzeButton" class="btn btn-primary">分析</button>
+    </form>
+    <div id="result" class="mt-2"></div>
+
+    <script>
+        document.getElementById('analyzeButton').addEventListener('click', function() {
+            const keyword = document.getElementById('keyword').value;
+            const url = document.getElementById('url').value;
+            const resultDiv = document.getElementById('result');
+
+            // 假设的分析逻辑
+            const analysisResult = `<h2>SEO分析結果</h2><p>キーワード "${keyword}" とウェブサイト "${url}" の SEO分析結果は以下の通りです:</p>
+            - 関連キーワード: ${keyword}, ${keyword} SEO, ${keyword} ページ
+            - コンテンツ生成: ${keyword}に関する優れたSEO対応コンテンツが生成されました。
+            - 競合分析: 競合サイトの分析結果は、${url}のSEOパフォーマンスを向上させるための具体的な提案が含まれています。
+            - パフォーマンスモニタリング: ${url}のSEOパフォーマンスは、定期的なモニタリングにより改善されています。`;
+
+            resultDiv.innerHTML = analysisResult; document.getElementById('result').classList.add('border', 'p-3', 'bg-light');
+
+            // 保存処理
+            localStorage.setItem('analysisResult', analysisResult); document.getElementById('result').classList.add('border', 'p-3', 'bg-light');
+        });
+
+        // 保存された結果を読み込み
+        const savedResult = localStorage.getItem('analysisResult');
+        if (savedResult) {
+            document.getElementById('result').innerHTML = savedResult;
+        }
+    </script>
+</body>
+</html>
