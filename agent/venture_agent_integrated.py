@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.38'
+APP_VERSION='2026.10.25.39'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -243,8 +243,8 @@ def monetization_checkpoint(item):
 
 
 
-PRODUCT_QUALITY_POLICY='2026-10-25-reference-led-design-7'
-PRODUCT_DEVELOPMENT_BASELINE='2026-10-25-reference-led-design-7'
+PRODUCT_QUALITY_POLICY='2026-10-25-reference-led-design-8'
+PRODUCT_DEVELOPMENT_BASELINE='2026-10-25-reference-led-design-8'
 PRODUCT_BASELINE_REQUIREMENTS=[
     '2026年10月24日の旅のペースノート改善版を品質水準の参考とする。配色や構成を全製品にコピーせず、同等以上の明確な価値・整った情報階層・視認性・操作性・用途に合う魅力を求める',
     '直接競合が見つからなくても、近接サービス・類似機能・設計参考から機能・画面・導線を学び、出典付きで対象者に合わせて設計する。資料未取得や未操作を調査済み・実測と偽らない',
@@ -980,7 +980,7 @@ def ensure_competitive_brief(name,cfg):
     return item
 
 
-PRODUCT_BLUEPRINT_POLICY='2026-10-25-reference-led-blueprint-3'
+PRODUCT_BLUEPRINT_POLICY='2026-10-25-reference-led-blueprint-4'
 
 
 def get_product_blueprint(name):
@@ -1029,6 +1029,67 @@ def development_design_reference_bundle(name,reason):
         caution='これは内部の汎用設計原則であり、競合調査・差別化の証明ではありません。')
 
 
+def blueprint_from_product_requirements(name,spec,brief,reason):
+    """Compile a product-specific, traceable design when a model misses the JSON contract."""
+    workflow=[str(x).strip() for x in spec.get('workflow',[]) if str(x).strip()]
+    acceptance=[str(x).strip() for x in spec.get('acceptance',[]) if str(x).strip()]
+    if len(workflow)<2 or len(acceptance)<3:
+        raise AutoQAPlanError('製品要件から画面設計を組み立てられません。利用手順と受入条件を具体化してください')
+    audience=str(spec.get('audience','利用者')).strip()
+    outcome=str(spec.get('requested_outcome','')).strip()
+    def action_text(step):
+        step=str(step).strip()
+        return step if len(step)>=8 else step+'を行い、内容を入力または選択する。'
+    direction={
+        'travel_lifestyle':'旅の楽しさが伝わる地図・行程・休憩の情報を分け、次の行動を迷わず選べる画面にする。',
+        'education':'授業中に素早く操作できる名簿・出欠・集計の階層を設け、入力状態を一目で確認できる画面にする。',
+        'business_ops':'業務の確認漏れを減らす落ち着いた視覚階層にし、入力・照合結果・次の処理を並べて示す。',
+        'real_estate':'費用や条件の違いが見分けやすい比較表と確認事項を中心に、未確認情報も誤認しない画面にする。',
+        'family_health':'家族が必要な情報を安全に確認しやすい大きな文字と明確な状態表示を備える。'}
+    visual=direction.get(project_registry(name).get('sector'),
+        '対象者の利用場面に合う情報階層を作り、主操作・結果・次の行動を見分けやすく配置する。')
+    sections=[dict(purpose='利用開始と価値の案内',action=action_text(workflow[0]),
+        result=audience+'が対象と最初の操作を確認できる。')]
+    for i,step in enumerate(workflow[:5]):
+        sections.append(dict(purpose='利用手順 '+str(i+1)+': '+step,
+            action=action_text(step),result='入力した内容と次の操作を画面で確認できる。'))
+    sections.append(dict(purpose='結果・保存・次の行動',action=action_text(workflow[-1]),
+        result=outcome+' 保存状態と次に行う操作を確認できる。'))
+    sections=sections[:8]
+    while len(sections)<3:
+        sections.insert(-1,dict(purpose='入力内容の確認',action='入力内容を見直して必要な項目を修正する。',
+            result='誤りを直してから中心機能を実行できる。'))
+    flows=[]
+    flow_count=min(10,len(acceptance))
+    for i in range(flow_count):
+        indices=list(range(i,len(acceptance),flow_count))
+        step=workflow[min(i,len(workflow)-1)]
+        checks=' / '.join(acceptance[j] for j in indices)
+        flows.append(dict(input='利用手順「'+workflow[0]+'」に沿う具体的な条件を入力する。',
+            operation=step+' を実行し、保存や結果表示まで進む。',
+            expected_result='画面で次の受入条件を確認する: '+checks,
+            acceptance=indices))
+    patterns=[]
+    for item in brief.get('design_patterns',[]):
+        if isinstance(item,dict) and item.get('source_url') not in {x.get('source_url') for x in patterns}:
+            patterns.append(item)
+        if len(patterns)>=2:break
+    if len(patterns)<2:
+        fallback=development_design_reference_bundle(name,reason)
+        for item in fallback['design_patterns']:
+            if item['source_url'] not in {x.get('source_url') for x in patterns}:patterns.append(item)
+    adaptations=[]
+    for item in patterns[:2]:
+        adaptations.append(dict(source_url=item['source_url'],
+            implementation=str(item.get('adapt',''))+' '+audience+'向けに、'+workflow[0]+'から始められる画面へ配置する。',
+            improvement=str(item.get('improvement',''))+' '+audience+'が'+outcome+'を達成しやすい表示と操作にする。'))
+    return dict(user_scene=audience+'が'+outcome+'を達成するために、'+workflow[0]+'から始める利用場面。',
+        first_action='最初に行う操作は「'+workflow[0]+'」。画面の案内に沿って必要な情報を入力し、次へ進む。',
+        use_reason=audience+'が'+outcome+'を一連の手順で行え、結果を保存・見直しできることを目指す。',
+        visual_direction=visual,screen_sections=sections,core_flows=flows,adaptations=adaptations,
+        design_method='requirements_compiler_fallback',design_recovery_reason=str(reason)[:900])
+
+
 def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=None):
     spec=get_product_spec(name) or {};research_gap='';brief=competitive_brief
     if brief is None:
@@ -1059,7 +1120,12 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
         'adaptations:[{source_url:比較の根拠のURL,implementation:同業の良さを取り入れた具体的な画面や機能,improvement:対象者に合わせてもっと使いやすくする点}]（異なる2件以上・各説明15字以上）。'
         '未実装・未検証を実績とせず、使う理由は検証する仮説として書く。単なる説明表示や入力の写しだけでは不可。'
         +research_instruction+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:6500]+'\n設計根拠:'+json.dumps(brief,ensure_ascii=False)[:6500])
-    item=ai_json(prompt,cfg,3200,validator=lambda value:validate_product_blueprint(value,spec,brief))
+    try:
+        item=ai_json(prompt,cfg,3200,validator=lambda value:validate_product_blueprint(value,spec,brief))
+        item['design_method']='ai_structured_design'
+    except AutoQAPlanError as exc:
+        item=blueprint_from_product_requirements(name,spec,brief,str(exc))
+        validate_product_blueprint(item,spec,brief)
     item.update(policy=PRODUCT_BLUEPRINT_POLICY,scope_sha=product_scope_sha(name),competitive_checked=brief.get('checked'),
         development_only=bool(research_gap),research_gap=research_gap,checked=now())
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_blueprint:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))

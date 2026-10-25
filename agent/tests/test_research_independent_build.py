@@ -82,6 +82,30 @@ class ResearchIndependentBuildTests(unittest.TestCase):
         )
         self.assertTrue(app.competitive_design_ready(brief))
 
+    def test_blueprint_compiler_recovers_after_ai_design_contract_failure(self):
+        name = "小規模事業者向け照合アプリ"
+        spec = app.validate_product_spec(dict(
+            audience="毎月の売上CSVを照合する小規模EC事業者",
+            requested_outcome="異なる形式の売上CSVを揃えて差異と未確認行を確認する",
+            differentiation="表計算の関数を組まずに差異の理由候補と確認順を見つける",
+            workflow=["2つのCSVを読み込む", "照合条件を選ぶ", "差異一覧を確認して出力する"],
+            must_have=["異なる列名の対応付け", "金額と注文番号での照合", "未一致行と重複行の区別"],
+            acceptance=["読み込んだ列を対応付けできる", "異なる金額の行を差異として示す", "照合結果をCSV出力できる"],
+            delivery_mode="browser_local", dependencies=[]
+        ))
+        app.store_product_spec(name, spec)
+        with patch.object(app, "ensure_competitive_brief", return_value={}), \
+             patch.object(app, "get_product_blueprint", return_value=None), \
+             patch.object(app, "ai_json", side_effect=app.AutoQAPlanError("画面設計のJSONが不完全です")):
+            result = app.ensure_product_blueprint(name, dict(app.DEFAULT), allow_unverified=True)
+
+        self.assertEqual(result["design_method"], "requirements_compiler_fallback")
+        self.assertIn(spec["audience"], result["user_scene"])
+        self.assertIn(spec["workflow"][0], result["first_action"])
+        covered = {i for flow in result["core_flows"] for i in flow["acceptance"]}
+        self.assertEqual(covered, set(range(len(spec["acceptance"]))))
+        self.assertFalse(app.production_acceptance(name, "0" * 64))
+
 
 if __name__ == "__main__":
     unittest.main()
