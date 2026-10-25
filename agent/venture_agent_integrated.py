@@ -4757,8 +4757,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
             generation_cfg=coding_config(cfg,task='new')
-        generation_cfg['_request_timeout']=max(60,int(cfg.get('generation_request_timeout',360)))
-        page=extract_html(ai(prompt,generation_cfg,min(6000,int(cfg.get('generation_token_budget',5000)))))
+            generation_cfg['_request_timeout']=max(60,int(cfg.get('generation_request_timeout',360)))
+            page=extract_html(ai(prompt,generation_cfg,min(6000,int(cfg.get('generation_token_budget',5000)))))
         sanitized_page=remove_unconnected_ai_brand_claim(page,name,release_spec)
         if sanitized_page!=page:event(job,name+': AI未接続の企画名表記を画面用名称から外し、未接続機能を約束しない表示へ調整')
         page=apply_generated_layout_safety(sanitized_page)
