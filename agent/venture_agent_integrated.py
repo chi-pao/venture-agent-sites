@@ -2023,8 +2023,8 @@ def execute_browser_qa(name,page_source,plan,directory):
                             else:
                                 with page.expect_file_chooser() as chooser:loc.click()
                                 chooser.value.set_files(str(selected_file))
-                            # The file input handler parses Blob.text() asynchronously before showing confirm().
-                            page.wait_for_timeout(250)
+                            # Wait until the async file handler resets the input after parse/confirm completes.
+                            page.wait_for_function("() => { const e=document.querySelector('input[type=file]'); return !!e && e.value === ''; }",timeout=5000)
                             if op=='restore_file' and last_dialog_dismissed[0]:
                                 if snapshot()!=before_restore:raise ValueError('復元をキャンセルしたのに保存記録が変更されました')
                                 last_dialog_dismissed[0]=False
@@ -4953,13 +4953,15 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 'この版はFAQ回答ライブラリとして作り、FAQの追加・編集・検索・一致回答の表示・未登録質問の記録・CSV出力・JSON保存復元を実装してください。'
                 '画面タイトルは「FAQ回答ライブラリ」等にし、接続前の自動チャット・AI回答・リアルタイム対応を名乗らないでください。'
                 '単なる接続予定の説明画面にせず、FAQを実際に登録して検索できる独立機能を完成させてください。')
+        if force_full_generation_reason and previous_page:
+            requirements += ('\n失敗した候補のコードを確認し、使える機能は保持しながら失敗箇所を別経路で作り直してください。修正前の失敗コードをそのまま返さないこと。\n直前の失敗候補の関連コード:\n'+product_repair_context(previous_page,force_full_generation_reason)[:5000])
         if force_full_generation_reason:
-            requirements += ('\n直前の局所修正は形式・置換位置が合わず適用できませんでした。'
+            requirements += ('\n直前の検査・修正方針はこの内容です。次の局所差分ではなく、別経路で完成条件からHTMLを作り直します。'
                 '今回は同じ完成条件からHTMLを作り直し、次の具体的な失敗を必ず解消してください。'
                 '失敗した修正案や無効な置換文字列を出力・再利用せず、保存とJSON復元・CSV出力を含む中心機能を省略しないこと。\n'
                 +force_full_generation_reason[:1800])
 
-        if previous_page:
+        if previous_page and not force_full_generation_reason:
             try:
                 event(job,name+': '+('原因再診断＋局所修正' if diagnose_next else '既存機能を保持して局所修正'))
                 page,repair_reason=incremental_product_repair(job,name,previous_page,last or plan[-1800:],cfg,diagnose=diagnose_next)
