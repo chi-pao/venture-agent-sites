@@ -6,6 +6,7 @@ inspect it, and execute real browser QA. Any incomplete candidate fails the job.
 """
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from test_preview import app
@@ -33,6 +34,66 @@ PRODUCTS = [
         },
     ),
 ]
+
+
+def verify_domain_specific_flow(name, html):
+    """Exercise the two requested workflows in real Chromium before the general QA."""
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.TemporaryDirectory() as folder:
+        target = Path(folder) / "app.html"
+        target.write_text(html, encoding="utf-8")
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(target.as_uri())
+            operation = page.evaluate("APP.operation")
+            if "在宅ワーク" in name:
+                if operation != "workday":
+                    raise AssertionError(f"expected workday operation, got {operation}")
+                page.locator("#workdayDate").fill("2026-10-25")
+                page.locator("#workdayStart").fill("09:00")
+                page.locator("#workdayEnd").fill("17:00")
+                page.locator("#workdayBreak").fill("60")
+                page.locator("#saveWorkday").click()
+                page.locator("#loadWorkdaySample").click()
+                text = page.locator("#workdayTotals").inner_text()
+                for expected in ("7時間00分", "4時間30分 / 4時間20分", "-0時間10分", "2時間40分"):
+                    if expected not in text:
+                        raise AssertionError(f"workday calculation missing {expected!r}: {text}")
+                page.reload()
+                text = page.locator("#workdayTotals").inner_text()
+                if "2時間40分" not in text or page.locator("#recordCount").inner_text() != "3":
+                    raise AssertionError(f"workday save/reload failed: {text}")
+            elif "授業参加管理" in name:
+                if operation != "attendance":
+                    raise AssertionError(f"expected attendance operation, got {operation}")
+                fields = page.evaluate("APP.fields")
+                def submit(status):
+                    for field in fields:
+                        if not field["required"]:
+                            continue
+                        locator = page.locator("#" + field["id"])
+                        if field["role"] == "date":
+                            locator.fill("2026-10-25")
+                        elif field["role"] == "status":
+                            locator.select_option(label=status)
+                        elif field["role"] == "title":
+                            locator.fill("佐藤花子" if status == "出席" else "鈴木一郎")
+                        elif field["type"] == "number":
+                            locator.fill("1")
+                        else:
+                            locator.fill("確認用")
+                    page.locator("#saveRecord").click()
+                submit("出席")
+                submit("欠席")
+                summary = page.locator("#summaryValue").inner_text()
+                if "50%" not in summary or "欠席1" not in summary:
+                    raise AssertionError(f"attendance aggregation failed: {summary}")
+                page.reload()
+                if "50%" not in page.locator("#summaryValue").inner_text():
+                    raise AssertionError("attendance save/reload failed")
+            browser.close()
 
 
 def main():
@@ -73,6 +134,7 @@ def main():
                 raise RuntimeError(f"generated page missing: {build_detail}")
             if not ready:
                 raise RuntimeError(f"build/review did not pass: {build_detail}")
+            verify_domain_specific_flow(name, page)
             passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
             if not passed or stage != "のぼるさん確認待ち":
                 raise RuntimeError(f"end-to-end browser QA did not pass ({stage}): {qa_detail}")
