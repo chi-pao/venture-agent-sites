@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.48'
+APP_VERSION='2026.10.25.49'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1889,13 +1889,22 @@ def review_qa_images(name,browser_result,cfg):
             'JSONだけ: 各キー {"score":整数,"reason":"画面で確認した根拠と改善点"}。'
             '\n制作設計:'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:2500]+
             '\n対象と完成条件:'+json.dumps(get_product_spec(name),ensure_ascii=False)[:5000]
-            +'\n自動操作結果（売上や実利用ではない）:'+json.dumps(browser_result['scenarios'],ensure_ascii=False))
-        images=[base64.b64encode(Path(path).read_bytes()).decode() for path in browser_result['screenshots']]
+            +'\n自動操作シナリオ数（詳細な操作結果は別のブラウザー検査で判定）:'+str(len(browser_result['scenarios'])))
+        from io import BytesIO
+        from PIL import Image
+        images=[]
+        for path in browser_result['screenshots']:
+            with Image.open(path) as source:
+                image=source.convert('RGB')
+                image.thumbnail((768,768))
+                buffer=BytesIO()
+                image.save(buffer,format='JPEG',quality=78,optimize=True)
+                images.append(base64.b64encode(buffer.getvalue()).decode())
         last_error='画像判定のJSONを読み取れません'
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':1800,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
+                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':700,'num_ctx':min(8192,max(4096,int(cfg.get('ai_context',8192))))}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(req,timeout=180) as r:data=json.load(r)
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
@@ -1951,9 +1960,10 @@ def automated_product_qa(job,name,page,cfg):
         'connection_scope':{'delivery_mode':spec.get('delivery_mode'),'required':dependencies,
             'status':'未接続・未検証' if dependencies else '外部接続不要',
             'note':'実操作合格は画面内で確認した範囲だけ。未接続の外部API・共有機能を実装済みとは扱わない。'}}
-    stage='自動検証で要修正';research_gap=''
+    stage='自動検証で要修正';research_gap='';phase='環境準備'
     try:
         event(job,name+': 実操作・PC/スマホ画面の自動検証を開始')
+        phase='競合比較'
         ensure_autoqa_environment(job,cfg)
         try:
             brief=ensure_competitive_brief(name,cfg)
@@ -1962,17 +1972,17 @@ def automated_product_qa(job,name,page,cfg):
             research_gap=str(exc)
             brief=development_design_reference_bundle(name,research_gap)
             event(job,name+': 競合比較の根拠が未完了ですが、機能・操作・画面検査は続行します。最終確認には比較完了が必要です')
-        report['competitive_brief']=brief
+        phase='製品設計';report['competitive_brief']=brief
         report['blueprint']=ensure_product_blueprint(name,cfg,allow_unverified=bool(research_gap),competitive_brief=brief)
         validate_product_blueprint(report['blueprint'],spec,report['competitive_brief'])
-        report['implementation_plan']=ensure_implementation_plan(name,cfg,report['blueprint'])
+        phase='実装計画';report['implementation_plan']=ensure_implementation_plan(name,cfg,report['blueprint'])
         if report['implementation_plan'].get('design_method')=='requirements_compiler_fallback':
             event(job,name+': AI機能設計が条件未達のため、製品要件から受入条件別の計画を再構成。実装・操作検査は続行します')
         validate_implementation_plan(report['implementation_plan'],spec,report['blueprint'])
-        plan=make_qa_plan(name,page,cfg);report['plan']=plan
-        browser_result=execute_browser_qa(name,page,plan,directory);report['browser']=browser_result
+        phase='操作シナリオ設計';plan=make_qa_plan(name,page,cfg);report['plan']=plan
+        phase='実ブラウザー操作';browser_result=execute_browser_qa(name,page,plan,directory);report['browser']=browser_result
         event(job,name+': 操作・入力差分・保存復元を検証。画面画像を判定中')
-        visual=review_qa_images(name,browser_result,cfg);report['visual']=visual
+        phase='画像デザイン審査';visual=review_qa_images(name,browser_result,cfg);report['visual']=visual
         issues=[key+': '+part['reason'] for key,part in visual.items() if key in ('audience','design','readability','mobile','usefulness') and part['score']<4]
         if issues:raise ValueError('画像判定で改善が必要: '+' / '.join(issues))
         if product_scope_sha(name)!=scope or not development_allowed(name) or not state()['enabled']:raise AutoQAEnvironmentError('検証中に要件・運転設定が変わったため再確認します')
@@ -1984,7 +1994,7 @@ def automated_product_qa(job,name,page,cfg):
             report['passed']=True;stage='のぼるさん確認待ち';detail='自動実操作・画像検証: 合格。実利用・収益性は未検証。発信はのぼるさんのOK後'
             if dependencies:detail+=' / 外部接続は未検証: '+' / '.join(dependencies)
         execute('DELETE FROM agent_settings WHERE key=?',('autoqa_plan_retry:'+name+':'+digest,))
-    except AutoQAEnvironmentError as exc:detail=str(exc);stage='検証環境の準備待ち'
+    except AutoQAEnvironmentError as exc:detail=phase+': '+str(exc);stage='検証環境の準備待ち'
     except AutoQAPlanError as exc:
         retry_key='autoqa_plan_retry:'+name+':'+digest
         rows=query('SELECT value FROM agent_settings WHERE key=?',(retry_key,))
@@ -1992,14 +2002,15 @@ def automated_product_qa(job,name,page,cfg):
         except (ValueError,TypeError,AttributeError):retries=0
         retries+=1
         execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',(retry_key,json.dumps({'count':retries,'updated':now()})))
-        detail=str(exc)
+        detail=phase+': '+str(exc)
         if retries>=2:
             detail='同じ版で検証計画の再作成を2回行いました。次の運転で製品側の改善に戻します: '+detail
             stage='自動検証で要修正'
         else:stage='自動検証の再試行待ち'
-    except (urllib.error.URLError,TimeoutError,ConnectionError,OSError) as exc:detail=type(exc).__name__+': '+str(exc)[:1600];stage='検証環境の準備待ち'
+    except (urllib.error.URLError,TimeoutError,ConnectionError,OSError) as exc:detail=phase+' / '+type(exc).__name__+': '+str(exc)[:1600];stage='検証環境の準備待ち'
     except Exception as exc:detail=type(exc).__name__+': '+str(exc)[:1600]
     if report['passed']:report['owner_decision_material']=owner_decision_material(name,report)
+    report['failed_step']=None if report['passed'] else phase
     report['details']=detail;report_path=directory/'report.json';write_framework_json(report_path,report)
     if report['passed']:
         checks={'audience_instructions':'初期画面の対象者・使い方の引用と画像判定を照合: '+str(report['visual']['audience']),
