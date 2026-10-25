@@ -1700,6 +1700,11 @@ def structured_interface_from_html(page):
 def structured_qa_value(field,case_index,operation,capabilities,name):
     """Stable, realistic test data for the rendered interface's declared field roles."""
     role=field['role'];kind=field['type'];suffix=('A','B','C','D')[case_index%4]
+    if operation=='workday' and role=='date':
+        from datetime import date
+        return date.today().isoformat()
+    if operation=='workday' and role=='duration':return '120' if case_index%2==0 else '240'
+    if operation=='workday' and role=='value':return '90' if case_index%2==0 else '400'
     if kind=='select':
         options=field.get('options',[])
         if not options:return ''
@@ -1745,6 +1750,13 @@ def structured_qa_plan(name,page,spec,ui,quotes):
     if not any(f.get('role') in ('title','question') and f.get('required') for f in fields):
         raise AutoQAPlanError('実操作検査に使う必須の識別欄がありません')
     def row_values(index):return {f['id']:structured_qa_value(f,index,operation,capabilities,name) for f in fields}
+    def workday_setup(index):
+        if operation!='workday':return []
+        date_field=next((f for f in fields if f.get('role')=='date'),None)
+        if not date_field:raise AutoQAPlanError('在宅ワーク検査に対象日欄がありません')
+        return [dict(op='fill',selector='#'+date_field['id'],value=row_values(index)[date_field['id']]),
+            dict(op='fill',selector='#workdayStart',value='09:00'),dict(op='fill',selector='#workdayEnd',value='17:00'),
+            dict(op='fill',selector='#workdayBreak',value='60'),dict(op='click',selector='#saveWorkday')]
     def enter(index,data=None):
         result=[]
         data=data or row_values(index)
@@ -1770,6 +1782,10 @@ def structured_qa_plan(name,page,spec,ui,quotes):
         if op=='accounting':
             a,d=role('amount'),role('direction');net=sum((float(r.get(a) or 0))*(1 if r.get(d)=='収入' else -1) for r in rows)
             return '¥'+format(round(net),',')
+        if op=='workday':
+            d,a=role('date'),role('value');today=datetime.now().date().isoformat()
+            selected=[r for r in rows if r.get(d)==today];spent=sum(float(r.get(a) or 0) for r in selected)
+            return f'{len(selected)}件 / '+('稼働枠を超過' if spent>420 else '稼働枠内')
         if op=='returns':
             s,d=role('status'),role('date');done=('返金済み','対象外');today=datetime.now().date().isoformat()
             opened=sum(r.get(s) not in done for r in rows);late=sum(r.get(s) not in done and r.get(d) and r[d]<today for r in rows)
@@ -1806,11 +1822,13 @@ def structured_qa_plan(name,page,spec,ui,quotes):
         return summary(rowset)
     rows=[row_values(i) for i in range(3)]
     all_acceptance=acceptance
-    workflow_steps=enter(0)+query_steps(0)
-    workflow_checks=[dict(op='count',selector='#recordCount',value=1),dict(op='text_equals',selector=result_selector,value=operation_result(0,rows[:1]))]
+    workflow_steps=workday_setup(0)+enter(0)+query_steps(0)
+    workflow_checks=[dict(op='text_equals',selector='#recordCount',value='1'),dict(op='text_equals',selector=result_selector,value=operation_result(0,rows[:1]))]
+    if operation=='workday':workflow_checks.append(dict(op='text_contains',selector='#workdayTotals',value='7時間00分'))
     if 'guided_session' in capabilities:workflow_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
-    variant_steps=enter(1)+query_steps(1)
-    variant_checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))]
+    variant_steps=workday_setup(1)+enter(1)+query_steps(1)
+    variant_checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))]
+    if operation=='workday':variant_checks.append(dict(op='text_contains',selector='#workdayTotals',value='超過 0時間10分'))
     if 'guided_session' in capabilities:variant_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
     if operation=='meeting' or 'schedule_conflict' in capabilities:
         date_f=next((f for f in fields if f['role']=='date'),None);time_f=next((f for f in fields if f['role']=='time'),None);duration_f=next((f for f in fields if f['role']=='duration'),None)
@@ -1824,17 +1842,17 @@ def structured_qa_plan(name,page,spec,ui,quotes):
     scenarios=[
         dict(kind='workflow',steps=workflow_steps,checks=workflow_checks,acceptance=all_acceptance,rationale='画面の操作契約に従い、最初の実データが専用結果へ反映されることを確認'),
         dict(kind='variant',steps=variant_steps,checks=variant_checks,acceptance=all_acceptance,rationale='入力を変え、専用処理の結果が変わることを確認'),
-        dict(kind='reload',steps=[dict(op='reload')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='再読込後も登録内容と結果が保持されることを確認'),
-        dict(kind='roundtrip',steps=[dict(op='download_csv',selector='#downloadCsv',contains=csv_contains),dict(op='download_json',selector='#downloadJson')]+enter(2)+[dict(op='cancel_restore',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='CSV値・JSON実バックアップ・復元のキャンセルと確定を確認'),
+        dict(kind='reload',steps=[dict(op='reload')],checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='再読込後も登録内容と結果が保持されることを確認'),
+        dict(kind='roundtrip',steps=[dict(op='download_csv',selector='#downloadCsv',contains=csv_contains),dict(op='download_json',selector='#downloadJson')]+enter(2)+[dict(op='cancel_restore',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]')],checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='CSV値・JSON実バックアップ・復元のキャンセルと確定を確認'),
     ]
     required=next(f for f in fields if f.get('required') and f.get('role') in ('title','question'))
-    scenarios.append(dict(kind='invalid',steps=[dict(op='restore_invalid',selector='#restoreFile'),dict(op='fill',selector='#'+required['id'],value=''),dict(op='click',selector='#saveRecord')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='invalid',selector='#'+required['id'])],acceptance=all_acceptance,rationale='壊れたバックアップと必須欄の誤入力で既存データが変わらないことを確認'))
+    scenarios.append(dict(kind='invalid',steps=[dict(op='restore_invalid',selector='#restoreFile'),dict(op='fill',selector='#'+required['id'],value=''),dict(op='click',selector='#saveRecord')],checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='invalid',selector='#'+required['id'])],acceptance=all_acceptance,rationale='壊れたバックアップと必須欄の誤入力で既存データが変わらないことを確認'))
     feature_cases=[]
     for index in acceptance:
         for case in (0,1):
             data_index=(case+index)%2
-            steps=enter(data_index)+query_steps(data_index)
-            checks=[dict(op='count',selector='#recordCount',value=1),dict(op='text_equals',selector=result_selector,value=operation_result(data_index,rows[data_index:data_index+1]))]
+            steps=workday_setup(data_index)+enter(data_index)+query_steps(data_index)
+            checks=[dict(op='text_equals',selector='#recordCount',value='1'),dict(op='text_equals',selector=result_selector,value=operation_result(data_index,rows[data_index:data_index+1]))]
             if 'guided_session' in capabilities:checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
             feature_cases.append(dict(acceptance_index=index,case_index=case,steps=steps,checks=checks,rationale='完成条件「'+str(spec['acceptance'][index])[:100]+'」に対応する用途別操作を入力差分付きで検証'))
     plan=dict(result_selector=result_selector,scenarios=scenarios,feature_cases=feature_cases,audience_quotes=quotes[:2])
@@ -1982,7 +2000,7 @@ def execute_browser_qa(name,page_source,plan,directory):
                         elif op=='check':loc.set_checked(bool(step.get('value',True)))
                         elif op=='click':loc.click()
                         elif op=='cancel_restore':
-                            if not loc.is_visible():raise ValueError('復元のキャンセル操作が利用できません')
+                            # Arm cancellation before restore_file selects the backup and triggers the native confirm dialog.
                             cancel_next_dialog[0]=True;last_dialog_dismissed[0]=False;restored=False
                         elif op=='download_csv':
                             with page.expect_download() as download:loc.click()
