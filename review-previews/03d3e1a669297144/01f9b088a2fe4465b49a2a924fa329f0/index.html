@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_357b11b9a689a243dc802461:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>健康管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; }
+        label { display: block; margin-top: 10px; }
+        input, textarea { width: 100%; padding: 10px; margin-top: 5px; }
+        button { width: 100%; padding: 10px; margin-top: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <div class="container">
+        <h1>健康管理アプリ</h1>
+        <form id="healthForm">
+            <label for="age">年齢</label>
+            <input type="number" id="age" name="age" required>
+            <label for="weight">体重 (kg)</label>
+            <input type="number" id="weight" name="weight" required>
+            <label for="height">身長 (cm)</label>
+            <input type="number" id="height" name="height" required>
+            <button type="button" onclick="generatePlan()">健康計画生成</button>
+        </form>
+        <div id="result" class="result"></div>
+        <button id="saveData">データ保存</button>
+        <button id="exportCsv">CSV出力</button>
+    </div>
+
+    <script>
+        function generatePlan() {
+            const age = document.getElementById('age').value;
+            const weight = document.getElementById('weight').value;
+            const height = document.getElementById('height').value;
+            const result = document.getElementById('result');
+
+            // 健康計画生成の例
+            const plan = `年齢: ${age}歳, 体重: ${weight}kg, 身長: ${height}cm`;
+            result.innerHTML = plan;
+        }
+
+        function saveData() {
+            const data = {
+                age: document.getElementById('age').value,
+                weight: document.getElementById('weight').value,
+                height: document.getElementById('height').value
+            };
+            localStorage.setItem('healthData', JSON.stringify(data));
+            alert('データが保存されました。');
+        }
+
+        function exportCsv() {
+            const data = JSON.parse(localStorage.getItem('healthData'));
+            if (!data) {
+                alert('保存されたデータがありません。');
+                return;
+            }
+            const csvContent = `年齢,体重,身長\n${data.age},${data.weight},${data.height}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'health_data.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>
