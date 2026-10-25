@@ -1828,7 +1828,7 @@ def structured_qa_plan(name,page,spec,ui,quotes):
     if 'guided_session' in capabilities:workflow_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
     variant_steps=workday_setup(1)+enter(1)+query_steps(1)
     variant_checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))]
-    if operation=='workday':variant_checks.append(dict(op='text_contains',selector='#workdayTotals',value='超過 0時間10分'))
+    if operation=='workday':variant_checks.append(dict(op='text_contains',selector='#workdayTotals',value='超過 1時間10分'))
     if 'guided_session' in capabilities:variant_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
     if operation=='meeting' or 'schedule_conflict' in capabilities:
         date_f=next((f for f in fields if f['role']=='date'),None);time_f=next((f for f in fields if f['role']=='time'),None);duration_f=next((f for f in fields if f['role']=='duration'),None)
