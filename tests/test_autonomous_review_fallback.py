@@ -36,14 +36,14 @@ class AutonomousReviewFallbackTests(unittest.TestCase):
                 "status": "本文取得",
                 "checked_at": app.now(),
                 "content_sha": "a" * 64,
-                "text": "Clockify features. Track time, organize projects, monitor tasks and export detailed reports for teams and individuals.",
+                "text": "Clockify features. Track time, organize projects, monitor tasks and export detailed reports for teams and individuals. Teams can review work patterns and produce reports to support time and project management.",
             },
             {
                 "url": "https://toggl.com/features",
                 "status": "本文取得",
                 "checked_at": app.now(),
                 "content_sha": "b" * 64,
-                "text": "Toggl features include time tracking, capacity planning, project reporting and workload visibility for teams.",
+                "text": "Toggl features include time tracking, capacity planning, project reporting and workload visibility for teams. These official product details are suitable for comparing time entry, reporting, and work planning alternatives.",
             },
         ]
         brief = app.deterministic_competitive_brief(self.name, refs)
@@ -95,7 +95,7 @@ class AutonomousReviewFallbackTests(unittest.TestCase):
         self.assertEqual(visual["review_mode"], "programmatic_browser_metrics")
         for key in ("audience", "design", "readability", "mobile", "usefulness"):
             self.assertEqual(visual[key]["score"], 4)
-        self.assertIn("主観評価を保証しない", visual["limitations"])
+        self.assertIn("主観的な魅力", visual["limitations"])
 
         browser["layouts"][2]["overflow"] = True
         browser["scenarios"].pop()
