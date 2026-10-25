@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_b81e32da590721f5d32fba7c:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会議スケジューリング助手</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        .container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 20px; }
+        header { background-color: #f8f9fa; padding: 20px; text-align: center; }
+        .input-section { margin-top: 20px; }
+        .input-section label { display: block; margin-bottom: 10px; }
+        .input-section input { width: 100%; padding: 10px; margin-bottom: 20px; }
+        .result-section { margin-top: 20px; }
+        .result-section p { margin: 0; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <div class="container">
+        <header>
+            <h1>会議スケジューリング助手</h1>
+        </header>
+        <div id="input-section" class="input-section">
+            <label for="meeting-title">会議のタイトル:</label>
+            <input type="text" id="meeting-title" required>
+            <label for="participants">参加者:</label>
+            <input type="text" id="participants" required>
+            <button onclick="handleInput()">入力</button>
+        </div>
+        <div id="result-section" class="result-section" style="display: none;">
+            <p>提案されたスケジュール:</p>
+            <p id="suggested-schedule"></p>
+            <button onclick="handleSave()">保存</button>
+            <button onclick="handleShare()">共有</button>
+        </div>
+        <div id="footer" class="footer">
+            <p>中小企業の管理者やチームリーダーが会議スケジューリングの時間を大幅に短縮し、業務効率を向上させる。</p>
+        </div>
+    </div>
+
+    <script>
+        function handleInput() {
+            const meetingTitle = document.getElementById('meeting-title').value;
+            const participants = document.getElementById('participants').value;
+            document.getElementById('suggested-schedule').innerText = `提案されたスケジュール: ${meetingTitle} (${participants})`;
+            document.getElementById('result-section').style.display = 'block';
+        }
+
+        function handleSave() {
+            localStorage.setItem('suggested-schedule', document.getElementById('suggested-schedule').innerText);
+            alert('保存しました。');
+        }
+
+        function handleShare() {
+            const schedule = document.getElementById('suggested-schedule').innerText;
+            alert(`共有: ${schedule}`);
+        }
+
+        // 初期表示
+        if (localStorage.getItem('suggested-schedule')) {
+            document.getElementById('suggested-schedule').innerText = localStorage.getItem('suggested-schedule');
+            document.getElementById('result-section').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
