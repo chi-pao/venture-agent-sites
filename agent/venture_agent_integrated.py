@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.39'
+APP_VERSION='2026.10.25.40'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1132,7 +1132,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     return item
 
 
-IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-2'
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-3'
 
 
 def get_implementation_plan(name):
@@ -1363,21 +1363,35 @@ def qa_json(text):
 
 
 def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
-    """Feed actual validation failures back; bound repair and never invent missing content."""
+    """Feed validation errors back; fall back from rejected JSON Schema to JSON mode."""
     structured_cfg=dict(cfg,_json_response=schema if schema is not None else True)
     base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
-    request=base_prompt;limit=3 if validator else 2
-    for attempt in range(limit):
+    request=base_prompt;limit=3 if validator else 2;schema_fallback=False
+    # Some Ollama/model combinations reject a valid but large JSON Schema with HTTP 400.
+    # Retry in JSON mode while retaining the required keys and Python-side validation.
+    total_attempts=limit+(1 if schema is not None else 0)
+    for attempt in range(total_attempts):
         value=None
         try:
             value=qa_json(ai(request,structured_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
             return validator(value) if validator else value
+        except urllib.error.HTTPError as exc:
+            try:body=exc.read(2000).decode('utf-8','replace').strip()
+            except Exception:body=''
+            if schema is not None and exc.code==400 and not schema_fallback:
+                schema_fallback=True
+                structured_cfg=dict(cfg,_json_response='json')
+                base_prompt=prompt+'\nJSON Schema形式を利用できない環境のため、同じ必須キーと制約を守ったJSONオブジェクト1件だけを返してください。'
+                request=base_prompt
+                continue
+            detail=(' / '+body[:700]) if body else ''
+            raise AutoQAPlanError('AI設計API HTTP '+str(exc.code)+detail) from exc
         except ValueError as exc:
-            if attempt+1==limit:raise AutoQAPlanError('AI設計・回答の修正を'+str(limit)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
+            if attempt+1==total_attempts:
+                raise AutoQAPlanError('AI設計・回答の修正を'+str(total_attempts)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
             request=(base_prompt+'\n前回の検査で次の不足が見つかりました。要件を減らさず具体的に修正してください。\n検査結果: '+str(exc)[:2000]
                 +'\n前回のJSON: '+(json.dumps(value,ensure_ascii=False)[:10000] if value is not None else '回答形式が不正で読み取り不可')
                 +'\n説明・思考過程・Markdown・2つ目の候補は出さず、必要なキーを全て含む完成したJSONオブジェクト1件だけを返してください。')
-
 
 
 def qa_setup_command(job,args):
