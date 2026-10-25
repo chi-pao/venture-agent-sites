@@ -550,6 +550,7 @@ def ensure_product_interface(name,cfg):
         +'\n制作設計:'+json.dumps(get_product_blueprint(name) or {},ensure_ascii=False)[:3500])
     try:
         item=ai_json(prompt,coding_config(cfg,task='new'),1800,schema=PRODUCT_INTERFACE_SCHEMA,
+            max_attempts=1,request_timeout=int(cfg.get('planning_request_timeout',120)),
             validator=lambda value:validate_product_interface(value,name,spec))
         item=validate_product_interface(item,name,spec)
     except Exception as exc:
@@ -656,25 +657,18 @@ $('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[
 
 
 def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
-    """Use validated components when free-form code fails; full product QA still gates readiness."""
+    """Use validated components and run the same full product QA as generated code."""
     definition=ensure_product_interface(name,cfg)
     page=apply_generated_layout_safety(render_product_interface(name,definition,get_product_spec(name) or {}))
     errors=validate_html(page,name)
     if errors:raise ValueError('構造化部品のコード検査: '+' / '.join(errors))
-    try:
-        ensure_autoqa_environment(job,cfg,vision=False)
-        passed,detail=browser_test(page)
-    except Exception as exc:
-        raise AutoQAEnvironmentError('構造化部品のブラウザ検証環境を準備できません: '+str(exc)[:400]) from exc
-    if not passed:raise ValueError('構造化部品の操作検査: '+detail)
-    if partial:
-        layout_ok,layout_detail=review_connected_layout(job,name,page,cfg)
-        if not layout_ok:raise ValueError('構造化部品の画面検査: '+layout_detail)
-    validation=('構造化部品の入力・保存・検索・CSV/JSON・簡易操作検査合格。中心業務の完成条件は続けて実操作検査します。'
-        +(' 接続未完了・発信不可。' if partial else ' 製品QA・他社比較・利用価値の最終確認は未完了。'))
-    save(job,name,asset_kind,page,'html',validation)
-    event(job,name+': 自由生成の失敗後、構造化部品で操作可能な候補を作成。完成条件QAは続行中')
-    return page,validation,not partial
+    # A cheap smoke test is insufficient for the user's review queue. Use the
+    # full desktop/mobile, workflow, persistence, export/restore and visual gate.
+    passed,detail,stage=automated_product_qa(job,name,page,cfg)
+    validation='構造化部品 / '+stage+' / '+detail
+    if not passed:event(job,name+': 構造化部品は生成しましたが、実操作・画面・比較条件の全検査を通過していません: '+detail[:220])
+    return page,validation,bool(passed and stage=='のぼるさん確認待ち')
+
 
 
 def open_workflow_rebuild(job,name,cfg,plan,asset_kind,partial,unsupported_reason):
@@ -696,7 +690,9 @@ def open_workflow_rebuild(job,name,cfg,plan,asset_kind,partial,unsupported_reaso
     page='';errors=[];verdict=''
     try:
         event(job,name+': 登録済みテンプレートにない用途の専用機能を、受入条件から個別生成します')
-        page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
+        generation_cfg=coding_config(cfg,task='new')
+        generation_cfg['_request_timeout']=max(60,int(cfg.get('generation_request_timeout',360)))
+        page=extract_html(ai(prompt,generation_cfg,min(6000,int(cfg.get('generation_token_budget',5000)))))
         page=apply_generated_layout_safety(remove_unconnected_ai_brand_claim(page,name,ensure_product_spec(name,cfg,plan)))
         errors=validate_html(page,name)+preserve_checkpoint_features('',page)
         if errors:raise AutoQAPlanError('専用機能の静的検査: '+' / '.join(errors)[:900])
@@ -850,7 +846,8 @@ def ensure_product_spec(name,cfg,plan=''):
         'delivery_mode（browser_local または connected）、dependencies（必要なAPI・サーバー等の配列。不要なら空）。'
         '\n事業:'+json.dumps(item,ensure_ascii=False)[:3500]+'\n計画:'+plan[:2500])
     try:
-        designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,validator=validate_product_spec)
+        designed=ai_json(prompt,cfg,3000,schema=PRODUCT_SPEC_SCHEMA,max_attempts=1,
+        request_timeout=int(cfg.get('planning_request_timeout',120)),validator=validate_product_spec)
         return store_product_spec(name,designed)
     except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError, ValueError, TypeError) as exc:
         designed=product_spec_from_business_rationale(name,item,str(exc))
@@ -1191,7 +1188,9 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
         '未実装・未検証を実績とせず、使う理由は検証する仮説として書く。単なる説明表示や入力の写しだけでは不可。'
         +research_instruction+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:6500]+'\n設計根拠:'+json.dumps(brief,ensure_ascii=False)[:6500])
     try:
-        item=ai_json(prompt,cfg,3200,validator=lambda value:validate_product_blueprint(value,spec,brief))
+        item=ai_json(prompt,cfg,3200,max_attempts=1,
+            request_timeout=int(cfg.get('planning_request_timeout',120)),
+            validator=lambda value:validate_product_blueprint(value,spec,brief))
         item['design_method']='ai_structured_design'
     except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError, ValueError, TypeError) as exc:
         item=blueprint_from_product_requirements(name,spec,brief,str(exc))
@@ -1346,7 +1345,8 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
         'screen_links:[{screen,purpose,next_action}]。'
         '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500])
     try:
-        item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,
+        item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,max_attempts=1,
+            request_timeout=int(cfg.get('planning_request_timeout',120)),
             validator=lambda value:validate_implementation_plan(value,spec,blueprint))
     except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError) as exc:
         # A slow/unavailable model is a planning failure, not a reason to block
@@ -1496,25 +1496,27 @@ def qa_json(text):
     return value
 
 
-def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None):
+def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None,max_attempts=None,request_timeout=None):
     """Feed validation errors back; fall back from rejected JSON Schema to JSON mode."""
     structured_cfg=dict(cfg,_json_response=schema if schema is not None else True)
     base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
-    request=base_prompt;limit=3 if validator else 2;schema_fallback=False
+    request=base_prompt;limit=(max(1,int(max_attempts)) if max_attempts is not None else (3 if validator else 2));schema_fallback=False
+    request_cfg=dict(structured_cfg)
+    if request_timeout is not None:request_cfg['_request_timeout']=max(1,int(request_timeout))
     # Some Ollama/model combinations reject a valid but large JSON Schema with HTTP 400.
     # Retry in JSON mode while retaining the required keys and Python-side validation.
     total_attempts=limit+(1 if schema is not None else 0)
     for attempt in range(total_attempts):
         value=None
         try:
-            value=qa_json(ai(request,structured_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
+            value=qa_json(ai(request,request_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
             return validator(value) if validator else value
         except urllib.error.HTTPError as exc:
             try:body=exc.read(2000).decode('utf-8','replace').strip()
             except Exception:body=''
             if schema is not None and exc.code==400 and not schema_fallback:
                 schema_fallback=True
-                structured_cfg=dict(cfg,_json_response='json')
+                request_cfg=dict(request_cfg,_json_response='json')
                 base_prompt=prompt+'\nJSON Schema形式を利用できない環境のため、同じ必須キーと制約を守ったJSONオブジェクト1件だけを返してください。'
                 request=base_prompt
                 continue
@@ -3284,7 +3286,7 @@ def local_ai_request(prompt,cfg,tokens=2200):
     payload=json.dumps(body).encode('utf-8')
     req=urllib.request.Request(cfg['url'].rstrip('/')+'/api/generate',data=payload,
                                headers={'Content-Type':'application/json'})
-    with urllib.request.urlopen(req,timeout=600) as r: data=json.load(r)
+    with urllib.request.urlopen(req,timeout=max(1,int(cfg.get('_request_timeout',600)))) as r: data=json.load(r)
     if data.get('error'): raise RuntimeError(data['error'])
     result=data.get('response','').strip()
     if not result: raise RuntimeError('AIから空の応答')
@@ -4648,11 +4650,27 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         action_record(name,'製品開発','接続・実装待ち',detail)
         return '',detail,False
 
+    # Start with a known, task-specific implementation for registered workflows.
+    # Previously projects spent most of their budget on monolithic HTML before
+    # trying these validated components as a last resort.
+    structured_seed_attempted=False
+    if not previous_page and product_operation(name,release_spec) in PRODUCT_OPERATION_REQUIREMENTS:
+        structured_seed_attempted=True
+        event(job,name+': 用途別の検証済み機能部品から先に組み立て、完成条件の全QAを実施します')
+        try:
+            seed_page,seed_detail,seed_ready=structured_product_fallback(
+                job,name,cfg,plan,asset_kind,partial)
+            if seed_ready:return seed_page,seed_detail,True
+            event(job,name+': 用途別の初期版は確認待ちに進めず、不足を記録して専用改善へ進みます')
+        except (ProductPatternUnsupportedError,AutoQAEnvironmentError,AutoQAPlanError,
+                ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
+            event(job,name+': 用途別の初期版をQAに通せませんでした。HTML生成・検証を続行します: '+str(exc)[:260])
+
     configured_revisions=max(1,int(cfg['max_revisions']))
     # Bound work by distinct recovery routes. A candidate gets the configured
     # product revisions plus one full rebuild, capped at four total attempts;
     # repeated free-form generations are not a substitute for a working workflow.
-    attempt_limit=min(configured_revisions+1,4)
+    attempt_limit=min(configured_revisions+1,2)
     force_full_generation_reason=''
     recovery_count=min(4,int(repair_state.get('recovery_stage',0) or 0))
     for n in range(1, attempt_limit + 1):
@@ -4738,7 +4756,9 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 continue
         else:
             prompt=requirements+'\n競合比較は内部の判断資料です。アプリに他社比較ボタンや架空の比較結果を作らない。'
-            page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
+            generation_cfg=coding_config(cfg,task='new')
+        generation_cfg['_request_timeout']=max(60,int(cfg.get('generation_request_timeout',360)))
+        page=extract_html(ai(prompt,generation_cfg,min(6000,int(cfg.get('generation_token_budget',5000)))))
         sanitized_page=remove_unconnected_ai_brand_claim(page,name,release_spec)
         if sanitized_page!=page:event(job,name+': AI未接続の企画名表記を画面用名称から外し、未接続機能を約束しない表示へ調整')
         page=apply_generated_layout_safety(sanitized_page)
