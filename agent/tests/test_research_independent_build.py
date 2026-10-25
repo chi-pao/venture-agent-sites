@@ -51,7 +51,6 @@ class ResearchIndependentBuildTests(unittest.TestCase):
         self.assertIn("公式資料", result["research_gap"])
         self.assertFalse(app.competitive_design_ready(internal_bundle))
         self.assertFalse(app.production_acceptance(name, "0" * 64))
-        self.assertIn("API", result["visual_direction"]) if False else None
 
     def test_quality_gate_still_requires_competitive_sources(self):
         name = "比較証拠が必要な完成判定"
