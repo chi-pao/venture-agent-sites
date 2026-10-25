@@ -1649,8 +1649,6 @@ def make_qa_plan(name,page,cfg):
 
 
 QA_LAYOUT_SCRIPT=r'''() => {
-
-QA_LAYOUT_SCRIPT=r'''() => {
  const show=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'};
  const controls=[...document.querySelectorAll('button,input:not([type=hidden]):not([type=file]),select,textarea')].filter(show);
  const bad=controls.filter(e=>{const r=e.getBoundingClientRect();return !['checkbox','radio'].includes(e.type)&&(r.width<32||r.height<36)}).map(e=>e.id||e.textContent.slice(0,30));
