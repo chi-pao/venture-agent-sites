@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.35'
+APP_VERSION='2026.10.25.36'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -662,6 +662,52 @@ def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
     event(job,name+': 自由生成の失敗後、構造化部品で操作可能な候補を作成。完成条件QAは続行中')
     return page,validation,not partial
 
+
+def open_workflow_rebuild(job,name,cfg,plan,asset_kind,partial,unsupported_reason):
+    """Create a project-specific workflow when no registered fallback pattern fits."""
+    spec=get_product_spec(name) or {};blueprint=get_product_blueprint(name) or {};implementation_plan=get_implementation_plan(name) or {}
+    prompt=('固定テンプレート・登録済みパターンへの当てはめは禁止。新しい用途の専用Webアプリを、受入条件から個別に再設計して作る。'
+        'あなたは実装担当。事業に必要な中心作業を機能ごとに実装し、汎用記録一覧だけで代用しない。'
+        'API未接続の機能も、明記したサンプルデータで利用者が選択・処理・結果確認・保存・出力まで試せるようにする。実データ取得をしたと偽らない。'
+        '各受入条件を画面の操作へ対応づけ、初めての利用者にも対象・価値・次の操作が分かる独自デザインを作る。'
+        '入力検証、保存と再読込、CSV、JSONバックアップと復元、エラー回復、スマホ390pxとPC1280px対応を行う。'
+        'AIやAPIの本物の接続がない機能を接続済みと表示しない。未接続はアプリ体験を止める理由にせずサンプルモードで動かす。'
+        '\n新規用途・構造化テンプレートに当てはまらなかった理由:'+str(unsupported_reason)[:900]
+        +'\n製品要件:'+json.dumps(spec,ensure_ascii=False,separators=(',',':'))
+        +'\n比較調査:'+json.dumps(competitive_context(name),ensure_ascii=False,separators=(',',':'))[:5000]
+        +'\n画面設計:'+json.dumps(blueprint,ensure_ascii=False,separators=(',',':'))
+        +'\n機能別実装・テスト契約:'+json.dumps(implementation_plan,ensure_ascii=False,separators=(',',':'))
+        +'\n事業計画:'+str(plan)[:2500]
+        +'\n必ずDOCTYPEから閉じHTMLタグまでの単一HTML/CSS/JavaScriptだけを返す。説明文、Markdown、TODO、仮ボタン、架空の実績は禁止。')
+    page='';errors=[];verdict=''
+    try:
+        event(job,name+': 登録済みテンプレートにない用途の専用機能を、受入条件から個別生成します')
+        page=extract_html(ai(prompt,coding_config(cfg,task='new'),9000))
+        page=apply_generated_layout_safety(remove_unconnected_ai_brand_claim(page,name,ensure_product_spec(name,cfg,plan)))
+        errors=validate_html(page,name)+preserve_checkpoint_features('',page)
+        if errors:raise AutoQAPlanError('専用機能の静的検査: '+' / '.join(errors)[:900])
+        ensure_autoqa_environment(job,cfg,vision=False)
+        passed,browser_detail=browser_test(page)
+        if not passed:raise AutoQAPlanError('専用機能の実ブラウザ検査: '+browser_detail[:1000])
+        if partial:
+            layout_ok,layout_detail=review_connected_layout(job,name,page,cfg)
+            if not layout_ok:raise AutoQAPlanError('専用機能の画面品質検査: '+layout_detail[:1000])
+            verdict='個別生成した画面・独立機能の検査合格。各完成条件の実操作QAは次工程で確認 / API接続は未実施'
+        else:
+            quality_ok,quality_detail=review_generated_product(name,page,'',cfg)
+            if not quality_ok:raise AutoQAPlanError('専用機能の品質検査: '+quality_detail[:1000])
+            verdict='個別生成した画面・独立機能・品質検査に合格。各完成条件の実操作QAは次工程で確認'
+        save(job,name,asset_kind,page,'html',verdict)
+        if not partial:
+            checkpoint_path=save(job,name,'制作検査通過HTML',page,'html',verdict+' / 製品QA・他社比較・利用価値の最終確認は未完了')
+            execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('product_checkpoint:'+name,json.dumps(dict(path=str(checkpoint_path),sha=hashlib.sha256(page.encode()).hexdigest(),scope_sha=product_scope_sha(name),checked=now()))))
+        event(job,name+': 用途固有の新規生成を検査通過。続けて各機能の操作・品質を個別確認します')
+        return page,verdict,not partial
+    except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
+        detail='新用途の専用生成・検査を継続: '+str(exc)[:1200]
+        if page:save(job,name,asset_kind,page,'html',detail)
+        event(job,name+': '+detail)
+        return page,detail,False
 
 PRODUCT_PATTERN_PROBES={
     'faq':'FAQ問い合わせ回答管理','survey':'顧客満足度アンケート','compare':'料金比較ツール',
@@ -4476,19 +4522,29 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
                 event(job,name+': 自由生成が検査に通らないため、定義済み入力・保存・出力部品で再構成します')
                 return structured_product_fallback(job,name,cfg,plan,asset_kind,partial)
         except ProductPatternUnsupportedError as exc:
-            detail='用途に合う機能部品の組み合わせが未登録・検証未完了のため、完成候補にはしません: '+str(exc)[:500]
+            event(job,name+': 登録済み部品が用途に合わないため、完成条件から専用フローを新規生成して実操作検査します')
+            rebuilt=open_workflow_rebuild(job,name,cfg,plan,asset_kind,partial,str(exc))
+            if rebuilt[0] and rebuilt[2]:
+                return rebuilt
+            detail='用途別の専用再構成を継続。完成・確認待ちにはしません: '+str(rebuilt[1])[:700]
             previous=query('SELECT value FROM agent_settings WHERE key=?',('product_repair_state:'+name,))
             try:state_row=json.loads(previous[0]['value']) if previous else {}
             except (ValueError,TypeError):state_row={}
             state_row.update(signature=detail[:350],repeat=int(state_row.get('repeat',0))+1,
-                recovery_stage=min(3,int(state_row.get('recovery_stage',0))+1),recovery_kind='component_extension',
+                recovery_stage=min(4,int(state_row.get('recovery_stage',0))+1),recovery_kind='project_specific_rebuild',
                 failure_class=autonomous_recovery_plan(detail,0)['kind'],checked=now())
             execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',
                 ('product_repair_state:'+name,json.dumps(state_row,ensure_ascii=False)))
             event(job,name+': '+detail)
-            return final[0],detail,False
+            return (rebuilt[0] or final[0]),detail,False
         except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,KeyError,OSError,TimeoutError,urllib.error.URLError) as exc:
-            event(job,name+': 構造化部品の再構成も未完了。確認待ちにはしません: '+str(exc)[:700])
+            event(job,name+': 構造化部品が完成条件を満たさないため、用途固有の画面・機能へ切り替えて再検査します')
+            rebuilt=open_workflow_rebuild(job,name,cfg,plan,asset_kind,partial,'構造化部品の操作・検査に失敗: '+str(exc)[:700])
+            if rebuilt[0] and rebuilt[2]:
+                return rebuilt
+            detail='用途固有の再構成・検査を継続。確認待ちにはしません: '+str(rebuilt[1])[:900]
+            event(job,name+': '+detail)
+            return (rebuilt[0] or final[0]),detail,False
     return final if final else ('', '中断', False)
 
 def latest_metrics(name):
