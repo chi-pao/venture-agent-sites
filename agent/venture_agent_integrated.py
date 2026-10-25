@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.41'
+APP_VERSION='2026.10.25.42'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -1132,7 +1132,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     return item
 
 
-IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-4'
+IMPLEMENTATION_PLAN_POLICY='2026-10-25-traceable-feature-plan-5'
 
 
 def get_implementation_plan(name):
@@ -1214,7 +1214,7 @@ def implementation_plan_from_requirements(name,spec,blueprint,reason):
                 action='ケースAと異なる条件で「'+action+'」を実行し、結果を比較する。',
                 expected='入力差分が結果へ反映され、「'+criterion+'」を別ケースでも確認できる。')]
         features.append(dict(acceptance_index=index,
-            name=criterion+'を実現する用途別の中心機能',
+            name='受入条件'+str(index+1)+'「'+criterion+'」を実現する用途別の中心機能',
             user_action=audience+'が「'+task+'」を行い、結果を確認して次の操作へ進む。',
             inputs='「'+task+'」で使う具体値。操作例: '+source_input,
             processing='入力の形式と必須値を検査し、要件「'+criterion+'」と関連する条件「'+supporting+'」に沿って用途固有の処理を行う。',
