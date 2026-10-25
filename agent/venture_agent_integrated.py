@@ -1622,7 +1622,7 @@ def validate_qa_plan(plan,spec):
         a=feature_map.get((i,0),{}).get('steps',[]);b=feature_map.get((i,1),{}).get('steps',[])
         values=lambda steps:[(s.get('op'),s.get('selector'),s.get('value',s.get('label'))) for s in steps if isinstance(s,dict) and s.get('op') in ('fill','select')]
         if not values(a) or values(a)==values(b):raise AutoQAPlanError('完成条件ごとの2つのテストで入力値を変えてください: '+str(i))
-    allowed={'fill','click','select','check','reload','download_json','download_csv','restore_file','restore_invalid','cancel_restore'};coverage=set();base_coverage=set()
+    allowed={'fill','click','select','check','reload','wait','download_json','download_csv','restore_file','restore_invalid','cancel_restore'};coverage=set();base_coverage=set()
     def selector(value):
         return isinstance(value,str) and 1<=len(value)<=180 and not re.search(r'^(?:html|body|\*|xpath=)|>>|javascript:',value,re.I)
     if not selector(plan.get('result_selector')):raise AutoQAPlanError('具体的な処理結果の要素を指定してください')
@@ -1634,7 +1634,8 @@ def validate_qa_plan(plan,spec):
         coverage.update(covers)
         if scenario['kind']!='feature':base_coverage.update(covers)
         for step in steps:
-            if step.get('op') not in allowed or (step['op']!='reload' and not selector(step.get('selector'))):raise AutoQAPlanError('許可されていない操作・要素')
+            if step.get('op') not in allowed or (step['op'] not in ('reload','wait') and not selector(step.get('selector'))):raise AutoQAPlanError('許可されていない操作・要素')
+            if step['op']=='wait' and (type(step.get('value')) is not int or not 100<=step['value']<=10000):raise AutoQAPlanError('待機時間の指定が不正です')
             if 'nth' in step and (type(step['nth']) is not int or not 0<=step['nth']<=30):raise AutoQAPlanError('要素番号が不正')
             if step['op']=='download_csv' and (not isinstance(step.get('contains'),list) or not 2<=len(step['contains'])<=8 or any(not isinstance(v,str) or not 1<=len(v)<=100 for v in step['contains'])):raise AutoQAPlanError('CSVは実データの具体的な値を2件以上照合してください')
             if len(str(step.get('value','')))>300:raise AutoQAPlanError('入力値が長すぎます')
@@ -1684,17 +1685,177 @@ def visible_audience_copy(page):
     return parser.blocks[:8]
 
 
+def structured_interface_from_html(page):
+    """Read the JSON contract emitted by render_product_interface, if present."""
+    match=re.search(r'const APP=(.*?)\s*;\s*const STORE=',page,re.S)
+    if not match:return None
+    try:value=json.loads(match.group(1))
+    except (ValueError,TypeError):return None
+    if not isinstance(value,dict) or not isinstance(value.get('fields'),list):return None
+    if value.get('operation') not in PRODUCT_OPERATION_REQUIREMENTS:return None
+    if not all(isinstance(f,dict) and isinstance(f.get('id'),str) and isinstance(f.get('role'),str) for f in value['fields']):return None
+    return value
+
+
+def structured_qa_value(field,case_index,operation,capabilities,name):
+    """Stable, realistic test data for the rendered interface's declared field roles."""
+    role=field['role'];kind=field['type'];suffix=('A','B','C','D')[case_index%4]
+    if kind=='select':
+        options=field.get('options',[])
+        if not options:return ''
+        if role=='status':
+            wanted={
+                'attendance':['出席','欠席','遅刻','早退'],
+                'task_board':['未着手','完了','進行中'],
+                'returns':['受付','受付','返金済み','対象外'],
+            }.get(operation,[])
+            value=wanted[case_index%len(wanted)] if wanted else options[min(case_index,len(options)-1)]
+            return value if value in options else options[min(case_index,len(options)-1)]
+        if role=='direction' and operation=='accounting':return ('収入' if case_index%2==0 else '支出') if ('収入' if case_index%2==0 else '支出') in options else options[0]
+        if role=='status' and operation=='accounting':return ('済' if case_index%2==0 else '未') if ('済' if case_index%2==0 else '未') in options else options[0]
+        return options[0]
+    if role in ('title','question'):return ('検証案件' if role=='title' else '検証質問')+suffix
+    if role=='answer':return '検証回答'+suffix
+    if role=='date':
+        from datetime import date
+        delta=(-2 if operation=='returns' and case_index==1 else 3+case_index)
+        return (date.today()+timedelta(days=delta)).isoformat()
+    if role=='time':return '10:00' if case_index%2==0 else '10:15'
+    if role=='duration':return '1' if 'guided_session' in capabilities else ('30' if case_index%2==0 else '45')
+    if role=='rating':return '5' if case_index%2==0 else '3'
+    if role=='amount':return '1200' if case_index%2==0 else '800'
+    if role=='direction':return '収入' if case_index%2==0 else '支出'
+    if role=='value':return '検証例文'+suffix
+    if role=='location':return '検証場所'+suffix
+    if role=='category':return '検証分類'+suffix
+    if role=='notes':return '実操作の検証メモ'+suffix
+    if kind=='number':return '5' if case_index%2==0 else '7'
+    if kind=='date':
+        from datetime import date
+        return (date.today()+timedelta(days=3+case_index)).isoformat()
+    if kind=='time':return '10:00'
+    return '検証入力'+suffix
+
+
+def structured_qa_plan(name,page,spec,ui,quotes):
+    """Compile browser tests from the same validated field/operation contract used to render the app."""
+    fields=ui['fields'];operation=ui['operation'];capabilities=ui.get('capabilities',[])
+    acceptance=list(range(len(spec.get('acceptance',[]))))
+    if not acceptance:raise AutoQAPlanError('画面機能を照合する完成条件がありません')
+    if not any(f.get('role') in ('title','question') and f.get('required') for f in fields):
+        raise AutoQAPlanError('実操作検査に使う必須の識別欄がありません')
+    def row_values(index):return {f['id']:structured_qa_value(f,index,operation,capabilities,name) for f in fields}
+    def enter(index,data=None):
+        result=[]
+        data=data or row_values(index)
+        for f in fields:
+            value=data[f['id']]
+            if f['type']=='select':result.append(dict(op='select',selector='#'+f['id'],value=value))
+            else:result.append(dict(op='fill',selector='#'+f['id'],value=value))
+        result.append(dict(op='click',selector='#saveRecord'))
+        return result
+    def summary(rows):
+        n=len(rows);role=lambda r:next((f['id'] for f in fields if f['role']==r),None)
+        op=operation
+        if op=='faq' or 'faq_search' in capabilities:return str(0)+'件'
+        if op=='survey' or 'rating_summary' in capabilities:
+            vals=[float(r[role('rating')]) for r in rows if role('rating') and r.get(role('rating'))]
+            return (f'{sum(vals)/len(vals):.1f}/5' if vals else '—')
+        if op=='compare' or 'cost_comparison' in capabilities:
+            vals=[float(r.get(role('amount')) or 0) for r in rows]
+            return f'{sum(vals):,.0f}' if vals else '—'
+        if op=='attendance':
+            s=role('status');present=sum(r.get(s) in ('出席','遅刻','早退') for r in rows);absent=sum(r.get(s)=='欠席' for r in rows)
+            return f'{round(present/n*100)}%（出席扱い{present}/{n}、欠席{absent}）' if n else '—'
+        if op=='accounting':
+            a,d=role('amount'),role('direction');net=sum((float(r.get(a) or 0))*(1 if r.get(d)=='収入' else -1) for r in rows)
+            return '¥'+format(round(net),',')
+        if op=='returns':
+            s,d=role('status'),role('date');done=('返金済み','対象外');today=datetime.now().date().isoformat()
+            opened=sum(r.get(s) not in done for r in rows);late=sum(r.get(s) not in done and r.get(d) and r[d]<today for r in rows)
+            return f'{opened}件 / 超過{late}件'
+        if op=='task_board':
+            s,d=role('status'),role('date');today=datetime.now().date().isoformat()
+            opened=sum(r.get(s)!='完了' for r in rows);late=sum(r.get(s)!='完了' and r.get(d) and r[d]<today for r in rows)
+            return f'{opened}件 / 期限超過{late}件'
+        if op=='custom_workflow' and 'case_tracking' in capabilities:
+            s,d,a=role('status'),role('date'),role('amount');done=('完了','解決','返金済み','対応済み')
+            opened=sum(r.get(s) not in done for r in rows);late=sum(r.get(s) not in done and r.get(d) and r[d]<datetime.now().date().isoformat() for r in rows)
+            amount=sum(float(r.get(a) or 0) for r in rows) if a else 0
+            return f'{opened}件 未完了 / {late}件 期限超過 / {amount:,.0f}円'
+        if op=='custom_workflow' and 'quiz_practice' in capabilities:
+            q,a=role('question'),role('answer');return str(sum(bool(r.get(q) and r.get(a)) for r in rows))+'問'
+        if op=='custom_workflow' and 'checklist_progress' in capabilities:
+            s=role('status');done=sum(r.get(s) in ('完了','済み','実施済み') for r in rows)
+            return f'{round(done/n*100)}% 完了' if n else '—'
+        return f'{n}件' if n else '—'
+    def query_steps(index):
+        if operation=='faq' or 'faq_search' in capabilities:
+            question=next(f for f in fields if f['role']=='question')
+            return [dict(op='fill',selector='#faqQuery',value=row_values(index)[question['id']]),dict(op='click',selector='#searchFaq')]
+        if 'quiz_practice' in capabilities:
+            answer=next(f for f in fields if f['role']=='answer')
+            return [dict(op='click',selector='#startQuiz'),dict(op='fill',selector='#quizAnswer',value=row_values(index)[answer['id']]),dict(op='click',selector='#checkQuiz')]
+        if 'guided_session' in capabilities:
+            return [dict(op='click',selector='#startPractice'),dict(op='wait',value=1200),dict(op='click',selector='#pausePractice')]
+        return []
+    result_selector='#faqAnswer' if operation=='faq' or 'faq_search' in capabilities else ('#quizFeedback' if 'quiz_practice' in capabilities else '#summaryValue')
+    def operation_result(index,rowset):
+        if result_selector=='#faqAnswer':return rowset[-1][next(f['id'] for f in fields if f['role']=='answer')]
+        if result_selector=='#quizFeedback':return '正解です。 得点 1 / '+str(len(rowset))
+        return summary(rowset)
+    rows=[row_values(i) for i in range(3)]
+    all_acceptance=acceptance
+    workflow_steps=enter(0)+query_steps(0)
+    workflow_checks=[dict(op='count',selector='#recordCount',value=1),dict(op='text_equals',selector=result_selector,value=operation_result(0,rows[:1]))]
+    if 'guided_session' in capabilities:workflow_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
+    variant_steps=enter(1)+query_steps(1)
+    variant_checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))]
+    if 'guided_session' in capabilities:variant_checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
+    if operation=='meeting' or 'schedule_conflict' in capabilities:
+        date_f=next((f for f in fields if f['role']=='date'),None);time_f=next((f for f in fields if f['role']=='time'),None);duration_f=next((f for f in fields if f['role']=='duration'),None)
+        if date_f and time_f and duration_f:
+            rows[1][date_f['id']]=rows[0][date_f['id']];rows[1][time_f['id']]=rows[0][time_f['id']];rows[1][duration_f['id']]=rows[0][duration_f['id']]
+            variant_steps=enter(1,rows[1])+query_steps(1)
+        variant_checks.append(dict(op='text_contains',selector='#recordRows',value='予定が重複'))
+    primary_id=next(f['id'] for f in fields if f['role'] in ('title','question'))
+    answer_id=next((f['id'] for f in fields if f['role']=='answer'),None)
+    csv_contains=[rows[0][primary_id],rows[0].get(answer_id,rows[0][primary_id]),rows[1][primary_id]]
+    scenarios=[
+        dict(kind='workflow',steps=workflow_steps,checks=workflow_checks,acceptance=all_acceptance,rationale='画面の操作契約に従い、最初の実データが専用結果へ反映されることを確認'),
+        dict(kind='variant',steps=variant_steps,checks=variant_checks,acceptance=all_acceptance,rationale='入力を変え、専用処理の結果が変わることを確認'),
+        dict(kind='reload',steps=[dict(op='reload')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='再読込後も登録内容と結果が保持されることを確認'),
+        dict(kind='roundtrip',steps=[dict(op='download_csv',selector='#downloadCsv',contains=csv_contains),dict(op='download_json',selector='#downloadJson')]+enter(2)+[dict(op='cancel_restore',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]'),dict(op='restore_file',selector='label[for=restoreFile]')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='text_equals',selector=result_selector,value=operation_result(1,rows[:2]))],acceptance=all_acceptance,rationale='CSV値・JSON実バックアップ・復元のキャンセルと確定を確認'),
+    ]
+    required=next(f for f in fields if f.get('required') and f.get('role') in ('title','question'))
+    scenarios.append(dict(kind='invalid',steps=[dict(op='restore_invalid',selector='#restoreFile'),dict(op='fill',selector='#'+required['id'],value=''),dict(op='click',selector='#saveRecord')],checks=[dict(op='count',selector='#recordCount',value=2),dict(op='invalid',selector='#'+required['id'])],acceptance=all_acceptance,rationale='壊れたバックアップと必須欄の誤入力で既存データが変わらないことを確認'))
+    feature_cases=[]
+    for index in acceptance:
+        for case in (0,1):
+            data_index=(case+index)%2
+            steps=enter(data_index)+query_steps(data_index)
+            checks=[dict(op='count',selector='#recordCount',value=1),dict(op='text_equals',selector=result_selector,value=operation_result(data_index,rows[data_index:data_index+1]))]
+            if 'guided_session' in capabilities:checks.append(dict(op='text_contains',selector='#timerDisplay',value='00:'))
+            feature_cases.append(dict(acceptance_index=index,case_index=case,steps=steps,checks=checks,rationale='完成条件「'+str(spec['acceptance'][index])[:100]+'」に対応する用途別操作を入力差分付きで検証'))
+    plan=dict(result_selector=result_selector,scenarios=scenarios,feature_cases=feature_cases,audience_quotes=quotes[:2])
+    return validate_qa_plan(plan,spec)
+
+
+
 def make_qa_plan(name,page,cfg):
     spec=get_product_spec(name)
     audience_quotes=visible_audience_copy(page)
     if len(audience_quotes)<2:
         raise AutoQAPlanError('初回画面に対象者と使い方が分かる説明文を2件以上表示してください。AIが引用を補うのではなく、画面を改善してから実操作検査します')
     build_plan=get_implementation_plan(name) or {}
+    ui=structured_interface_from_html(page)
+    if ui is not None:
+        return structured_qa_plan(name,page,spec,ui,audience_quotes)
     test_contract={f.get('acceptance_index'):dict(name=f.get('name'),prototype_mode=f.get('prototype_mode'),
         prototype_behavior=f.get('prototype_behavior'),connection_boundary=f.get('connection_boundary'),test_cases=f.get('test_cases',[]))
         for f in build_plan.get('features',[]) if isinstance(f,dict) and type(f.get('acceptance_index')) is int}
     markup=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)>','',page,flags=re.S|re.I)
-    operations='操作は {op:fill/click/select/check/reload/download_json/download_csv/restore_file/restore_invalid/cancel_restore,selector:CSS,value:文字列,nth:任意の0始まり番号}。reloadにはselector不要。selectは固定valueがない場合label:表示名で選ぶ。checksは {op:text_equals/text_contains/value_equals/count/invalid/visible,selector:CSS,value:期待文字列}。'
+    operations='操作は {op:fill/click/select/check/reload/wait/download_json/download_csv/restore_file/restore_invalid/cancel_restore,selector:CSS,value:文字列,nth:任意の0始まり番号}。reload/waitにはselector不要。waitのvalueは100〜10000の整数ms。selectは固定valueがない場合label:表示名で選ぶ。checksは {op:text_equals/text_contains/value_equals/count/invalid/visible,selector:CSS,value:期待文字列}。'
     base_prompt=('製品の共通品質検査だけを作り、JSON {"result_selector":CSS,"scenarios":[5件]} を返す。完成条件別テストは作らない。'
         'scenariosのkind順はworkflow,variant,reload,roundtrip,invalid。各scenarioは acceptance:[関連する完成条件の0始まり番号],steps,checks,rationale を持つ。'
         'workflowとvariantは別入力で実処理を実行し、具体的な結果をtext_equalsで検査。reloadは再読込後に保存値を照合。'
@@ -1774,10 +1935,17 @@ def execute_browser_qa(name,page_source,plan,directory):
         try:
             for width,height in ((1280,900),(390,844)):
                 context=browser.new_context(viewport={'width':width,'height':height},accept_downloads=True,service_workers='block')
-                errors=[];context.on('page',lambda opened:opened.close() if len(context.pages)>1 else None)
+                errors=[];cancel_next_dialog=[False];last_dialog_dismissed=[False]
+                context.on('page',lambda opened:opened.close() if len(context.pages)>1 else None)
                 context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
                 page=context.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
-                page.on('dialog',lambda dialog:dialog.accept('検証用') if dialog.type=='prompt' else dialog.accept())
+                def handle_dialog(dialog):
+                    if cancel_next_dialog[0]:
+                        cancel_next_dialog[0]=False;last_dialog_dismissed[0]=True;dialog.dismiss()
+                    else:
+                        last_dialog_dismissed[0]=False
+                        dialog.accept('検証用') if dialog.type=='prompt' else dialog.accept()
+                page.on('dialog',handle_dialog)
                 page.set_default_timeout(4000);page.goto(url,wait_until='networkidle',timeout=15000)
                 layout=page.evaluate(QA_LAYOUT_SCRIPT);layouts.append(layout)
                 if layout['overflow'] or layout['smallControls'] or layout['tinyText'] or len(layout['heading'].strip())<5 or layout['controls']<2:raise ValueError(str(width)+'pxの画面配置に不足: '+json.dumps({k:v for k,v in layout.items() if k!='body'},ensure_ascii=False))
@@ -1805,6 +1973,7 @@ def execute_browser_qa(name,page_source,plan,directory):
                     for step in scenario['steps']:
                         op=step['op']
                         if op=='reload':page.reload(wait_until='networkidle');continue
+                        if op=='wait':page.wait_for_timeout(int(step['value']));continue
                         loc=locate(step)
                         if op=='fill':loc.fill(str(step.get('value','')))
                         elif op=='select':
@@ -1813,9 +1982,8 @@ def execute_browser_qa(name,page_source,plan,directory):
                         elif op=='check':loc.set_checked(bool(step.get('value',True)))
                         elif op=='click':loc.click()
                         elif op=='cancel_restore':
-                            pending_state=snapshot();loc.click()
-                            if snapshot()!=pending_state:raise ValueError('復元キャンセルで保存記録が変更されました')
-                            restored=False
+                            if not loc.is_visible():raise ValueError('復元のキャンセル操作が利用できません')
+                            cancel_next_dialog[0]=True;last_dialog_dismissed[0]=False;restored=False
                         elif op=='download_csv':
                             with page.expect_download() as download:loc.click()
                             csv_path=directory/('export-'+str(width)+'.csv');download.value.save_as(str(csv_path))
@@ -1832,11 +2000,15 @@ def execute_browser_qa(name,page_source,plan,directory):
                             if op=='restore_invalid':
                                 selected_file=directory/'invalid.json';selected_file.write_text('{"version":-1}',encoding='utf-8')
                             if op=='restore_file' and (backup is None or snapshot()==backup_state):raise ValueError('復元前の変更・実バックアップ取得がありません')
+                            before_restore=snapshot()
                             if loc.evaluate('(e)=>e.tagName==="INPUT"&&e.type==="file"'):loc.set_input_files(str(selected_file))
                             else:
                                 with page.expect_file_chooser() as chooser:loc.click()
                                 chooser.value.set_files(str(selected_file))
-                            if op=='restore_file':restored=True
+                            if op=='restore_file' and last_dialog_dismissed[0]:
+                                if snapshot()!=before_restore:raise ValueError('復元をキャンセルしたのに保存記録が変更されました')
+                                last_dialog_dismissed[0]=False
+                            elif op=='restore_file':restored=True
                             else:page.wait_for_timeout(200)
                     for check in scenario['checks']:
                         loc=locate(check);op=check['op'];value=check.get('value')
