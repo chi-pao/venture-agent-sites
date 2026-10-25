@@ -1,0 +1,43 @@
+name: Venture app builder verification
+on:
+  pull_request:
+    paths:
+      - 'agent/**'
+      - 'tests/**'
+      - 'product-rebuilds/**'
+      - '.github/workflows/venture-builder-qa.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agent/**'
+      - 'tests/**'
+      - 'product-rebuilds/**'
+      - '.github/workflows/venture-builder-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: venture-builder-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-and-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app and test dependencies
+        run: python -m pip install --upgrade pip streamlit pandas pillow playwright
+      - name: Install real Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Compile production program
+        run: python -m py_compile agent/venture_agent_integrated.py
+      - name: Run planner, release-gate, and real-browser workflow tests
+        env:
+          PYTHONPATH: tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
