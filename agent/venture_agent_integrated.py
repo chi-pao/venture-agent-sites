@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.25.45'
+APP_VERSION='2026.10.25.46'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
