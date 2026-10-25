@@ -1193,7 +1193,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
     try:
         item=ai_json(prompt,cfg,3200,validator=lambda value:validate_product_blueprint(value,spec,brief))
         item['design_method']='ai_structured_design'
-    except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError) as exc:
+    except (AutoQAPlanError, TimeoutError, urllib.error.URLError, ConnectionError, ValueError, TypeError) as exc:
         item=blueprint_from_product_requirements(name,spec,brief,str(exc))
         validate_product_blueprint(item,spec,brief)
     item.update(policy=PRODUCT_BLUEPRINT_POLICY,scope_sha=product_scope_sha(name),competitive_checked=brief.get('checked'),
