@@ -2342,7 +2342,7 @@ def review_qa_images(name,browser_result,cfg):
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':min(4096,max(2048,int(cfg.get('ai_context',4096))))}}
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':min(16384,max(8192,int(cfg.get('ai_context',16384))))}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             try:
                 with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',240)))) as r:data=json.load(r)
