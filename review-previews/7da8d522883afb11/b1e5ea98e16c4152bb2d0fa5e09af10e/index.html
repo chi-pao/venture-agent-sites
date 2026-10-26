@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_23815452f4b05750d9413c7a:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインマーケティング支援アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { margin: 20px; }
+        input, select { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンラインマーケティング支援アプリ</h1>
+        <p>対象顧客に必要な本物の処理、入力検証、操作結果、保存またはCSV出力を実装します。</p>
+        <form id="marketingForm">
+            <label for="budget">予算 (円):</label>
+            <input type="number" id="budget" required>
+            <label for="targetAudience">ターゲットアudience:</label>
+            <input type="text" id="targetAudience" required>
+            <label for="adChannel">広告チャネル:</label>
+            <select id="adChannel" required>
+                <option value="">選択してください</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Google Ads">Google Ads</option>
+                <option value="Instagram">Instagram</option>
+            </select>
+            <button type="button" onclick="analyzeAndPropose()">分析と提案</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        function analyzeAndPropose() {
+            const budget = document.getElementById('budget').value;
+            const targetAudience = document.getElementById('targetAudience').value;
+            const adChannel = document.getElementById('adChannel').value;
+
+            if (budget === '' || targetAudience === '' || adChannel === '') {
+                alert('すべてのフィールドを入力してください。');
+                return;
+            }
+
+            const result = `予算: ${budget}円, ターゲットアudience: ${targetAudience}, 広告チャネル: ${adChannel}`;
+            document.getElementById('result').innerText = result;
+
+            // 保存機能
+            localStorage.setItem('marketingData', JSON.stringify({
+                budget: budget,
+                targetAudience: targetAudience,
+                adChannel: adChannel
+            }));
+
+            // CSV出力
+            const csvData = `予算,ターゲットアudience,広告チャネル\n${budget},${targetAudience},${adChannel}`;
+            const csvBlob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(csvBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'marketing_data.csv';
+            a.click();
+        }
+
+        // 保存データの復元
+        window.onload = function() {
+            const savedData = localStorage.getItem('marketingData');
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                document.getElementById('budget').value = data.budget;
+                document.getElementById('targetAudience').value = data.targetAudience;
+                document.getElementById('adChannel').value = data.adChannel;
+            }
+        };
+    </script>
+</body>
+</html>
