@@ -79,6 +79,12 @@ class DepartmentManagerTests(unittest.TestCase):
         self.run_factory();self.calls.clear();self.run_factory(scope='new-scope')
         self.assertEqual(self.calls,['research','design','development','verification'])
 
+    def test_changed_research_error_does_not_discard_offline_design_or_candidate(self):
+        self.research_fail=True;self.run_factory();self.calls.clear()
+        self.handlers['research']=lambda ctx:(_ for _ in ()).throw(RuntimeError('別の通信エラー'))
+        self.run_factory()
+        self.assertNotIn('design',self.calls);self.assertNotIn('development',self.calls)
+
     def test_new_verifier_configuration_preserves_source(self):
         self.run_factory();self.calls.clear()
         self.run_factory(configuration={'verification':{'model':'new-reviewer'}})

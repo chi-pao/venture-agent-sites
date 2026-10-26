@@ -25,6 +25,22 @@ The dashboard shows six department states and the current return instructions be
 
 ## Validation and limits
 
+The first real-model department runs failed: independent QA planning timed out
+when generating five base scenarios or several feature cases together. The new
+`qa_checkpoint_planner.py` generates one scenario/case at a time from compact
+actual controls and result selectors. It saves each validated unit with an input
+hash, retains successful units across timeouts, independently audits each pair
+of requirement tests, and runs the unchanged final plan/browser/visual gates.
+It does not reuse the renderer's expected-value compiler. Research transport
+errors also no longer invalidate provisional offline design just because the
+error text changes. The live workflow resumes the latest real checkpoint
+artifact instead of regenerating completed design and source from zero.
+
+These changes have resumption, cache invalidation, prompt-budget and rejection
+unit tests. Real model success is still a separate required result.
+
 `test_department_manager.py` exercises restart/resume, targeted returns, independent research gaps, changed requirements/configuration, receipt tampering, stop requests and repeated failure memory. `test_department_adapter.py` verifies wiring and approval protection with substituted engines; these tests are not real model evidence.
 
 `tests/department_live_smoke.py` runs real models and Chromium through this coordinator for attendance, workday and a new returns workflow. The workflow fails if any product cannot reach the unchanged quality bar. Its artifacts keep the source, model results, task receipts and browser reports. Three successful examples would establish only those tested cases, not every future business or commercial viability. Low design/function quality requires improving the responsible engine and testing again; adding departments alone does not guarantee quality.
+
+The saved workday specification also contained instruction text and unrequested collaborative-editing criteria. The proposal handler now detects these known contamination patterns and reconstructs acceptance conditions one original must-have requirement at a time, with persisted partial results. User-authored contracts are not silently overwritten. The general spec prompt no longer instructs every product to add search or collaboration. Original must-have/workflow/dependency fields remain intact; replacement acceptance conditions are still hypotheses until exercised by independent browser tests.

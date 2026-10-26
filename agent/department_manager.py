@@ -130,7 +130,11 @@ class DepartmentManager:
             inputs = dict(scope=scope, configuration=configuration.get(department, {}),
                           feedback=state['feedback'].get(department))
             if department == 'design':
-                inputs.update(spec=spec, research=context.get('research'))
+                evidence=context.get('research') or {}
+                # Different transient fetch errors do not alter the offline
+                # product design. A verified research receipt still invalidates
+                # provisional design and requires incorporation of real evidence.
+                inputs.update(spec=spec, research=evidence if evidence.get('verified') else {'verified':False})
             elif department == 'development':
                 inputs.update(design=context.get('design'))
             elif department == 'verification':

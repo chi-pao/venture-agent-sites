@@ -33,7 +33,7 @@ def department_failure_target(report, stage):
 
 def run_product_departments(job, name, cfg):
     manager = product_departments()
-    spec = ensure_product_spec(name, department_configuration(cfg, 'proposal'))
+    spec = ensure_department_product_spec(name, department_configuration(cfg, 'proposal'))
     scope = product_scope_sha(name)
     initial = manager.load(name, scope)
     context_cfg = dict(cfg)
@@ -130,7 +130,7 @@ def run_product_departments(job, name, cfg):
         'research': dict(policy=COMPETITIVE_POLICY, model=cfg['model']),
         'design': dict(policy=PRODUCT_BLUEPRINT_POLICY, implementation=IMPLEMENTATION_PLAN_POLICY, model=cfg['model']),
         'development': dict(version=APP_VERSION, model=coding_config(cfg)['model']),
-        'verification': dict(policy=AUTO_QA_POLICY, independent_qa=True, vision=cfg.get('qa_vision_model'), model=cfg['model']),
+        'verification': dict(policy=AUTO_QA_POLICY, independent_qa=CHECKPOINT_QA_POLICY, vision=cfg.get('qa_vision_model'), model=cfg['model']),
     }
     for department, settings in configuration.items():
         settings['role_model'] = (cfg.get('department_models') or {}).get(department, '')

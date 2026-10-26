@@ -11,7 +11,7 @@ def bundle(root):
     path = root / 'venture_agent_integrated.py'
     source = path.read_text(encoding='utf-8')
     generated = START + '\n\n'.join((root / name).read_text(encoding='utf-8')
-        for name in ('department_manager.py', 'department_adapter.py')) + '\n' + END
+        for name in ('department_manager.py', 'department_spec_contract.py', 'qa_checkpoint_planner.py', 'department_adapter.py')) + '\n' + END
     if START in source:
         before, tail = source.split(START, 1)
         _, after = tail.split(END, 1)

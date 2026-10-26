@@ -72,7 +72,7 @@ class DepartmentAdapterTests(TestCase):
     def test_independent_qa_does_not_reuse_renderer_expected_results(self):
         # Independent mode must go through the scenario planner even when a
         # structured template exists. It must not certify its own renderer.
-        with patch.object(app,'get_product_spec',return_value={}), \
+        with patch.object(app,'get_product_spec',return_value=dict(acceptance=['条件を計算する'],audience='利用者',requested_outcome='計算結果を確認する')), \
              patch.object(app,'visible_audience_copy',return_value=['対象者の説明','最初の操作の説明']), \
              patch.object(app,'get_implementation_plan',return_value={}), \
              patch.object(app,'structured_interface_from_html',return_value={'operation':'attendance'}), \
