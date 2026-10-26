@@ -162,7 +162,7 @@ def main():
                 vision_reviews.clear()
                 passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
                 if not vision_reviews:
-                    raise RuntimeError("live vision model was not used for the generated app screens")
+                    raise RuntimeError(f"visual review did not complete ({stage}): {qa_detail}")
                 visual=vision_reviews[-1]
                 if repair_round==0:first_visual=visual
                 if passed and stage=="のぼるさん確認待ち":

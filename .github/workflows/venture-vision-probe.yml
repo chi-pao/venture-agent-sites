@@ -1,0 +1,60 @@
+name: Isolated production vision replay
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent/**'
+      - 'tests/vision_model_probe.py'
+      - '.github/workflows/venture-vision-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: venture-vision-probe-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  replay:
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [attendance, workday]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install streamlit pillow
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 40286205881
+          name: live-app-generation-evidence-${{ matrix.product }}
+          path: prior-evidence
+      - name: Install model runtime
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start and load actual vision model
+        run: |
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            sleep 2
+          done
+          ollama pull qwen2.5vl:3b
+      - name: Replay production visual review on real saved evidence
+        env:
+          VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
+        run: python -u tests/vision_model_probe.py
+      - name: Collect runtime evidence
+        if: always()
+        run: |
+          mkdir -p vision-probe-results
+          cp "$RUNNER_TEMP/ollama.log" vision-probe-results/ollama.log
+          free -m > vision-probe-results/memory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-vision-${{ matrix.product }}
+          path: vision-probe-results/

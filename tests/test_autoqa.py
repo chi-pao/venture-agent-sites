@@ -204,7 +204,7 @@ class AutomaticQATests(ContinuationTests):
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
    got=app.review_qa_images(self.name,browser,dict(app.DEFAULT))
   self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),3)
-  self.assertEqual(calls[-1]['options']['num_ctx'],8192)
+  self.assertEqual(calls[-1]['options']['num_ctx'],4096)
   self.assertIn('最初の1枚は比較シート',calls[-1]['prompt'])
   self.assertIn('実ブラウザーから抽出した画面文言:授業の出欠記録 個人講師・小規模スクール向け。ブラウザー計測:',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
@@ -212,7 +212,7 @@ class AutomaticQATests(ContinuationTests):
   desktop=app.base64.b64decode(calls[-1]['images'][1])
   with Image.open(io.BytesIO(desktop)) as image:self.assertEqual(image.size,(640,411))
   mobile=app.base64.b64decode(calls[-1]['images'][2])
-  with Image.open(io.BytesIO(mobile)) as image:self.assertEqual(image.size,(390,844))
+  with Image.open(io.BytesIO(mobile)) as image:self.assertEqual(image.size,(296,640))
   self.assertFalse(calls[-1]['stream'])
  def test_low_score_with_positive_reason_is_rejected_as_contradictory(self):
   review={'design':{'score':2,'reason':'余白と情報階層が整っていて、見やすく使いやすい画面です'}}
