@@ -30,6 +30,10 @@ class CheckpointedQAPlannerTests(TestCase):
             kind=re.search(r'共通検査のうち([a-z]+)の1件',prompt).group(1);key=kind
             value=copy.deepcopy(next(x for x in self.full['scenarios'] if x['kind']==kind))
             if kind=='workflow':value['result_selector']=self.full['result_selector']
+            if kind=='roundtrip':
+                steps=value['steps'];csv=next(x for x in steps if x['op']=='download_csv');js=next(x for x in steps if x['op']=='download_json');restore=next(x for x in steps if x['op']=='restore_file')
+                value=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=[x for x in steps if x['op'] in ('fill','select','click')],checks=value['checks'],acceptance=value['acceptance'],rationale=value.get('rationale','復元前後の保存値を照合する'))
+
         else:
             i,j=map(int,re.search(r'完成条件(\d+)のケース(\d+)',prompt).groups());key=f'feature-{i}-{j}'
             value=copy.deepcopy(next(x for x in self.full['feature_cases'] if x['acceptance_index']==i and x['case_index']==j))
@@ -155,3 +159,10 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=model):
             with self.assertRaisesRegex(app.AutoQAPlanError,'要素に合わない操作'):
                 app.checkpointed_independent_qa_plan('在宅ワーク',page,self.cfg,self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+
+    def test_roundtrip_compiler_emits_real_file_protocol_without_model_op_names(self):
+        value=dict(csv_selector='#csv',csv_contains=['注文A','商品A'],json_selector='#json',restore_selector='#restore',mutation_steps=[dict(op='fill',selector='#title',value='別記録C'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#count',value='2'),dict(op='text_equals',selector='#summary',value='合計300円')],acceptance=[0],rationale='復元を照合する')
+        plan=app.compile_qa_roundtrip(value,5)
+        self.assertEqual([x['op'] for x in plan['steps']],['download_csv','download_json','fill','click','cancel_restore','restore_file','restore_file'])
+        self.assertEqual(plan['checks'],value['checks'])
+        with self.assertRaises(app.AutoQAPlanError):app.compile_qa_roundtrip(dict(value,mutation_steps=[dict(op='click',selector='#clear')]),5)

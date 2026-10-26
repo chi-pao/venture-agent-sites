@@ -54,12 +54,18 @@ def ensure_department_product_spec(name,cfg):
             if error_path.exists():
                 try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
                 except (ValueError,OSError):pass
+            previous=''
+            previous_path=folder/(str(index)+'-last-response.json')
+            if previous_path.exists():
+                try:previous=json.dumps(json.loads(previous_path.read_text(encoding='utf-8')),ensure_ascii=False)[:1800]
+                except (ValueError,OSError):pass
             prompt=('製品要件担当。壊れた完成条件を元の事業範囲から修復します。今回の必須機能1件だけについて、'
                 'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜400字で、必要な操作を末尾で切らず、単位・計算式と照合値を具体的に書く。'
+                '入力は名前=値+単位で列挙し、時刻HH:MMと期間（整数分等）を混同しない。期待値には式と結果を併記し、入力値と操作で違う値を使わない。'
                 '画面の見やすさ等は別の画像審査で評価する。一般論や機能名の言い換えは不可。依頼されていない検索・共同編集・AI機能を追加しない。'
                 '元の要件がAPI機能を含む場合だけ、サンプル操作と外部接続後の検証を分け、実取得したと偽らない。'
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
-                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n前回の不備:'+error[:500])
+                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n修正すべき前回の候補:'+previous+'\n前回の不備（この箇所を具体的に修復）:'+error[:1200])
             schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':400} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
             try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),1100,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
             except Exception as exc:
@@ -88,7 +94,7 @@ def ensure_department_product_spec(name,cfg):
                     raise AutoQAPlanError('完成条件の独立監査: '+reasons)
                 return result
             audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'issues':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':200}}},'required':['valid','issues'],'additionalProperties':False}
-            audit=ai_json('完成条件の独立監査。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
+            audit=ai_json('完成条件の独立監査。元要件にない制約を追加しない（予定と実績が異なること自体は不具合ではない）。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
                 +'\n元の必須機能:'+str(requirement)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
                 dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=180,validator=validate_audit)
             write_framework_json(audit_path,dict(audit,input_sha=audit_sha))

@@ -63,3 +63,19 @@ class DepartmentSpecContractTests(TestCase):
             save.assert_not_called()
         self.assertFalse(list(self.root.rglob('0.json')))
         self.assertIn('420分',next(self.root.rglob('0-error.json')).read_text())
+
+    def test_repair_receives_both_rejected_candidate_and_audit_feedback(self):
+        reject=[True];prompts=[]
+        def answer(prompt,cfg,tokens,**kw):
+            if prompt.startswith('完成条件の独立監査。'):
+                if reject[0]:
+                    reject[0]=False
+                    return kw['validator'](dict(valid=False,issues=['480分ではなく休憩後420分']))
+                return kw['validator'](dict(valid=True,issues=[]))
+            prompts.append(prompt)
+            return kw['validator'](dict(input='開始09:00、終了17:00、休憩60分を入力する',action='稼働枠の計算を実行して計算結果を表示する',expected='稼働可能時間480分を結果欄に表示する'))
+        with patch.object(app,'ensure_product_spec',return_value=self.spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'ai_json',side_effect=answer),patch.object(app,'store_product_spec',side_effect=lambda name,spec,**kw:spec):
+            with self.assertRaises(app.AutoQAPlanError):app.ensure_department_product_spec('在宅ワーク',self.cfg)
+            app.ensure_department_product_spec('在宅ワーク',self.cfg)
+        self.assertIn('修正すべき前回の候補:',prompts[1])
+        self.assertIn('480分を結果欄',prompts[1]);self.assertIn('420分',prompts[1])

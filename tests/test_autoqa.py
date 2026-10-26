@@ -80,6 +80,10 @@ class AutomaticQATests(ContinuationTests):
   for index,plan in ((0,attendance_plan()),(1,work_plan())):
    with self.subTest(product=index):
     page=self.install(index);directory=self.root/str(index);directory.mkdir()
+    old=next(x for x in plan['scenarios'] if x['kind']=='roundtrip');steps=old['steps']
+    csv=next(x for x in steps if x['op']=='download_csv');js=next(x for x in steps if x['op']=='download_json');restore=next(x for x in steps if x['op']=='restore_file')
+    binding=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=[x for x in steps if x['op'] in ('fill','select','click')],checks=old['checks'],acceptance=old['acceptance'],rationale=old['rationale'])
+    plan['scenarios']=[dict(app.compile_qa_roundtrip(binding,len(app.get_product_spec(self.name)['acceptance'])),kind='roundtrip') if x['kind']=='roundtrip' else x for x in plan['scenarios']]
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)

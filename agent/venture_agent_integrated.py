@@ -3099,12 +3099,18 @@ def ensure_department_product_spec(name,cfg):
             if error_path.exists():
                 try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
                 except (ValueError,OSError):pass
+            previous=''
+            previous_path=folder/(str(index)+'-last-response.json')
+            if previous_path.exists():
+                try:previous=json.dumps(json.loads(previous_path.read_text(encoding='utf-8')),ensure_ascii=False)[:1800]
+                except (ValueError,OSError):pass
             prompt=('製品要件担当。壊れた完成条件を元の事業範囲から修復します。今回の必須機能1件だけについて、'
                 'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜400字で、必要な操作を末尾で切らず、単位・計算式と照合値を具体的に書く。'
+                '入力は名前=値+単位で列挙し、時刻HH:MMと期間（整数分等）を混同しない。期待値には式と結果を併記し、入力値と操作で違う値を使わない。'
                 '画面の見やすさ等は別の画像審査で評価する。一般論や機能名の言い換えは不可。依頼されていない検索・共同編集・AI機能を追加しない。'
                 '元の要件がAPI機能を含む場合だけ、サンプル操作と外部接続後の検証を分け、実取得したと偽らない。'
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
-                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n前回の不備:'+error[:500])
+                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n修正すべき前回の候補:'+previous+'\n前回の不備（この箇所を具体的に修復）:'+error[:1200])
             schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':400} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
             try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),1100,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
             except Exception as exc:
@@ -3133,7 +3139,7 @@ def ensure_department_product_spec(name,cfg):
                     raise AutoQAPlanError('完成条件の独立監査: '+reasons)
                 return result
             audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'issues':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':200}}},'required':['valid','issues'],'additionalProperties':False}
-            audit=ai_json('完成条件の独立監査。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
+            audit=ai_json('完成条件の独立監査。元要件にない制約を追加しない（予定と実績が異なること自体は不具合ではない）。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
                 +'\n元の必須機能:'+str(requirement)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
                 dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=180,validator=validate_audit)
             write_framework_json(audit_path,dict(audit,input_sha=audit_sha))
@@ -3174,6 +3180,40 @@ def qa_unit_schema(count,kind):
         'exact_check':exact_check,'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
         'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
         'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
+
+
+def qa_roundtrip_schema(count):
+    unit=qa_unit_schema(count,'roundtrip')
+    props=unit['properties']
+    return {'type':'object','properties':{
+        'csv_selector':{'type':'string','minLength':1,'maxLength':180},
+        'csv_contains':{'type':'array','minItems':2,'maxItems':8,'items':{'type':'string','minLength':1,'maxLength':100}},
+        'json_selector':{'type':'string','minLength':1,'maxLength':180},
+        'restore_selector':{'type':'string','minLength':1,'maxLength':180},
+        'mutation_steps':props['steps'],'confirmation_steps':{'type':'array','maxItems':3,'items':props['steps']['items']},
+        'checks':props['checks'],'acceptance':props['acceptance'],'rationale':props['rationale'],
+        'blocked_features':props['blocked_features']},
+        'anyOf':[{'required':['csv_selector','csv_contains','json_selector','restore_selector','mutation_steps','checks','acceptance','rationale']},{'required':['blocked_features']}],
+        'additionalProperties':False}
+
+
+def compile_qa_roundtrip(value,count):
+    if not isinstance(value,dict):raise AutoQAPlanError('復元検査の対象と変更操作をJSONで指定してください')
+    if value.get('blocked_features'):raise AutoQAPlanError('実装不足: '+str(value['blocked_features']))
+    for key in ('csv_selector','json_selector','restore_selector'):
+        if not isinstance(value.get(key),str) or not value[key].strip():raise AutoQAPlanError('復元検査の実画面CSSが必要: '+key)
+    mutation=value.get('mutation_steps')
+    if not isinstance(mutation,list) or not 2<=len(mutation)<=14 or not {'fill','click'}<={x.get('op') for x in mutation if isinstance(x,dict)}:
+        raise AutoQAPlanError('mutation_stepsに別の記録Cを入力・保存する操作が必要です')
+    if any(not isinstance(x,dict) or x.get('op') not in ('fill','select','check','click','wait') for x in mutation):raise AutoQAPlanError('変更操作に出力や復元を混ぜないでください')
+    confirm=value.get('confirmation_steps',[])
+    if not isinstance(confirm,list) or len(confirm)>3 or any(not isinstance(x,dict) or x.get('op')!='click' for x in confirm):raise AutoQAPlanError('画面内の復元確定操作はclickだけを指定してください')
+    restore=value['restore_selector']
+    steps=[dict(op='download_csv',selector=value['csv_selector'],contains=value.get('csv_contains')),dict(op='download_json',selector=value['json_selector'])]+mutation
+    # The harness handles real downloaded bytes, local storage snapshots and
+    # native confirm dismissal. The model does not invent this protocol.
+    steps += [dict(op='cancel_restore',selector=restore),dict(op='restore_file',selector=restore),dict(op='restore_file',selector=restore)]+confirm
+    return validate_qa_unit(dict(steps=steps,checks=value.get('checks'),acceptance=value.get('acceptance'),rationale=value.get('rationale')),'roundtrip',count)
 
 
 class _QAInventory(HTMLParser):
@@ -3306,7 +3346,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         if path.exists():
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
-                if receipt.get('input_sha')==input_sha:return validate(receipt['value'])
+                if receipt.get('input_sha')==input_sha:
+                    return validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else validate(receipt['value'])
             except (ValueError,TypeError,KeyError):pass
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
@@ -3344,7 +3385,16 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
         prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
-        value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900,schema=qa_unit_schema(count,kind))
+        if kind=='roundtrip':
+            prompt=('共通検査のうちroundtripの1件。バックアップ検査の対象と変更例だけをJSONで指定。stepsやop:download_csvは返さない。'
+                'csv_selector:CSV出力ボタンのCSS,csv_contains:直前までに保存した入力値2件以上,json_selector:JSON出力ボタンCSS,restore_selector:復元ファイル入力または選択ラベルのCSS,'
+                'mutation_steps:別の記録Cをfill/selectしてclick保存する操作2〜14件,confirmation_steps:ファイル選択後に画面内の確定ボタンがある場合だけclick（通常は空配列）,'
+                'checks:復元後に直前のreloadと同じ保存値・集計を照合する期待値2件以上,acceptance:条件番号配列,rationale:根拠。'
+                'ダウンロード→C保存→復元キャンセル→実復元の順序は検査プログラムが組み立てる。サンプル読込やフォーム消去だけを変更としない。'
+                '\n先行検査:'+json.dumps([dict(kind=x['kind'],steps=x['steps'],checks=x['checks']) for x in scenarios],sort_keys=True,ensure_ascii=False,separators=(',',':'))[-4000:])
+            value=part('base-roundtrip',prompt,lambda v:compile_qa_roundtrip(v,count),tokens=1200,schema=qa_roundtrip_schema(count))
+        else:
+            value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind=='workflow' else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))
     feature_cases=[]
     for index,condition in enumerate(acceptance):
