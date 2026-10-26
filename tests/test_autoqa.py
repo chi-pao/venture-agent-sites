@@ -53,9 +53,9 @@ def design_brief(name):
  observations=[]
  for index,url in enumerate(urls):
   views={}
+  from PIL import Image
   for label,width,height in (('desktop',1280,900),('mobile',390,844)):
-   path=fixture_root/f'{index}-{label}.png';image=b'unit-test screenshot placeholder'
-   path.write_bytes(image)
+   path=fixture_root/f'{index}-{label}.png';Image.new('RGB',(width,height),(35+index*30,90,160)).save(path,format='PNG');image=path.read_bytes()
    views[label]=dict(width=width,height=height,metrics=dict(viewportWidth=width,bodyTextLength=120,heading='テスト画面'),screenshot_path=str(path),screenshot_sha256=hashlib.sha256(image).hexdigest())
   observations.append(dict(source_url=url,capture_status='ok',views=views))
  return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
@@ -181,10 +181,14 @@ class AutomaticQATests(ContinuationTests):
   def response(request,**kw):
    value=json.loads(request.data);calls.append(value)
    return io.BytesIO(json.dumps({'response':json.dumps(visual)}).encode())
-  with patch.object(app.urllib.request,'urlopen',side_effect=response):
+  brief=design_brief(self.name)
+  with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
    got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
-  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),4)
-  processed=app.base64.b64decode(calls[-1]['images'][0])
+  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),6)
+  self.assertIn('最初の2枚は同業・代替サービスの実画面',calls[-1]['prompt'])
+  reference=app.base64.b64decode(calls[-1]['images'][0])
+  with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(480,338))
+  processed=app.base64.b64decode(calls[-1]['images'][-1])
   self.assertTrue(processed.startswith(bytes([255,216,255])))
   with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(640,411))
   self.assertFalse(calls[-1]['stream'])
