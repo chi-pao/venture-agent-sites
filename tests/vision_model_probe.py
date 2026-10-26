@@ -56,6 +56,10 @@ def main():
         except Exception as exc:
             result.update(status="failed", error=f"{type(exc).__name__}: {exc}")
         finally:
+            import shutil
+            traces=app.OUT/"knowledge"/"vision-traces"
+            if traces.exists():
+                shutil.copytree(traces, output/"traces", dirs_exist_ok=True)
             result["elapsed_seconds"] = round(time.monotonic() - started, 2)
             (output / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             print("PRODUCTION_VISION_RESULT", json.dumps(result, ensure_ascii=False), flush=True)

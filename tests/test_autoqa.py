@@ -203,16 +203,15 @@ class AutomaticQATests(ContinuationTests):
             dict(width=390,heading='授業出欠管理',body='スマホで出欠を記録')])
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
    got=app.review_qa_images(self.name,browser,dict(app.DEFAULT))
-  self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),3)
+  self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),1)
   self.assertEqual(calls[-1]['options']['num_ctx'],4096)
-  self.assertIn('最初の1枚は比較シート',calls[-1]['prompt'])
+  self.assertIn('1枚の比較シート下段',calls[-1]['prompt'])
   self.assertIn('実ブラウザーから抽出した画面文言:授業の出欠記録 個人講師・小規模スクール向け。ブラウザー計測:',calls[-1]['prompt'])
-  reference=app.base64.b64decode(calls[-1]['images'][0])
-  with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(448,224))
-  desktop=app.base64.b64decode(calls[-1]['images'][1])
-  with Image.open(io.BytesIO(desktop)) as image:self.assertEqual(image.size,(640,411))
-  mobile=app.base64.b64decode(calls[-1]['images'][2])
-  with Image.open(io.BytesIO(mobile)) as image:self.assertEqual(image.size,(296,640))
+  sheet=app.base64.b64decode(calls[-1]['images'][0])
+  with Image.open(io.BytesIO(sheet)) as image:
+   self.assertEqual(image.size,(896,896))
+   self.assertGreater(min(image.getpixel((20,60))),240)
+   self.assertGreater(min(image.getpixel((700,60))),240)
   self.assertFalse(calls[-1]['stream'])
  def test_vision_context_capacity_error_is_repaired_once(self):
   from PIL import Image
