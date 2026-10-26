@@ -17,6 +17,10 @@ concurrency:
 
 jobs:
   live-model-and-browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [attendance, workday]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -48,7 +52,8 @@ jobs:
           PYTHONPATH: tests
           VENTURE_LIVE_MODEL: qwen2.5-coder:7b
           VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
-          VENTURE_LIVE_DATA_HOME: live-generation-artifacts
+          VENTURE_LIVE_DATA_HOME: live-generation-artifacts/${{ matrix.product }}
+          VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
           OLLAMA_HOST: http://127.0.0.1:11434
         run: |
           python -m py_compile agent/venture_agent_integrated.py tests/live_generation_smoke.py
@@ -57,7 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-app-generation-evidence
+          name: live-app-generation-evidence-${{ matrix.product }}
           path: live-generation-artifacts/
           if-no-files-found: warn
           retention-days: 14
