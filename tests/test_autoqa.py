@@ -48,6 +48,10 @@ def attendance_plan():
 def design_brief(name):
  text='これは比較先の公式本文のテスト用取得内容です。'
  urls=['https://nicody.jp/','https://wanderlog.com/']
+ spec=app.get_product_spec(name) or {}
+ content_comparison=[dict(acceptance_index=i,required_feature=requirement,
+  competitor_observations=[dict(source_url=u,source_quote=text,matched_terms=[],evidence_status='取得本文では未確認。未提供とは断定しない。') for u in urls],
+  own_build_and_test='この完成条件を専用機能へ実装し、入力・結果・保存をブラウザーで検査します。') for i,requirement in enumerate(spec.get('acceptance',[]))]
  # Unit-test-only captures exercise the hash and viewport gate without claiming live competitor evidence.
  fixture_root=app.OUT/'test-competitor-captures';fixture_root.mkdir(parents=True,exist_ok=True)
  observations=[]
@@ -58,7 +62,7 @@ def design_brief(name):
    path=fixture_root/f'{index}-{label}.png';Image.new('RGB',(width,height),(35+index*30,90,160)).save(path,format='PNG');image=path.read_bytes()
    views[label]=dict(width=width,height=height,metrics=dict(viewportWidth=width,bodyTextLength=120,heading='テスト画面'),screenshot_path=str(path),screenshot_sha256=hashlib.sha256(image).hexdigest())
   observations.append(dict(source_url=url,capture_status='ok',views=views))
- return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
+ return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,content_comparison=content_comparison,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
 
 class AutomaticQATests(ContinuationTests):
  def install(self,index):
@@ -214,6 +218,11 @@ class AutomaticQATests(ContinuationTests):
    result=app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
   self.assertTrue(app.competitive_design_ready(result))
   self.assertGreaterEqual(len(result['comparisons']),2)
+  matrix=result['content_comparison'];self.assertEqual(len(matrix),len(app.get_product_spec(self.name)['acceptance']))
+  self.assertEqual({row['acceptance_index'] for row in matrix},set(range(len(matrix))))
+  for row in matrix:
+   self.assertTrue(all(obs['source_quote'] in text for obs in row['competitor_observations']))
+   self.assertTrue(all('未提供とは断定しない' in obs['evidence_status'] for obs in row['competitor_observations'] if obs['evidence_status'].startswith('取得本文では未確認')))
   self.assertEqual(result['summary_method'],'official_text_rules')
   self.assertFalse(result['measured_advantage'])
   for part in result['design_patterns']:
