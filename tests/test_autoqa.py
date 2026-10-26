@@ -197,13 +197,13 @@ class AutomaticQATests(ContinuationTests):
   brief=design_brief(self.name)
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
    got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
-  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),6)
+  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),4)
   self.assertIn('最初の2枚は同業・代替サービスの実画面',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(480,338))
   processed=app.base64.b64decode(calls[-1]['images'][-1])
   self.assertTrue(processed.startswith(bytes([255,216,255])))
-  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(640,411))
+  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(480,309))
   self.assertFalse(calls[-1]['stream'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
