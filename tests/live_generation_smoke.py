@@ -114,6 +114,17 @@ def main():
                url=os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"),
                ai_context=8192, autoqa_setup=False, max_revisions=2,
                max_active=2, publish=False)
+    product_key=os.environ.get("VENTURE_LIVE_PRODUCT","").strip()
+    product_names={
+        "attendance":"オンライン授業参加管理アプリ",
+        "workday":"在宅ワーク支援アプリ",
+    }
+    if product_key not in product_names:
+        raise ValueError("VENTURE_LIVE_PRODUCT must be attendance or workday")
+    selected_name=product_names[product_key]
+    products=[item for item in PRODUCTS if item[0]==selected_name]
+    if len(products)!=1:
+        raise ValueError("live product selection did not resolve exactly one fixture")
     summaries = []
     failures = []
     original_visual_review=app.review_qa_images
@@ -123,7 +134,7 @@ def main():
         vision_reviews.append(result)
         return result
     app.review_qa_images=tracked_visual_review
-    for name, rationale in PRODUCTS:
+    for name, rationale in products:
         app.execute(
             "INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)",
             (name, json.dumps(rationale, ensure_ascii=False), 1, app.now(), app.now()),
