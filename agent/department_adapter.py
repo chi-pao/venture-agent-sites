@@ -133,7 +133,7 @@ def run_product_departments(job, name, cfg):
         dict(research=research, design=design, development=development, verification=verification),
         dict(proposal=validate_product_spec, research=lambda x: require_keys(x, ('verified','brief')),
              design=validate_design, development=validate_candidate, verification=validate_verification),
-        configuration, enabled=lambda: bool(state()['enabled'] and development_allowed(name)))
+        configuration, enabled=lambda: bool(state()['enabled'] and development_allowed(name) and product_scope_sha(name)==scope))
     candidate = result.get('candidate', {})
     product_development_state(name, result['stage'], result['details'],
         sum(1 for x in result['history'] if x['department']=='development' and x['status']=='running'), candidate.get('path', ''))

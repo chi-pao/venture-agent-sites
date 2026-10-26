@@ -3009,6 +3009,10 @@ class DepartmentManager:
                     return state
                 context['research'] = dict(verified=False, gap=type(exc).__name__ + ': ' + str(exc)[:1500])
             context['feedback'] = dict(state['feedback'])
+        if not enabled():
+            state.update(stage='停止中', details='検証後に停止または要件変更を検出。最終確認へ進めません')
+            self.persist(state)
+            return state
         result = context['verification']
         candidate_sha = context['development']['content_sha']
         if result['passed'] is not True:
@@ -3164,7 +3168,7 @@ def run_product_departments(job, name, cfg):
         dict(research=research, design=design, development=development, verification=verification),
         dict(proposal=validate_product_spec, research=lambda x: require_keys(x, ('verified','brief')),
              design=validate_design, development=validate_candidate, verification=validate_verification),
-        configuration, enabled=lambda: bool(state()['enabled'] and development_allowed(name)))
+        configuration, enabled=lambda: bool(state()['enabled'] and development_allowed(name) and product_scope_sha(name)==scope))
     candidate = result.get('candidate', {})
     product_development_state(name, result['stage'], result['details'],
         sum(1 for x in result['history'] if x['department']=='development' and x['status']=='running'), candidate.get('path', ''))

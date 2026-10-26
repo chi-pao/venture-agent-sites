@@ -120,6 +120,14 @@ class DepartmentManagerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.manager.read_receipt({'path':'/etc/passwd','sha256':'x'})
 
+    def test_stop_during_verification_does_not_allow_owner_review(self):
+        result=self.run_factory(enabled=lambda:len(self.calls)<4)
+        self.assertEqual(result['stage'],'停止中')
+        self.assertNotIn('operations',result['departments'])
+
+    def test_requirements_cannot_escape_department_folder(self):
+        with self.assertRaises(ValueError):self.run_factory(scope='../outside')
+
     def test_bundled_engine_matches_modular_sources(self):
         path=MODULE.parent/'bundle_departments.py'
         spec=importlib.util.spec_from_file_location('bundle',path)

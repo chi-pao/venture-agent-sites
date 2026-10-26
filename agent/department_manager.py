@@ -148,6 +148,10 @@ class DepartmentManager:
                     return state
                 context['research'] = dict(verified=False, gap=type(exc).__name__ + ': ' + str(exc)[:1500])
             context['feedback'] = dict(state['feedback'])
+        if not enabled():
+            state.update(stage='停止中', details='検証後に停止または要件変更を検出。最終確認へ進めません')
+            self.persist(state)
+            return state
         result = context['verification']
         candidate_sha = context['development']['content_sha']
         if result['passed'] is not True:
