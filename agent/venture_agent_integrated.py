@@ -2310,7 +2310,7 @@ def review_qa_images(name,browser_result,cfg):
                 if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=view.get('screenshot_sha256'):continue
                 try:
                     with Image.open(path) as source:
-                        image=source.convert('RGB');image.thumbnail((480,480));buffer=BytesIO();image.save(buffer,format='JPEG',quality=55,optimize=True)
+                        image=source.convert('RGB');image.thumbnail((320,320));buffer=BytesIO();image.save(buffer,format='JPEG',quality=45,optimize=True)
                         reference_images.append(base64.b64encode(buffer.getvalue()).decode());reference_labels.append(source_url);seen_sources.add(source_url)
                 except (OSError,ValueError):continue
                 if len(reference_images)>=2:break
@@ -2334,15 +2334,15 @@ def review_qa_images(name,browser_result,cfg):
         for path in product_screens:
             with Image.open(path) as source:
                 image=source.convert('RGB')
-                image.thumbnail((480,480))
+                image.thumbnail((320,320))
                 buffer=BytesIO()
-                image.save(buffer,format='JPEG',quality=55,optimize=True)
+                image.save(buffer,format='JPEG',quality=45,optimize=True)
                 images.append(base64.b64encode(buffer.getvalue()).decode())
         last_error='画像判定のJSONを読み取れません'
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':max(16384,min(32768,int(cfg.get('ai_context',16384))))}}
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':12288}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             try:
                 with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',240)))) as r:data=json.load(r)
