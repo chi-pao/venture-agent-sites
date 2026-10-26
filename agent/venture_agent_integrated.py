@@ -1195,7 +1195,7 @@ def ensure_competitive_brief(name,cfg):
     if competitive_design_ready(context['brief']):
         try:
             age=(policy_clock()-datetime.fromisoformat(context['brief']['checked'])).total_seconds()
-            if 0<=age<7*86400:return context['brief']
+            if 0<=age<7*86400 and competitive_visual_ready(context['brief']):return context['brief']
         except (ValueError,KeyError,TypeError):pass
     references=[read_research_reference(url) for url in context['official_comparison_candidates']]
     valid=[r for r in references if r.get('status')=='本文取得']
