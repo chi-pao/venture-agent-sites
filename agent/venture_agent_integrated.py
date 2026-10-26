@@ -2268,6 +2268,8 @@ def review_qa_images(name,browser_result,cfg):
         if model!=cfg['model']:
             req=urllib.request.Request(base+'/api/generate',data=json.dumps({'model':cfg['model'],'keep_alive':0}).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(req,timeout=30) as r:json.load(r)
+        from io import BytesIO
+        from PIL import Image
         brief=competitive_context(name).get('brief') or {}
         reference_images=[];reference_labels=[]
         if competitive_visual_ready(brief):
@@ -2298,8 +2300,6 @@ def review_qa_images(name,browser_result,cfg):
             '\n制作設計:'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:2500]+
             '\n対象と完成条件:'+json.dumps(get_product_spec(name),ensure_ascii=False)[:5000]
             +'\n自動操作シナリオ数（詳細な操作結果は別のブラウザー検査で判定）:'+str(len(browser_result['scenarios'])))
-        from io import BytesIO
-        from PIL import Image
         images=list(reference_images)
         for path in browser_result['screenshots']:
             with Image.open(path) as source:
