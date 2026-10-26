@@ -187,26 +187,36 @@ class AutomaticQATests(ContinuationTests):
   with patch.object(app,'ensure_competitive_brief',return_value=design_brief(self.name)),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'execute_browser_qa',return_value=dict(scenarios=[],screenshots=[])),patch.object(app,'review_qa_images',side_effect=cancel),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
   self.assertFalse(passed);self.assertEqual(stage,'検証環境の準備待ち')
- def test_vision_request_contains_compacted_real_image_bytes(self):
+ def test_vision_request_uses_correct_readable_pc_and_mobile_screenshots(self):
   from PIL import Image
-  shot=self.root/'test.png';Image.new('RGB',(1400,900),'white').save(shot,format='PNG');calls=[]
+  pc=self.root/'start-1280.png';Image.new('RGB',(1400,900),'white').save(pc,format='PNG')
+  pc_result=self.root/'result-1280.png';Image.new('RGB',(1400,900),'black').save(pc_result,format='PNG')
+  mobile=self.root/'start-390.png';Image.new('RGB',(390,844),'white').save(mobile,format='PNG')
+  mobile_result=self.root/'result-390.png';Image.new('RGB',(390,844),'black').save(mobile_result,format='PNG');calls=[]
   visual={key:dict(score=4,reason='画像APIの構造だけを模擬して確認しています') for key in ('audience','design','readability','mobile','usefulness')}
   def response(request,**kw):
    value=json.loads(request.data);calls.append(value)
    return io.BytesIO(json.dumps({'response':json.dumps(visual)}).encode())
   brief=design_brief(self.name)
+  browser=dict(screenshots=[str(pc),str(pc_result),str(mobile),str(mobile_result)],scenarios=[{}]*20,
+   layouts=[dict(width=1280,heading='授業出欠管理',body='授業の出欠記録 個人講師・小規模スクール向け'),
+            dict(width=390,heading='授業出欠管理',body='スマホで出欠を記録')])
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
-   got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[],layouts=[dict(width=1280,body='授業の出欠記録 個人講師・小規模スクール向け')]),dict(app.DEFAULT))
-  self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),2)
+   got=app.review_qa_images(self.name,browser,dict(app.DEFAULT))
+  self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),3)
   self.assertEqual(calls[-1]['options']['num_ctx'],8192)
   self.assertIn('最初の1枚は比較シート',calls[-1]['prompt'])
-  self.assertIn('実ブラウザーのPC画面から抽出した表示文言:授業の出欠記録 個人講師・小規模スクール向け',calls[-1]['prompt'])
+  self.assertIn('実ブラウザーから抽出した画面文言:授業の出欠記録 個人講師・小規模スクール向け スマホで出欠を記録',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(448,224))
-  processed=app.base64.b64decode(calls[-1]['images'][-1])
-  self.assertTrue(processed.startswith(bytes([255,216,255])))
-  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(448,224))
+  desktop=app.base64.b64decode(calls[-1]['images'][1])
+  with Image.open(io.BytesIO(desktop)) as image:self.assertEqual(image.size,(640,411))
+  mobile=app.base64.b64decode(calls[-1]['images'][2])
+  with Image.open(io.BytesIO(mobile)) as image:self.assertEqual(image.size,(390,844))
   self.assertFalse(calls[-1]['stream'])
+ def test_low_score_with_positive_reason_is_rejected_as_contradictory(self):
+  review={'design':{'score':2,'reason':'余白と情報階層が整っていて、見やすく使いやすい画面です'}}
+  with self.assertRaisesRegex(app.AutoQAPlanError,'点数と根拠が矛盾'):app.validate_visual_review_evidence(review,['design'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
   with patch.object(app,'ensure_competitive_brief',return_value={}),patch.object(app,'get_product_blueprint',return_value=None),patch.object(app,'ai_json',side_effect=app.AutoQAPlanError('対象者の画面設計が不十分です')):
