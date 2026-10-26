@@ -206,7 +206,7 @@ class AutomaticQATests(ContinuationTests):
   self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),3)
   self.assertEqual(calls[-1]['options']['num_ctx'],8192)
   self.assertIn('最初の1枚は比較シート',calls[-1]['prompt'])
-  self.assertIn('実ブラウザーから抽出した画面文言:授業の出欠記録 個人講師・小規模スクール向け スマホで出欠を記録',calls[-1]['prompt'])
+  self.assertIn('実ブラウザーから抽出した画面文言:授業の出欠記録 個人講師・小規模スクール向け。ブラウザー計測:',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(448,224))
   desktop=app.base64.b64decode(calls[-1]['images'][1])
