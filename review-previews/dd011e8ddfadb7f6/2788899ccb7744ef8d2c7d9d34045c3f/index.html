@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_c06eb078cf6ea7c54d76212b:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>授業参加通知アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        .container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 20px; }
+        header { background-color: #f8f9fa; padding: 10px 20px; }
+        h1 { margin: 0; font-size: 2em; }
+        .intro { margin: 20px 0; }
+        .intro p { margin: 0; font-size: 1.2em; }
+        .steps { margin: 20px 0; }
+        .step { margin: 10px 0; }
+        .step h2 { font-size: 1.5em; }
+        .step ul { list-style-type: none; margin: 0; padding: 0; }
+        .step li { margin: 5px 0; }
+        .input-section { margin: 20px 0; }
+        .input-section label { display: block; margin-bottom: 5px; }
+        .input-section input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        .input-section button { padding: 8px 12px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .result { margin-top: 20px; }
+        .result p { margin: 0; font-size: 1.2em; }
+        .footer { background-color: #f8f9fa; padding: 10px 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>授業参加通知アプリ</h1>
+        </header>
+        <div class="intro">
+            <p>高校・大学の学生向け授業参加通知アプリです。教員が授業開始時間を設定し、アプリが授業開始直前に学生に通知を送ります。学生は通知を確認し、出席を確認できます。</p>
+        </div>
+        <div class="steps">
+            <div class="step">
+                <h2>1. 授業開始時間を設定</h2>
+                <ul>
+                    <li>教員が授業開始時間を設定します。</li>
+                </ul>
+            </div>
+            <div class="step">
+                <h2>2. 授業開始直前に通知を送る</h2>
+                <ul>
+                    <li>アプリが授業開始直前に学生に通知を送ります。</li>
+                </ul>
+            </div>
+            <div class="step">
+                <h2>3. 通知を確認し、出席を確認</h2>
+                <ul>
+                    <li>学生は通知を確認し、出席を確認します。</li>
+                </ul>
+            </div>
+        </div>
+        <div class="input-section">
+            <label for="teacherName">教員名</label>
+            <input type="text" id="teacherName" placeholder="教員名を入力">
+            <label for="className">クラス名</label>
+            <input type="text" id="className" placeholder="クラス名を入力">
+            <label for="lessonTime">授業開始時間</label>
+            <input type="text" id="lessonTime" placeholder="授業開始時間を入力">
+            <button id="setLessonTime">授業開始時間を設定</button>
+        </div>
+        <div class="result" id="result">
+            <p>結果が表示されます。</p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('setLessonTime').addEventListener('click', function() {
+            const teacherName = document.getElementById('teacherName').value;
+            const className = document.getElementById('className').value;
+            const lessonTime = document.getElementById('lessonTime').value;
+            document.getElementById('result').innerText = `授業開始時間: ${lessonTime}, 教員名: ${teacherName}, クラス名: ${className}`;
+        });
+    </script>
+</body>
+</html>
