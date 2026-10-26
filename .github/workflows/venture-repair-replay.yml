@@ -16,13 +16,26 @@ jobs:
         product: [attendance, workday]
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      OLLAMA_HOST: http://127.0.0.1:11435
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install streamlit pillow playwright
-      - run: python -m playwright install --with-deps chromium
+      - name: Prepare real Chromium with dependency fallback
+        run: |
+          python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()'; then
+            python -m playwright install-deps chromium
+          fi
+          if [ -z "$(fc-list :lang=ja family)" ]; then
+            sudo apt-get update
+            sudo apt-get install -y fonts-ipafont-gothic
+          fi
       - name: Find the latest available real browser evidence
         id: prior
         env:
@@ -65,7 +78,7 @@ jobs:
         run: |
           nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
           for i in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
+            if curl --fail --silent http://127.0.0.1:11435/api/tags >/dev/null; then break; fi
             sleep 2
           done
           ollama pull qwen2.5vl:3b

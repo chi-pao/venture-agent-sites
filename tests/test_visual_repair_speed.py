@@ -23,8 +23,10 @@ class VisualRepairSpeedTests(TestCase):
         with patch.object(app,'get_product_spec',return_value={}),patch.object(app,'ai_json',side_effect=answer):
             page,reason=app.visual_product_repair('出欠管理',self.source,'画像判定: designの改善',dict(app.DEFAULT))
         self.assertIn('.hero{color:red}',captured['prompt'])
+        self.assertIn('実在するCSS指定先:[".hero"]',captured['prompt'])
         self.assertNotIn('SCRIPT_MUST_STAY',captured['prompt'])
-        self.assertEqual(captured['tokens'],1600)
+        self.assertEqual(captured['tokens'],900)
+        self.assertLess(len(captured['prompt']),6000)
         self.assertEqual(captured['options']['request_timeout'],300)
         self.assertEqual(captured['options']['max_attempts'],1)
         self.assertIn('color:navy',page)

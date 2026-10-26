@@ -38,7 +38,7 @@ def main():
     if not app.competitive_visual_ready(brief):raise RuntimeError("Competitor screenshot provenance is invalid")
     app.competitive_context=lambda _:{"brief":brief}
     cfg=dict(app.DEFAULT,model="qwen2.5-coder:7b",qa_vision_model="qwen2.5vl:3b",
-             url="http://127.0.0.1:11434",ai_context=8192,visual_repair_timeout=300,autoqa_setup=False)
+             url=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434"),ai_context=8192,visual_repair_timeout=300,autoqa_setup=False)
     result={"product":product,"name":name,"source_sha":old["content_sha"],"before_visual":old.get("visual"),"status":"failed"}
     started=time.monotonic()
     try:

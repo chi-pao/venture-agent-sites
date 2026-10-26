@@ -27,6 +27,10 @@ jobs:
         product: [attendance, workday]
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      OLLAMA_HOST: http://127.0.0.1:11435
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,7 +46,7 @@ jobs:
         run: |
           nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
           for i in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then exit 0; fi
+            if curl --fail --silent http://127.0.0.1:11435/api/tags >/dev/null; then exit 0; fi
             sleep 2
           done
           cat "$RUNNER_TEMP/ollama.log"
@@ -58,7 +62,7 @@ jobs:
           VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
           VENTURE_LIVE_DATA_HOME: live-generation-artifacts/${{ matrix.product }}
           VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
-          OLLAMA_HOST: http://127.0.0.1:11434
+          OLLAMA_HOST: http://127.0.0.1:11435
         run: |
           python -m py_compile agent/venture_agent_integrated.py tests/live_generation_smoke.py
           python tests/live_generation_smoke.py

@@ -5106,19 +5106,22 @@ def visual_product_repair(name,source,problem,cfg):
     body=re.search(r'<body\b[^>]*>(.*)',markup,re.I|re.S)
     markup=body.group(1) if body else markup
     compact={key:spec.get(key) for key in ('audience','requested_outcome','must_have')}
+    selectors=list(dict.fromkeys(re.findall(r'(?<![\w-])[.#][A-Za-z_][\w-]*',styles)))[:36]
+    visible_copy=visible_audience_copy(source)
     prompt=('既存アプリの画面デザイン担当。JavaScript・保存・計算・IDは変更しない。'
         '現在の実画面のCSS・HTMLを読み、指摘の原因に対応する小さな上書きCSSと必要な説明文の修正だけを返す。'
         'JSONだけ: {"reason":"具体的な修正理由","css":"末尾へ追加するCSS","copy":[{"old":"実画面に一意に存在する8文字以上の表示文言","new":"改善文言"}]}。'
-        '既存のclass・id・要素を使う。cssは最大3000文字、copyは最大3件。HTMLタグやJavaScript、外部URLを追加しない。'
+        '既存のclass・id・要素を使う。cssは最大1600文字、copyは最大2件。HTMLタグやJavaScript、外部URLを追加しない。'
         '全体のCSSを複写せず、対象箇所に必要なルールだけ追加する。スマホの縦積みと主要操作、対象者と価値、結果までの導線を具体化する。'
-        '\n実測の改善課題:'+str(problem)[:1400]
-        +'\n対象・利用価値:'+json.dumps(compact,ensure_ascii=False)[:1400]
-        +'\n現在のCSS（実在するセレクター）:\n'+styles[:5500]
-        +'\n現在の表示HTML（スクリプト除外）:\n'+markup[:4000])
+        '\n実測の改善課題:'+str(problem)[:900]
+        +'\n対象・利用価値:'+json.dumps(compact,ensure_ascii=False)[:900]
+        +'\n実在するCSS指定先:'+json.dumps(selectors,ensure_ascii=False)
+        +'\n現在のCSSの構成:\n'+styles[:1800]
+        +'\n実画面の表示文言:'+json.dumps(visible_copy,ensure_ascii=False)[:900])
     def validate(proposal):
         apply_visual_product_edits(source,proposal)
         return proposal
-    proposal=ai_json(prompt,cfg,1600,validator=validate,max_attempts=1,
+    proposal=ai_json(prompt,cfg,900,validator=validate,max_attempts=1,
         request_timeout=max(180,int(cfg.get('visual_repair_timeout',300))))
     return apply_visual_product_edits(source,proposal),str(proposal.get('reason','画面のCSS・説明を改善'))[:600]
 
