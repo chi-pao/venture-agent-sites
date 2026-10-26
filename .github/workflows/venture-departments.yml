@@ -37,8 +37,16 @@ jobs:
           python-version: '3.12'
       - name: Install app and browser dependencies
         run: python -m pip install --upgrade pip streamlit pandas pillow playwright
-      - name: Install real Chromium
-        run: python -m playwright install --with-deps chromium
+      - name: Prepare real Chromium with dependency fallback
+        run: |
+          python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()'; then
+            python -m playwright install-deps chromium
+          fi
+          if [ -z "$(fc-list :lang=ja family)" ]; then
+            sudo apt-get update
+            sudo apt-get install -y fonts-ipafont-gothic
+          fi
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
       - name: Start local Ollama service

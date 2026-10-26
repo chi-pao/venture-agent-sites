@@ -67,3 +67,16 @@ class DepartmentAdapterTests(TestCase):
         app.execute('UPDATE autonomous_control SET enabled=0')
         result=app.run_product_departments(0,self.name,dict(app.DEFAULT))
         self.assertEqual(result['stage'],'停止中');self.assertEqual(self.calls,[])
+
+    def test_independent_qa_does_not_reuse_renderer_expected_results(self):
+        # Independent mode must go through the scenario planner even when a
+        # structured template exists. It must not certify its own renderer.
+        with patch.object(app,'get_product_spec',return_value={}), \
+             patch.object(app,'visible_audience_copy',return_value=['対象者の説明','最初の操作の説明']), \
+             patch.object(app,'get_implementation_plan',return_value={}), \
+             patch.object(app,'structured_interface_from_html',return_value={'operation':'attendance'}), \
+             patch.object(app,'structured_qa_plan') as compiled, \
+             patch.object(app,'ai_json',side_effect=app.AutoQAPlanError('独立計画のテスト用停止')) as independent:
+            with self.assertRaises(app.AutoQAPlanError):
+                app.make_qa_plan(self.name,self.page,dict(app.DEFAULT,_department_independent_qa=True))
+            compiled.assert_not_called();independent.assert_called_once()

@@ -17,6 +17,8 @@ This replaces the production-improvement scheduler with persistent handoffs, usi
 
 Receipts live under `venture_outputs/departments/<product hash>/<requirement hash>/<department>/`. The database stores current task states and feedback. Reopening the program revalidates receipt bytes before reuse. A requirements change starts a new scope; old receipts remain on disk. A verifier/environment failure reuses the exact development candidate. A design failure returns to design, then rebuilds and rechecks. An unavailable market/competitor source does not stop independent prototyping; owner review still requires research evidence. Repeated diagnostic signatures are remembered independently of temporary feedback.
 
+The coordinator asks the independent QA planner to derive browser cases from the requirements and visible screen, rather than reusing the renderer's own expected-value compiler. This avoids treating agreement with a template as proof that all requested workflows exist.
+
 Different models can be assigned through configuration `department_models` (`proposal`, `research`, `design`, `development`, `verification`); unspecified roles retain existing models. This is role separation, not a claim that six different models or six simultaneous processes are running. CPU/GPU work is sequential to avoid exhausting local resources. Configuration/model changes invalidate affected receipts. Model weights are not trained by these records.
 
 The dashboard shows six department states and the current return instructions beside the app preview. Department completion means only its contract passed. No preliminary screen check can override the existing final functional, visual or owner-approval checks.

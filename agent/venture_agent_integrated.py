@@ -2044,7 +2044,7 @@ def make_qa_plan(name,page,cfg):
         raise AutoQAPlanError('初回画面に対象者と使い方が分かる説明文を2件以上表示してください。AIが引用を補うのではなく、画面を改善してから実操作検査します')
     build_plan=get_implementation_plan(name) or {}
     ui=structured_interface_from_html(page)
-    if ui is not None:
+    if ui is not None and not cfg.get('_department_independent_qa'):
         return structured_qa_plan(name,page,spec,ui,audience_quotes)
     test_contract={f.get('acceptance_index'):dict(name=f.get('name'),prototype_mode=f.get('prototype_mode'),
         prototype_behavior=f.get('prototype_behavior'),connection_boundary=f.get('connection_boundary'),test_cases=f.get('test_cases',[]))
@@ -2057,6 +2057,7 @@ def make_qa_plan(name,page,cfg):
         'roundtripはCSV実ファイル出力の値照合、JSONバックアップ取得、別データ追加、復元確認の順に操作。cancel_restoreとrestore_fileを含める。'
         'invalidは不正JSON復元と不正入力後に既存保存が壊れないことを確認。各scenarioは具体的な操作1〜24件・期待結果2〜8件。'
         'body/html/*等の広すぎるセレクタ禁止。実装不足でテスト不能なら {"blocked_features":["不足機能"]}。'+operations
+        +'\n前回の検証計画の問題:'+str(cfg.get('_department_feedback',''))[:1500]
         +'\n仕様:'+json.dumps(spec,ensure_ascii=False)[:6500]+'\nHTML要素:'+markup[:14000])
     def validate_base(value):
         if value.get('blocked_features'):raise AutoQAPlanError('実装不足で共通操作テストを作れません: '+' / '.join(map(str,value['blocked_features']))[:500])
@@ -3134,7 +3135,9 @@ def run_product_departments(job, name, cfg):
             return dict(passed=False, return_to='development', details=candidate['details'], content_sha=candidate['content_sha'])
         event(job, name + ': 検証担当が同じ候補をPC・スマホで実操作・画像比較')
         passed, detail, stage = automated_product_qa(job, name, page,
-            dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design']))
+            dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design'],
+                _department_independent_qa=True,
+                _department_feedback=context['feedback'].get('verification',{}).get('detail','')))
         rows = query("SELECT path FROM agent_assets WHERE idea=? AND kind='自動品質検査レポート' ORDER BY id DESC LIMIT 1", (name,))
         report = json.loads(Path(rows[0]['path']).read_text(encoding='utf-8')) if rows else {}
         if report.get('content_sha') != candidate['content_sha']:
@@ -3153,7 +3156,7 @@ def run_product_departments(job, name, cfg):
         'research': dict(policy=COMPETITIVE_POLICY, model=cfg['model']),
         'design': dict(policy=PRODUCT_BLUEPRINT_POLICY, implementation=IMPLEMENTATION_PLAN_POLICY, model=cfg['model']),
         'development': dict(version=APP_VERSION, model=coding_config(cfg)['model']),
-        'verification': dict(policy=AUTO_QA_POLICY, vision=cfg.get('qa_vision_model'), model=cfg['model']),
+        'verification': dict(policy=AUTO_QA_POLICY, independent_qa=True, vision=cfg.get('qa_vision_model'), model=cfg['model']),
     }
     for department, settings in configuration.items():
         settings['role_model'] = (cfg.get('department_models') or {}).get(department, '')

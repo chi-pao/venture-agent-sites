@@ -104,7 +104,9 @@ def run_product_departments(job, name, cfg):
             return dict(passed=False, return_to='development', details=candidate['details'], content_sha=candidate['content_sha'])
         event(job, name + ': 検証担当が同じ候補をPC・スマホで実操作・画像比較')
         passed, detail, stage = automated_product_qa(job, name, page,
-            dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design']))
+            dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design'],
+                _department_independent_qa=True,
+                _department_feedback=context['feedback'].get('verification',{}).get('detail','')))
         rows = query("SELECT path FROM agent_assets WHERE idea=? AND kind='自動品質検査レポート' ORDER BY id DESC LIMIT 1", (name,))
         report = json.loads(Path(rows[0]['path']).read_text(encoding='utf-8')) if rows else {}
         if report.get('content_sha') != candidate['content_sha']:
@@ -123,7 +125,7 @@ def run_product_departments(job, name, cfg):
         'research': dict(policy=COMPETITIVE_POLICY, model=cfg['model']),
         'design': dict(policy=PRODUCT_BLUEPRINT_POLICY, implementation=IMPLEMENTATION_PLAN_POLICY, model=cfg['model']),
         'development': dict(version=APP_VERSION, model=coding_config(cfg)['model']),
-        'verification': dict(policy=AUTO_QA_POLICY, vision=cfg.get('qa_vision_model'), model=cfg['model']),
+        'verification': dict(policy=AUTO_QA_POLICY, independent_qa=True, vision=cfg.get('qa_vision_model'), model=cfg['model']),
     }
     for department, settings in configuration.items():
         settings['role_model'] = (cfg.get('department_models') or {}).get(department, '')
