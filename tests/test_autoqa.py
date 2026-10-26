@@ -48,7 +48,17 @@ def attendance_plan():
 def design_brief(name):
  text='これは比較先の公式本文のテスト用取得内容です。'
  urls=['https://nicody.jp/','https://wanderlog.com/']
- return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
+ # Unit-test-only captures exercise the hash and viewport gate without claiming live competitor evidence.
+ fixture_root=app.OUT/'test-competitor-captures';fixture_root.mkdir(parents=True,exist_ok=True)
+ observations=[]
+ for index,url in enumerate(urls):
+  views={}
+  for label,width,height in (('desktop',1280,900),('mobile',390,844)):
+   path=fixture_root/f'{index}-{label}.png';image=b'unit-test screenshot placeholder'
+   path.write_bytes(image)
+   views[label]=dict(width=width,height=height,metrics=dict(viewportWidth=width,bodyTextLength=120,heading='テスト画面'),screenshot_path=str(path),screenshot_sha256=hashlib.sha256(image).hexdigest())
+  observations.append(dict(source_url=url,capture_status='ok',views=views))
+ return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
 
 class AutomaticQATests(ContinuationTests):
  def install(self,index):
