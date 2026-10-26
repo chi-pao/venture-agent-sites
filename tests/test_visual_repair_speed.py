@@ -65,8 +65,16 @@ class VisualRepairSpeedTests(TestCase):
         got=app.replace_visible_product_copy(source,'予定 & 実績を 一緒に管理','予定と実績をまとめて管理')
         self.assertIn('<h1>予定と実績をまとめて管理</h1>',got)
     def test_visual_css_cannot_hide_existing_actions(self):
-        for css in ('.toolbar{display: none}', '.actions {visibility:hidden}'):
-            with self.subTest(css=css),self.assertRaisesRegex(ValueError,'非表示'):
+        source='<html><head><style>.toolbar{display:flex}</style></head><body><div class="toolbar"><button id="save">保存する</button></div></body></html>'
+        for css in ('.toolbar{display: none;gap:12px}', '.toolbar {visibility:hidden;margin:8px}'):
+            with self.subTest(css=css):
+                got=app.apply_visual_product_edits(source,dict(css=css,copy=[]))
+                self.assertNotIn('display: none',got)
+                self.assertNotIn('visibility:hidden',got)
+                self.assertIn('<button id="save">保存する</button>',got)
+    def test_removing_only_hiding_rule_is_not_an_improvement(self):
+        for css in ('.toolbar{display:none}', '@media(max-width:640px){.toolbar{display:none}}'):
+            with self.subTest(css=css),self.assertRaisesRegex(ValueError,'修正内容がありません'):
                 app.apply_visual_product_edits(self.source,dict(css=css,copy=[]))
 
     def test_visual_request_keeps_existing_mobile_rules_and_latest_overrides(self):

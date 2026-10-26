@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.5'
+APP_VERSION='2026.10.26.6'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -5158,8 +5158,13 @@ def apply_visual_product_edits(source,proposal):
                 if not isinstance(edit,dict) or any(not isinstance(edit.get(k),str) or '<' in edit[k] or '>' in edit[k] for k in ('old','new')):raise ValueError('文言修正には表示テキストだけを指定してください')
                 if edit['old']==edit['new']:continue
                 page=replace_visible_product_copy(page,edit['old'],edit['new'])
-    if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden',css,re.I):
-        raise ValueError('画面修正で既存の機能や操作を非表示にできません。配置・余白・折返しで改善してください')
+    # Model-written visual overrides may not hide existing functionality.
+    # Keep the other rules, then require the full browser acceptance tests.
+    css=re.sub(r'(?<![\w-])(?:display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:!important)?\s*;?','',css,flags=re.I)
+    for _ in range(4):
+        cleaned=re.sub(r'[^{}]+\{\s*;?\s*\}','',css)
+        if cleaned==css:break
+        css=cleaned
     if css.strip():
         matches=list(re.finditer(r'</style\s*>',page,re.I))
         if matches:
@@ -5169,6 +5174,13 @@ def apply_visual_product_edits(source,proposal):
         else:raise ValueError('CSSを適用するhead要素がありません')
     if page==source:raise ValueError('画面の修正内容がありません')
     return page
+
+
+def visual_repair_reason(proposal):
+    reason=str(proposal.get('reason','画面のCSS・説明を改善'))[:500]
+    if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden',str(proposal.get('css','')),re.I):
+        reason+=' / 既存操作を隠す指定を自動除外'
+    return reason
 
 
 def visual_product_repair(name,source,problem,cfg):
@@ -5205,7 +5217,7 @@ def visual_product_repair(name,source,problem,cfg):
             cached=json.loads(cache_path.read_text(encoding='utf-8'))
             prior=cached.get('proposal') if isinstance(cached,dict) else None
             candidate=apply_visual_product_edits(source,prior)
-            return candidate,str(prior.get('reason','保存済みの修正案を再検査'))[:600]
+            return candidate,visual_repair_reason(prior)
         except (ValueError,TypeError,OSError) as exc:
             prompt+='\n前回の修正案の適用エラー:'+str(exc)[:300]
             if isinstance(prior,dict):prompt+='\n前回の案を繰り返さず修正する:'+json.dumps(prior,ensure_ascii=False)[:1200]
@@ -5222,7 +5234,7 @@ def visual_product_repair(name,source,problem,cfg):
     proposal=ai_json(prompt,cfg,900,schema=schema,validator=validate,max_attempts=1,
         request_timeout=max(180,int(cfg.get('visual_repair_timeout',300))))
     validate(proposal)
-    return apply_visual_product_edits(source,proposal),str(proposal.get('reason','画面のCSS・説明を改善'))[:600]
+    return apply_visual_product_edits(source,proposal),visual_repair_reason(proposal)
 
 
 def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
