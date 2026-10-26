@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_f781b1a6406bdab06dcb3d54:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マーケティング解析ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        .container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .section { margin-bottom: 20px; }
+        .input-group { margin-bottom: 10px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        .result { margin-top: 20px; }
+        .footer { text-align: center; margin-top: 20px; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>マーケティング解析ツール</h1>
+            <p>中小企業のマーケティング担当者が効率的なマーケティングデータ解析と改善提案を行うためのツール</p>
+        </div>
+        <div class="section">
+            <h2>ログイン/登録</h2>
+            <div class="input-group">
+                <label for="username">ユーザー名</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="input-group">
+                <label for="password">パスワード</label>
+                <input type="password" id="password" required>
+            </div>
+            <button onclick="login()">ログイン</button>
+        </div>
+        <div class="section">
+            <h2>データアップロード</h2>
+            <div class="input-group">
+                <label for="dataFile">データファイルを選択</label>
+                <input type="file" id="dataFile" required>
+            </div>
+            <button onclick="uploadData()">アップロード</button>
+        </div>
+        <div class="section">
+            <h2>AI解析</h2>
+            <div class="result" id="aiResult"></div>
+            <button onclick="runAI()">AI解析</button>
+        </div>
+        <div class="section">
+            <h2>結果表示</h2>
+            <div class="result" id="result"></div>
+            <button onclick="displayResult()">結果表示</button>
+        </div>
+        <div class="section">
+            <h2>改善提案ダウンロード</h2>
+            <div class="result" id="suggestion"></div>
+            <button onclick="downloadSuggestion()">ダウンロード</button>
+        </div>
+        <div class="footer">
+            <p>© 2026 AI解析ツール</p>
+        </div>
+    </div>
+
+    <script>
+        function login() {
+            // ログイン処理
+            alert("ログイン処理実装");
+        }
+
+        function uploadData() {
+            // データアップロード処理
+            alert("データアップロード処理実装");
+        }
+
+        function runAI() {
+            // AI解析処理
+            document.getElementById('aiResult').innerText = "AI解析結果：サンプルデータ";
+        }
+
+        function displayResult() {
+            // 結果表示処理
+            document.getElementById('result').innerText = "解析結果：サンプルデータ";
+        }
+
+        function downloadSuggestion() {
+            // 改善提案ダウンロード処理
+            alert("改善提案ダウンロード処理実装");
+        }
+    </script>
+</body>
+</html>
