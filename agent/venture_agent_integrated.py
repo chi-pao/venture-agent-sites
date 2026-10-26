@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.4'
+APP_VERSION='2026.10.26.5'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -5094,6 +5094,42 @@ def replace_visible_product_copy(source,old,new):
     return ''.join(parts)
 
 
+
+class _VisualCopyTargets(HTMLParser):
+    allowed={'h1','h2','h3','p','small','li'}
+    protected={'head','script','style','pre','code','textarea','svg','button','label','select','option','a'}
+    void={'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'}
+    def __init__(self,source):
+        super().__init__(convert_charrefs=True)
+        self.source=source;self.stack=[];self.targets=[];self.pending=None;self.words=[];self.lines=[0]
+        for match in re.finditer('\n',source):self.lines.append(match.end())
+    def _source_offset(self):
+        line,column=self.getpos();return self.lines[line-1]+column
+    def flush(self,end):
+        if self.pending is not None:
+            text=' '.join(''.join(self.words).split())
+            if 3<=len(text)<=300:self.targets.append(dict(ref='text_'+str(len(self.targets)),text=text,start=self.pending,end=end))
+        self.pending=None;self.words=[]
+    def handle_starttag(self,tag,attrs):
+        self.flush(self._source_offset())
+        if tag not in self.void:self.stack.append(tag)
+    def handle_startendtag(self,tag,attrs):self.flush(self._source_offset())
+    def handle_endtag(self,tag):
+        self.flush(self._source_offset())
+        for index in range(len(self.stack)-1,-1,-1):
+            if self.stack[index]==tag:self.stack=self.stack[:index];break
+    def handle_comment(self,data):self.flush(self._source_offset())
+    def handle_data(self,data):
+        if any(tag in self.allowed for tag in self.stack) and not any(tag in self.protected for tag in self.stack):
+            if self.pending is None:self.pending=self._source_offset()
+            self.words.append(data)
+
+
+def visual_copy_targets(source):
+    parser=_VisualCopyTargets(source);parser.feed(source);parser.close();parser.flush(len(source))
+    return parser.targets
+
+
 def apply_visual_product_edits(source,proposal):
     """Append presentation rules and edit visible copy without rewriting application logic."""
     if not isinstance(proposal,dict):raise ValueError('画面修正はJSONオブジェクトで指定してください')
@@ -5104,12 +5140,24 @@ def apply_visual_product_edits(source,proposal):
         raise ValueError('画面修正のCSSにHTML・外部接続を追加できません')
     page=source
     if copies:
-        for edit in copies:
-            if not isinstance(edit,dict) or any(not isinstance(edit.get(k),str) or '<' in edit[k] or '>' in edit[k] for k in ('old','new')):
-                raise ValueError('文言修正には表示テキストだけを指定してください')
-        for edit in copies:
-            if edit['old']==edit['new']:continue
-            page=replace_visible_product_copy(page,edit['old'],edit['new'])
+        referenced=any(isinstance(edit,dict) and 'ref' in edit for edit in copies)
+        if referenced:
+            targets={item['ref']:item for item in visual_copy_targets(source)}
+            changes=[];seen=set()
+            for edit in copies:
+                if not isinstance(edit,dict) or edit.get('ref') not in targets:raise ValueError('画面文言の番号は提示した一覧から選んでください')
+                if edit['ref'] in seen:raise ValueError('同じ画面文言の番号を重複して指定できません')
+                seen.add(edit['ref']);new=edit.get('new')
+                if not isinstance(new,str) or not new or '<' in new or '>' in new:raise ValueError('文言修正には空でない表示テキストだけを指定してください')
+                item=targets[edit['ref']]
+                if new==item['text']:continue
+                changes.append((item['start'],item['end'],html.escape(new,quote=False)))
+            for start,end,new in sorted(changes,reverse=True):page=page[:start]+new+page[end:]
+        else:
+            for edit in copies:
+                if not isinstance(edit,dict) or any(not isinstance(edit.get(k),str) or '<' in edit[k] or '>' in edit[k] for k in ('old','new')):raise ValueError('文言修正には表示テキストだけを指定してください')
+                if edit['old']==edit['new']:continue
+                page=replace_visible_product_copy(page,edit['old'],edit['new'])
     if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden',css,re.I):
         raise ValueError('画面修正で既存の機能や操作を非表示にできません。配置・余白・折返しで改善してください')
     if css.strip():
@@ -5126,23 +5174,29 @@ def apply_visual_product_edits(source,proposal):
 def visual_product_repair(name,source,problem,cfg):
     """Keep JS intact; ask the model only for small CSS overrides and visible copy."""
     spec=get_product_spec(name) or {}
-    styles='\n'.join(re.findall(r'<style\b[^>]*>.*?</style\s*>',source,re.I|re.S))
+    style_blocks=re.findall(r'<style\b[^>]*>.*?</style\s*>',source,re.I|re.S)
+    styles='\n'.join(style_blocks)
+    style_context=styles[:700]+'\n...\n'+'\n'.join(block[-500:] for block in style_blocks[-3:])
     markup=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>','',source,flags=re.I|re.S)
     body=re.search(r'<body\b[^>]*>(.*)',markup,re.I|re.S)
     markup=body.group(1) if body else markup
     compact={key:spec.get(key) for key in ('audience','requested_outcome','must_have')}
     selectors=list(dict.fromkeys(re.findall(r'(?<![\w-])[.#][A-Za-z_][\w-]*',styles)))[:36]
-    visible_copy=visible_audience_copy(source)
+    copy_targets=visual_copy_targets(source)[:12]
+    visible_copy=[dict(ref=item['ref'],text=item['text']) for item in copy_targets]
+    patterns=(competitive_context(name).get('brief') or {}).get('design_patterns',[])[:2]
+    design_refs=[dict(source=item.get('source_url',''),adapt=str(item.get('adapt',''))[:120],observed=str(item.get('pattern',''))[-100:]) for item in patterns]
     prompt=('既存アプリの画面デザイン担当。JavaScript・保存・計算・IDは変更しない。'
         '現在の実画面のCSS・HTMLを読み、指摘の原因に対応する小さな上書きCSSと必要な説明文の修正だけを返す。'
-        'JSONだけ: {"reason":"具体的な修正理由","css":"末尾へ追加するCSS","copy":[{"old":"実画面に一意に存在する8文字以上の表示文言","new":"改善文言"}]}。'
+        'JSONだけ: {"reason":"具体的な修正理由","css":"末尾へ追加するCSS","copy":[{"ref":"一覧にあるtext_番号","new":"改善文言"}]}。元の文言を書き写さず、提示されたrefで指定する。'
         '既存のclass・id・要素を使う。cssは最大1600文字、copyは最大2件。変更しない文言はcopyへ入れない。HTMLタグやJavaScript、外部URLを追加しない。保存・CSV・復元などの機能をdisplay:noneやvisibility:hiddenで隠さない。'
-        '全体のCSSを複写せず、対象箇所に必要なルールだけ追加する。スマホの縦積みと主要操作、対象者と価値、結果までの導線を具体化する。'
+        '全体のCSSを複写せず、対象箇所に必要なルールだけ追加する。既存の@mediaと末尾の修正を読み、スマホ設定をPC向けの指定で上書きしない。対象者と価値、主要操作、結果までの導線を具体化する。'
         '\n実測の改善課題:'+str(problem)[:900]
         +'\n対象・利用価値:'+json.dumps(compact,ensure_ascii=False)[:900]
         +'\n実在するCSS指定先:'+json.dumps(selectors,ensure_ascii=False)
-        +'\n現在のCSSの構成:\n'+styles[:1800]
-        +'\n実画面の表示文言:'+json.dumps(visible_copy,ensure_ascii=False)[:900])
+        +'\n比較資料から取り入れる設計:'+json.dumps(design_refs,ensure_ascii=False)[:750]
+        +'\n現在のCSS（先頭と各ブロック末尾。モバイル設定・既存の修正を保持）:\n'+style_context
+        +'\n変更できる実画面の文言と番号:'+json.dumps(visible_copy,ensure_ascii=False)[:1600])
     cache_key=hashlib.sha256((source+str(problem)+json.dumps(compact,ensure_ascii=False)+str(cfg.get('model'))).encode()).hexdigest()
     cache_path=OUT/'knowledge'/'visual-proposals'/(cache_key+'.json')
     if cache_path.is_file():
@@ -5159,7 +5213,13 @@ def visual_product_repair(name,source,problem,cfg):
         write_framework_json(cache_path,dict(source_sha=hashlib.sha256(source.encode()).hexdigest(),proposal=proposal))
         apply_visual_product_edits(source,proposal)
         return proposal
-    proposal=ai_json(prompt,cfg,900,validator=validate,max_attempts=1,
+    ref_values=[item['ref'] for item in copy_targets]
+    schema={'type':'object','properties':{
+        'reason':{'type':'string','minLength':5,'maxLength':200},'css':{'type':'string','maxLength':3000},
+        'copy':{'type':'array','maxItems':2 if ref_values else 0,'items':{'type':'object','properties':{
+            'ref':{'type':'string','enum':ref_values or ['unavailable']},'new':{'type':'string','minLength':1,'maxLength':200}},
+            'required':['ref','new'],'additionalProperties':False}}},'required':['reason','css','copy'],'additionalProperties':False}
+    proposal=ai_json(prompt,cfg,900,schema=schema,validator=validate,max_attempts=1,
         request_timeout=max(180,int(cfg.get('visual_repair_timeout',300))))
     validate(proposal)
     return apply_visual_product_edits(source,proposal),str(proposal.get('reason','画面のCSS・説明を改善'))[:600]

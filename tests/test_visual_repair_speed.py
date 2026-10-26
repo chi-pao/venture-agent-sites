@@ -8,8 +8,9 @@ from pathlib import Path
 class VisualRepairSpeedTests(TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.previous_out=app.OUT;app.OUT=Path(self.tmp.name)
+        self.context_patch=patch.object(app,'competitive_context',return_value={'brief':{}});self.context_patch.start()
     def tearDown(self):
-        app.OUT=self.previous_out;self.tmp.cleanup()
+        self.context_patch.stop();app.OUT=self.previous_out;self.tmp.cleanup()
     source='<!doctype html><html><head><style>.hero{color:red}</style></head><body><header><h1>講師向け出欠管理サービス</h1></header><button id="save">保存する</button><script>const keep="SCRIPT_MUST_STAY";function save(){localStorage.setItem("x","y")}</script></body></html>'
     def test_visual_edits_keep_javascript_and_ids(self):
         got=app.apply_visual_product_edits(self.source,dict(css='.hero{color:navy}',copy=[dict(old='講師向け出欠管理サービス',new='個人講師の出欠を一括管理')]))
@@ -67,3 +68,36 @@ class VisualRepairSpeedTests(TestCase):
         for css in ('.toolbar{display: none}', '.actions {visibility:hidden}'):
             with self.subTest(css=css),self.assertRaisesRegex(ValueError,'非表示'):
                 app.apply_visual_product_edits(self.source,dict(css=css,copy=[]))
+
+    def test_visual_request_keeps_existing_mobile_rules_and_latest_overrides(self):
+        source='<html><head><style>.hero{color:red}'+'.padding{padding:20px}'*400+'@media(max-width:640px){.mobile-critical{display:grid}}</style><style>.last-override{color:navy}</style></head><body><h1>講師向け出欠管理サービス</h1></body></html>'
+        captured={}
+        def answer(prompt,cfg,tokens,**kw):
+            captured['prompt']=prompt
+            return dict(reason='既存のスマホ指定を保持',css='.hero{color:navy}',copy=[])
+        with patch.object(app,'get_product_spec',return_value={}),patch.object(app,'ai_json',side_effect=answer):
+            app.visual_product_repair('出欠管理',source,'mobileの改善',dict(app.DEFAULT))
+        self.assertIn('.mobile-critical',captured['prompt'])
+        self.assertIn('.last-override',captured['prompt'])
+        self.assertLess(len(captured['prompt']),6000)
+
+    def test_copy_references_disambiguate_duplicate_visible_text(self):
+        source='<html><head><title>同じ見出し</title></head><body><h1>同じ見出し</h1><h2>同じ見出し</h2><script>const x="同じ見出し";</script></body></html>'
+        refs=app.visual_copy_targets(source)
+        self.assertEqual([x['text'] for x in refs],['同じ見出し','同じ見出し'])
+        got=app.apply_visual_product_edits(source,dict(copy=[dict(ref=refs[1]['ref'],new='二番目の案内を改善')]))
+        self.assertIn('<h1>同じ見出し</h1>',got)
+        self.assertIn('<h2>二番目の案内を改善</h2>',got)
+        self.assertIn('<script>const x="同じ見出し";</script>',got)
+    def test_copy_reference_offsets_survive_entities_and_multiple_edits(self):
+        source='<html><body><h1>A &amp; Bの管理</h1><p>入力から保存まで\n  簡単に進めます</p></body></html>'
+        refs=app.visual_copy_targets(source)
+        got=app.apply_visual_product_edits(source,dict(copy=[
+            dict(ref=refs[0]['ref'],new='長さが違う最初の見出し'),
+            dict(ref=refs[1]['ref'],new='保存までの案内も変更')]))
+        self.assertIn('<h1>長さが違う最初の見出し</h1>',got)
+        self.assertIn('<p>保存までの案内も変更</p>',got)
+    def test_unknown_or_duplicate_copy_references_are_rejected(self):
+        for edits in ([dict(ref='missing',new='不正な指定')],[dict(ref='text_0',new='一番目'),dict(ref='text_0',new='二番目')]):
+            with self.subTest(edits=edits),self.assertRaises(ValueError):
+                app.apply_visual_product_edits(self.source,dict(copy=edits))
