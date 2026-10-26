@@ -5071,6 +5071,29 @@ def preserve_checkpoint_features(checkpoint,candidate):
 
 
 
+
+def replace_visible_product_copy(source,old,new):
+    """Replace one rendered text node; leave title, scripts, attributes and data intact."""
+    if not isinstance(old,str) or not isinstance(new,str) or len(old)<8 or not new:
+        raise ValueError('表示文言は8文字以上の修正元と空でない修正後を指定してください')
+    parts=re.split(r'(<(?:head|script|style|pre|code|textarea|svg)\b[^>]*>.*?</(?:head|script|style|pre|code|textarea|svg)\s*>)',source,flags=re.I|re.S)
+    locations=[]
+    token_sets={}
+    for part_index in range(0,len(parts),2):
+        tokens=re.split(r'(<[^>]*>)',parts[part_index]);token_sets[part_index]=tokens
+        for index in range(0,len(tokens),2):
+            text=html.unescape(tokens[index])
+            candidate=text if old in text else ' '.join(text.split())
+            count=candidate.count(old)
+            locations.extend((part_index,index,candidate) for _ in range(count))
+    if len(locations)!=1:raise ValueError('画面上の修正元の文言が一意に一致しません（一致数: '+str(len(locations))+'）')
+    part_index,index,text=locations[0]
+    tokens=token_sets[part_index]
+    tokens[index]=html.escape(text.replace(old,new,1),quote=False)
+    parts[part_index]=''.join(tokens)
+    return ''.join(parts)
+
+
 def apply_visual_product_edits(source,proposal):
     """Append presentation rules and edit visible copy without rewriting application logic."""
     if not isinstance(proposal,dict):raise ValueError('画面修正はJSONオブジェクトで指定してください')
@@ -5086,7 +5109,8 @@ def apply_visual_product_edits(source,proposal):
                 raise ValueError('文言修正には表示テキストだけを指定してください')
             visible_source=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>','',source,flags=re.I|re.S)
             if edit['old'] not in visible_source:raise ValueError('修正元は実画面の文言から選んでください')
-        page=apply_product_edits(page,dict(edits=copies))
+        for edit in copies:
+            page=replace_visible_product_copy(page,edit['old'],edit['new'])
     if css.strip():
         matches=list(re.finditer(r'</style\s*>',page,re.I))
         if matches:
@@ -5118,11 +5142,25 @@ def visual_product_repair(name,source,problem,cfg):
         +'\n実在するCSS指定先:'+json.dumps(selectors,ensure_ascii=False)
         +'\n現在のCSSの構成:\n'+styles[:1800]
         +'\n実画面の表示文言:'+json.dumps(visible_copy,ensure_ascii=False)[:900])
+    cache_key=hashlib.sha256((source+str(problem)+json.dumps(compact,ensure_ascii=False)+str(cfg.get('model'))).encode()).hexdigest()
+    cache_path=OUT/'knowledge'/'visual-proposals'/(cache_key+'.json')
+    if cache_path.is_file():
+        prior=None
+        try:
+            cached=json.loads(cache_path.read_text(encoding='utf-8'))
+            prior=cached.get('proposal') if isinstance(cached,dict) else None
+            candidate=apply_visual_product_edits(source,prior)
+            return candidate,str(prior.get('reason','保存済みの修正案を再検査'))[:600]
+        except (ValueError,TypeError,OSError) as exc:
+            prompt+='\n前回の修正案の適用エラー:'+str(exc)[:300]
+            if isinstance(prior,dict):prompt+='\n前回の案を繰り返さず修正する:'+json.dumps(prior,ensure_ascii=False)[:1200]
     def validate(proposal):
+        write_framework_json(cache_path,dict(source_sha=hashlib.sha256(source.encode()).hexdigest(),proposal=proposal))
         apply_visual_product_edits(source,proposal)
         return proposal
     proposal=ai_json(prompt,cfg,900,validator=validate,max_attempts=1,
         request_timeout=max(180,int(cfg.get('visual_repair_timeout',300))))
+    validate(proposal)
     return apply_visual_product_edits(source,proposal),str(proposal.get('reason','画面のCSS・説明を改善'))[:600]
 
 
