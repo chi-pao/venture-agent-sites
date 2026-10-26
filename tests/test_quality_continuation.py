@@ -143,4 +143,16 @@ class ContinuationTests(unittest.TestCase):
   self.assertEqual(model.call_count,2)
   self.assertEqual(len(result['features']),len(spec['acceptance']))
 
+
+ def test_patch_timeout_keeps_old_source_and_switches_route_in_same_cycle(self):
+  old='<!doctype html><html><body><h1>保持する旧候補</h1></body></html>'
+  new='<!doctype html><html><body><h1>別経路の候補</h1></body></html>'
+  spec=app.get_product_spec(self.name)
+  with patch.object(app,'product_operation',return_value='custom_workflow'),patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'product_checkpoint',return_value=('',{})),patch.object(app,'ai',return_value=new) as model,patch.object(app,'incremental_product_repair',side_effect=TimeoutError('timed out')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'操作検査合格')),patch.object(app,'review_generated_product',return_value=(True,'品質検査合格')),patch.object(app,'event'):
+   page,detail,passed=app.build(1,self.name,dict(app.DEFAULT,max_revisions=2),'',existing_page=old)
+  self.assertTrue(passed);self.assertIn('別経路の候補',page)
+  self.assertEqual(repair.call_count,1);self.assertEqual(model.call_count,1)
+  self.assertIn('timed out',model.call_args.args[0])
+
 if __name__=='__main__':unittest.main()
+

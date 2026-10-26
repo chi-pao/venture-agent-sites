@@ -5,7 +5,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-2'
+CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-3'
 
 
 def qa_unit_schema(count,kind):
@@ -92,7 +92,7 @@ def validate_qa_unit(value,kind,acceptance_count):
     if not isinstance(steps,list) or not 1<=len(steps)<=24 or not isinstance(checks,list) or not 2<=len(checks)<=8:
         raise AutoQAPlanError('検査1件には操作1〜24件と期待結果2〜8件が必要です')
     if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<acceptance_count for i in covers):
-        raise AutoQAPlanError('完成条件の番号が不正です')
+        raise AutoQAPlanError('acceptanceは0始まり整数だけの配列（例:[0,1]）。条件オブジェクト・文字列は禁止。実際の値: '+json.dumps(covers,ensure_ascii=False)[:400])
     selector=lambda s:isinstance(s,str) and 1<=len(s)<=180 and not re.search(r'^(?:html|body|\*|xpath=)|>>|javascript:',s,re.I)
     allowed={'fill','click','select','check','reload','wait','download_json','download_csv','restore_file','restore_invalid','cancel_restore'}
     for step in steps:
@@ -125,7 +125,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
     acceptance=spec['acceptance'];count=len(acceptance)
     minimal_spec=dict(audience=spec['audience'],outcome=str(spec['requested_outcome'])[:500],
-        acceptance=[dict(index=i,condition=c) for i,c in enumerate(acceptance)])
+        acceptance_by_index={str(i):c for i,c in enumerate(acceptance)})
     # Never cut a JSON structure halfway, or let a long control list hide all
     # result selectors. Both sections retain a separate bounded budget.
     def fit(items,limit):
@@ -138,7 +138,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     context='仕様:'+json.dumps(minimal_spec,sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n実画面:'+json.dumps(inventory,sort_keys=True,ensure_ascii=False,separators=(',',':'))
     operations=('stepsは{op,selector,value?,label?,nth?,contains?}。opはfill,click,select,check,reload,wait,download_csv,download_json,restore_file,restore_invalid,cancel_restoreのみ。'
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
-        '具体的な処理結果をtext_equalsで照合。bodyやhtml禁止。説明やMarkdown不要。')
+        'waitのvalueは整数ミリ秒（例:500）であり表示文は禁止。結果を待つためのwaitは通常不要。'
+        'acceptanceは整数配列のみ、例:[0,1]。条件本文や{index,condition}は入れない。'
+        'result_selectorは画面に実在するCSS（例:#summaryValue）でありtext_contains等の命令名は禁止。'
+        'checksの最低1件は具体的な処理結果をtext_equalsで完全一致照合。bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''

@@ -116,3 +116,19 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(result,{'ready':True})
         self.assertEqual([call.args[2] for call in model.call_args_list],[650,650])
         self.assertEqual(model.call_args_list[1].args[1]['_json_response'],'json')
+        self.assertIn('出力契約:',model.call_args_list[1].args[0])
+        self.assertIn('object',model.call_args_list[1].args[0])
+
+    def test_real_model_object_indices_are_rejected_with_actionable_feedback(self):
+        value=copy.deepcopy(self.full['scenarios'][0])
+        value['result_selector']=self.full['result_selector']
+        value['acceptance']=[dict(index=0,condition='注文登録が可能であること')]
+        with self.assertRaisesRegex(app.AutoQAPlanError,'整数だけの配列'):
+            app.validate_qa_unit(value,'workflow',len(self.spec['acceptance']))
+
+    def test_model_context_does_not_encourage_copying_condition_objects(self):
+        self.plan()
+        prompt=self.calls[0]['prompt']
+        self.assertIn('acceptance_by_index',prompt)
+        self.assertNotIn('"index":0,"condition"',prompt)
+        self.assertIn('整数ミリ秒',prompt)
