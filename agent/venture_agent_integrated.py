@@ -2282,6 +2282,23 @@ def review_qa_images_programmatic(name,browser_result,page_source,plan):
     }
 
 
+def validate_visual_review_evidence(review,keys):
+    """Keep low visual scores actionable; only high scores need verbose pass evidence."""
+    for key in keys:
+        part=review.get(key,{})
+        score=part.get('score')
+        reason=str(part.get('reason','')).strip()
+        if type(score) is not int or not 0<=score<=5:
+            raise AutoQAPlanError('画像判定の点数が不正: '+key+' score='+repr(score))
+        if not reason:
+            raise AutoQAPlanError('画像判定の根拠が空です: '+key)
+        if score<4 and len(reason)<15:
+            part['reason']=reason+'（低評価のため、該当箇所を具体的に改善して再審査）'
+        elif len(reason)<15:
+            raise AutoQAPlanError('画像判定の根拠が不十分: '+key+' score='+repr(score)+' reason_chars='+str(len(reason))+' reason='+reason[:80])
+    return review
+
+
 def review_qa_images(name,browser_result,cfg):
     model=cfg.get('qa_vision_model','qwen2.5vl:3b');owner=runtime_owner()
     if not claim_runtime('local_ai',owner,720):raise AutoQAEnvironmentError('別処理がAIを使用中。画像判定を次回に再試行します')
@@ -2370,10 +2387,7 @@ def review_qa_images(name,browser_result,cfg):
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
             try:
                 review=qa_json(data.get('response',''))
-                for key in keys:
-                    part=review.get(key,{})
-                    if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<15:
-                        raise AutoQAPlanError('画像判定の根拠が不十分: '+key+' score='+repr(part.get('score'))+' reason_chars='+str(len(str(part.get('reason',''))))+' reason='+str(part.get('reason',''))[:80])
+                review=validate_visual_review_evidence(review,keys)
                 review['review_mode']='vision_model'
                 review['competitor_reference_count']=len(reference_images)
                 review['competitor_reference_sources']=reference_labels
@@ -2459,7 +2473,15 @@ def automated_product_qa(job,name,page,cfg):
         if visual.get('review_mode')!='vision_model' or int(visual.get('competitor_reference_count',0))<2:
             raise AutoQAEnvironmentError('画像AIが自作画面と類似サービス2件以上を実際に判定した証拠がありません。合格にはせず画像比較を再試行します')
         report['visual']=visual
-        issues=[key+': '+part['reason'] for key,part in visual.items() if key in ('audience','design','readability','mobile','usefulness') and part['score']<4]
+        repair_guidance={
+            'audience':'対象ユーザーと得られる価値を最初の画面上部に短く明記し、利用開始の入口を示す',
+            'design':'情報の優先順位を整理し、主要操作を目立たせ、内容を読みやすい領域・カードに分け、余白と配色を統一する',
+            'readability':'本文と補助文の大きさ・行間・コントラストを上げ、説明文を短く区切る',
+            'mobile':'スマホ幅で入力と主要ボタンを縦に並べ、タップしやすい寸法と余白を確保する',
+            'usefulness':'中心作業の入力・具体的な結果・保存後の次の操作までを画面でつなぐ',
+        }
+        issues=[key+': '+part['reason']+'。修正指示: '+repair_guidance[key]
+                for key,part in visual.items() if key in repair_guidance and part['score']<4]
         if issues:raise ValueError('画像判定で改善が必要: '+' / '.join(issues))
         if product_scope_sha(name)!=scope or not development_allowed(name) or not state()['enabled']:raise AutoQAEnvironmentError('検証中に要件・運転設定が変わったため再確認します')
         report['local_qa_passed']=True
