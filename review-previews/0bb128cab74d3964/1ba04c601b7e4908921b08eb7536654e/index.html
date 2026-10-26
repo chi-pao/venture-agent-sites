@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_b2d321b11cc20b462137238a:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>友人間旅行計画アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input, select, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>友人間旅行計画アプリ</h1>
+        <p>友達・カップル・家族の国内旅行を計画しましょう。</p>
+        <p>出発地・目的地と目標到着日時を入力し、一日の終了目標と別に保存・復元されます。</p>
+        <p>興味のある体験を複数選べ、到着予定時間や立寄りスポットも計画できます。</p>
+        <p>スマホで見やすいしおりを保存し、同行者が共同編集できます。</p>
+
+        <form id="travelForm">
+            <label for="departure">出発地:</label>
+            <input type="text" id="departure" required><br>
+
+            <label for="destination">目的地:</label>
+            <input type="text" id="destination" required><br>
+
+            <label for="departureDate">出発日時:</label>
+            <input type="datetime-local" id="departureDate" required><br>
+
+            <label for="arrivalDate">目標到着日時:</label>
+            <input type="datetime-local" id="arrivalDate" required><br>
+
+            <label for="interests">興味のある体験:</label>
+            <select id="interests" multiple required>
+                <option value="観光">観光</option>
+                <option value="食事">食事</option>
+                <option value="アクティビティ">アクティビティ</option>
+                <option value="登山">登山</option>
+                <option value="釣り">釣り</option>
+            </select><br>
+
+            <button type="button" onclick="calculateRoute()">旅程を計画する</button>
+        </form>
+
+        <div id="result" style="margin-top: 20px;"></div>
+
+        <button onclick="savePlan()">しおりを保存</button>
+        <button onclick="loadPlan()">しおりを読み込む</button>
+        <button onclick="exportCSV()">CSVで出力</button>
+    </div>
+
+    <script>
+        function calculateRoute() {
+            const departure = document.getElementById('departure').value;
+            const destination = document.getElementById('destination').value;
+            const departureDate = document.getElementById('departureDate').value;
+            const arrivalDate = document.getElementById('arrivalDate').value;
+            const interests = document.getElementById('interests').selectedOptions;
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            if (departure && destination && departureDate && arrivalDate) {
+                resultDiv.innerHTML = `旅程計画中...`;
+                // ここに実際の旅程計算処理を実装
+            } else {
+                resultDiv.innerHTML = '<div class="error">すべての入力項目を入力してください。</div>';
+            }
+        }
+
+        function savePlan() {
+            const departure = document.getElementById('departure').value;
+            const destination = document.getElementById('destination').value;
+            const departureDate = document.getElementById('departureDate').value;
+            const arrivalDate = document.getElementById('arrivalDate').value;
+            const interests = document.getElementById('interests').selectedOptions;
+
+            const plan = {
+                departure: departure,
+                destination: destination,
+                departureDate: departureDate,
+                arrivalDate: arrivalDate,
+                interests: Array.from(interests).map(option => option.value)
+            };
+
+            localStorage.setItem('travelPlan', JSON.stringify(plan));
+            alert('しおりを保存しました。');
+        }
+
+        function loadPlan() {
+            const plan = JSON.parse(localStorage.getItem('travelPlan'));
+            if (plan) {
+                document.getElementById('departure').value = plan.departure;
+                document.getElementById('destination').value = plan.destination;
+                document.getElementById('departureDate').value = plan.departureDate;
+                document.getElementById('arrivalDate').value = plan.arrivalDate;
+                document.getElementById('interests').options.forEach(option => {
+                    option.selected = plan.interests.includes(option.value);
+                });
+                alert('しおりを読み込みました。');
+            } else {
+                alert('保存されたしおりが見つかりません。');
+            }
+        }
+
+        function exportCSV() {
+            const plan = JSON.parse(localStorage.getItem('travelPlan'));
+            if (plan) {
+                const csvContent = `出発地,目的地,出発日時,目標到着日時,興味のある体験\n${plan.departure},${plan.destination},${plan.departureDate},${plan.arrivalDate},${plan.interests.join(',')}\n`;
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'travel_plan.csv';
+                a.click();
+            } else {
+                alert('保存されたしおりが見つかりません。');
+            }
+        }
+    </script>
+</body>
+</html>
