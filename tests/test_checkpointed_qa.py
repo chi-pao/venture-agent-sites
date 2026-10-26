@@ -49,6 +49,15 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=self.model):
             return app.checkpointed_independent_qa_plan('在宅ワーク',page or self.page,cfg or self.cfg,self.spec,['在宅勤務の作業を整理する','開始と終了を入力して作業時間を計算する。'])
 
+    def test_workflow_with_wrong_save_button_replans_operations(self):
+        page='<form id="recordForm"><input id="title" required><button id="saveRecord" type="submit">作業を保存</button></form><button id="saveWorkday" type="button">稼働枠を保存</button>'
+        inventory=app.compact_qa_inventory(page)
+        value={'steps':[{'op':'fill','selector':'#title','value':'作業'},{'op':'click','selector':'#saveWorkday'}]}
+        with self.assertRaisesRegex(app.AutoQAPlanError,'未送信'):
+            app.validate_qa_inventory_actions(value,inventory,'workflow')
+        value['steps'].append({'op':'click','selector':'#saveRecord'})
+        app.validate_qa_inventory_actions(value,inventory,'workflow')
+
     def test_timeout_resumes_after_last_completed_scenario(self):
         self.timeout_once=True
         with self.assertRaises(TimeoutError):self.plan()

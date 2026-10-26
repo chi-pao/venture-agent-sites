@@ -182,6 +182,18 @@ def validate_qa_unit(value,kind,acceptance_count):
     return value
 
 
+def qa_unsubmitted_forms(value, inventory):
+    controls=inventory['controls']
+    by_selector={n['selector']:n for n in controls}
+    filled={by_selector[s['selector']]['form'] for s in value.get('steps',[]) if s.get('op') in ('fill','select') and s.get('selector') in by_selector and by_selector[s['selector']].get('form')}
+    clicked={s.get('selector') for s in value.get('steps',[]) if s.get('op')=='click'}
+    missing=[]
+    for form in filled:
+        buttons=[n['selector'] for n in controls if n.get('form')==form and n['tag']=='button' and n.get('type','submit')=='submit' and ' ' not in n['selector']]
+        if buttons and not clicked.intersection(buttons):missing.append((form,buttons))
+    return missing
+
+
 def validate_qa_inventory_actions(value,inventory,kind):
     nodes=inventory['controls']+inventory['outputs']
     for step in value.get('steps',[]):
@@ -197,6 +209,8 @@ def validate_qa_inventory_actions(value,inventory,kind):
         if op=='click' and typ=='file':raise AutoQAPlanError('ファイル入力へclickはできません。復元専用の検査を使用: '+selector)
         if kind in ('workflow','variant') and op in ('download_csv','download_json','restore_file','restore_invalid','cancel_restore'):
             raise AutoQAPlanError('中心作業の検査にバックアップ検査を混ぜないでください')
+    missing=qa_unsubmitted_forms(value,inventory) if kind in ('workflow','variant','feature') else []
+    if missing:raise AutoQAPlanError('入力したフォームが未送信です。必要な項目を入力し送信ボタンを操作してください: '+str(missing))
     return value
 
 
@@ -369,7 +383,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 except (ValueError,OSError):raw=None
                 # A concrete UI operation error needs operation repair, not a
                 # new oracle. Only expectation/format failures take this path.
-                if raw and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
+                if raw and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
                     fault=None
                     if observation.exists():
                         try:fault=json.loads(observation.read_text(encoding='utf-8')).get('check')
