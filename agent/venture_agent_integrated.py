@@ -870,7 +870,7 @@ def ensure_product_spec(name,cfg,plan=''):
         return store_product_spec(name,designed,source='要件コンパイラー（AI設計失敗後の仮説）')
 
 
-COMPETITIVE_POLICY='2026-10-25-reference-led-design-3'
+COMPETITIVE_POLICY='2026-10-26-reference-led-design-content-4'
 COMPETITIVE_STANDARD={
     '比較先':'直接競合があれば調べる。完全一致の競合がなくても、近接サービス・類似機能・優れた画面設計・現在の代替手段を参考資料として使う。直接競合の有無と参考資料の役割を区別し、公式の本文・取得日・引用を残す。',
     '画面と内容':'関連する公式機能・使い方資料2件以上から、利用場面に応じた機能、画面構成、導線、情報のまとまり、入力負担、結果、共有、エラー回復を調べる。全体の作業が同一である必要はない。資料に書かれた機能と実画面で確認したデザインを区別する。',
@@ -949,7 +949,20 @@ def competitive_design_ready(brief):
     if not isinstance(patterns,list) or len(patterns)<2:return False
     if any(not isinstance(p,dict) or p.get('evidence_type')!='official_text' or any(not isinstance(p.get(k),str) or len(p[k].strip())<15 for k in ('pattern','adapt','improvement','acceptance')) for p in patterns):return False
     sources={r.get('url') for r in brief.get('sources',[]) if isinstance(r,dict) and r.get('content_sha')}
-    return len({p.get('source_url') for p in patterns if p.get('source_url') in sources})>=2
+    if len({p.get('source_url') for p in patterns if p.get('source_url') in sources})<2:return False
+    spec=get_product_spec_from_scope(brief.get('scope_sha','')) or {}
+    acceptance=spec.get('acceptance',[])
+    matrix=brief.get('content_comparison',[])
+    if not acceptance or not isinstance(matrix,list) or len(matrix)!=len(acceptance):return False
+    by_index={row.get('acceptance_index'):row for row in matrix if isinstance(row,dict)}
+    for i,requirement in enumerate(acceptance):
+        row=by_index.get(i)
+        if not isinstance(row,dict) or row.get('required_feature')!=requirement:return False
+        observations=row.get('competitor_observations',[])
+        if not isinstance(observations,list) or len({x.get('source_url') for x in observations if isinstance(x,dict) and x.get('source_url') in sources})<2:return False
+        if any(not isinstance(x,dict) or not isinstance(x.get('source_quote'),str) or len(x['source_quote'])<12 or not isinstance(x.get('evidence_status'),str) for x in observations):return False
+        if not isinstance(row.get('own_build_and_test'),str) or len(row['own_build_and_test'])<20:return False
+    return True
 
 
 def comparison_reference_catalog(references):
@@ -1125,15 +1138,19 @@ def deterministic_competitive_brief(name, valid, visual_observations=None):
     intent=' '.join([name,outcome]+workflow+acceptance).lower()
     tokens=[x for x in re.findall(r'[一-龥ぁ-んァ-ヶーA-Za-z0-9]{2,}',intent) if len(x)>=2]
     if not workflow or not acceptance:raise AutoQAPlanError('比較対象となる利用手順と完成条件がありません')
-    def quote_for(ref):
+    content_terms=('入力','保存','検索','集計','出力','CSV','通知','予定','移動','経路','共有','授業','出席','生徒','会計','請求','仕訳','返品','返金','時間','タスク','顧客','チャット','動画','レシピ','マインドフルネス','分析','記録','バックアップ','復元','予約','休憩','食事','report','project','task','time','track','class','student','board','export','calendar','invoice','return','refund','chat')
+    def quote_for(ref,target=None):
         text=ref['text'];windows=[]
+        focus=str(target or intent).lower()
+        focus_terms=[word for word in content_terms if word.lower() in focus]
+        focus_tokens=focus_terms or tokens
         for width in (140,120,100):
             for offset in range(0,max(1,len(text)-width+1),max(40,width//2)):
                 q=text[offset:offset+width].strip()
                 if 12<=len(q)<=180:
-                    overlap=sum(1 for token in tokens if token.lower() in q.lower())
-                    quality=sum(1 for word in ('機能','記録','管理','時間','授業','出席','作業','共有','分析','データ','予定','保存','report','project','task','time','track','class','student','board','export','csv') if word.lower() in q.lower())
-                    windows.append((overlap*3+quality,q))
+                    overlap=sum(1 for token in focus_tokens if token.lower() in q.lower())
+                    quality=sum(1 for word in content_terms if word.lower() in q.lower())
+                    windows.append((overlap*5+quality,q))
         if not windows:
             q=text[:180].strip()
             if len(q)<12:raise AutoQAPlanError('比較根拠から検証可能な引用を取り出せません')
@@ -1171,6 +1188,17 @@ def deterministic_competitive_brief(name, valid, visual_observations=None):
             improvement=f'本アプリでは「{workflow[0]}」から「{workflow[-1]}」までを一つの流れにし、{outcome}の結果と保存状態を同じ画面で確かめられるようにする。',
             acceptance=f'利用者が「{workflow[0]}」を入力し、{acceptance[0]}を確認した後、保存・再読込で結果が保たれることを試す。',
             visual_observation=visual))
+    content_comparison=[]
+    for acceptance_index,required_feature in enumerate(acceptance):
+        observations=[]
+        for ref in refs[:5]:
+            excerpt=quote_for(ref,required_feature)
+            matched_terms=[word for word in content_terms if word.lower() in required_feature.lower() and word.lower() in excerpt.lower()]
+            observations.append(dict(source_url=ref['url'],source_quote=excerpt,matched_terms=matched_terms,
+                evidence_status=('関連語の記載候補。機能提供の断定には使わない。' if matched_terms else '取得本文では確認できず。未提供とは断定しない。')))
+        content_comparison.append(dict(acceptance_index=acceptance_index,required_feature=required_feature,
+            competitor_observations=observations,
+            own_build_and_test='この完成条件を専用機能へ実装し、異なる入力値でブラウザー操作・結果・保存を確認する。'))
     item=dict(comparisons=comparisons,target_task=f'{audience}が{workflow[0]}から始め、{outcome}を行う作業。',
         proposed_advantage=f'選ぶ理由の仮説: {audience}が{workflow[0]}から結果・保存まで進められ、{acceptance[0]}を一続きで確認できること。',
         own_acceptance_index=0,
@@ -1178,7 +1206,7 @@ def deterministic_competitive_brief(name, valid, visual_observations=None):
             measure='完了可否、所要時間、入力ミス、迷った箇所、再利用意向を記録し、未測定値は推測で補わない。',
             continue_if='中心操作を完了でき、役立ち・時短・再利用の具体的な反応が取れた場合に改善を続ける。',
             reconsider_if='中心操作が完了しない、対象者の困りごととずれる、または反応を確かめる方法がない場合に対象や機能を見直す。'),
-        design_patterns=patterns[:5],visual_observations=list(visual_observations or []),
+        design_patterns=patterns[:5],visual_observations=list(visual_observations or []),content_comparison=content_comparison,
         research_gaps=['公式ページの記載は取得したが、競合サービスの実操作・利用者評価は未確認。',
             '差別化、支払意思、利用頻度、収益性は実測していない.'])
     validate_competitive_design(item,{r['url']:r for r in refs})
@@ -1339,7 +1367,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
             and bool(cached.get('development_only'))==bool(research_gap)):
         return validate_product_blueprint(cached,spec,brief)
     research_instruction=('競合の比較根拠が未完了です。以下の内部設計原則だけを使い、競合を見た・優れていると主張せず、差別化は検証仮説として記述する。'
-        if research_gap else '検証済み比較資料に対応づけ、確認できた内容と仮説を分ける。')
+        if research_gap else '検証済み比較資料に対応づけ、確認できた内容と仮説を分ける。公式本文の引用候補を全ての完成条件と照合し、競合に明記がない事項は不明と扱う。')
     prompt=('あなたはUX・画面設計担当。コード・競合調査の捏造・実利用の主張はせず、検証資料と製品要件を受け取り、画面構成と操作仕様だけをJSONで設計する。'
         '対象者が使ってみたい、使うと便利、迷わず目的を達成できる製品を作るための制作設計をJSONだけで作る。'
         '収益化をのぼるさんが最終判断する前に、デザイン・使い方・主機能が具体的な実物になるよう設計する。'
@@ -1507,7 +1535,7 @@ def ensure_implementation_plan(name,cfg,blueprint=None):
         'キー: architecture（画面・機能をどう分割し、どの順で作るか）、data_flow（入力→検証→処理→表示→保存のデータ流）、offline_boundary（オフラインで動く範囲と未接続機能）、'
         'features:[{acceptance_index:完成条件の0始まり番号,name:固有機能,user_action:利用者の操作,inputs:具体的な入力,processing:業務固有の処理,outputs:確認できる結果,persistence:保存・再読込,failure_behavior:誤入力・失敗時の扱い,prototype_mode:localまたはsample,prototype_behavior:API接続前でも完遂できる操作。sampleならサンプルと明記,connection_boundary:後から接続するAPIの機能と未接続中に約束しないこと,test_cases:[{input,action,expected}]}],'
         'screen_links:[{screen,purpose,next_action}]。'
-        '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500])
+        '\n要件:'+json.dumps(spec,ensure_ascii=False)[:7000]+'\n検証済み画面設計:'+json.dumps(blueprint,ensure_ascii=False)[:6500]+'\n機能別の同業内容比較:'+json.dumps((competitive_context(name).get('brief') or {}).get('content_comparison',[]),ensure_ascii=False)[:5000]+'\n公式本文にない機能を競合にないと断定せず、自アプリの受入条件は全て実装・検査する。')
     try:
         item=ai_json(prompt,coding_config(cfg,task='new'),3200,schema=plan_schema,max_attempts=1,
             request_timeout=int(cfg.get('planning_request_timeout',120)),
