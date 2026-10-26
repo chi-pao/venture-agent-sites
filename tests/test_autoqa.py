@@ -82,8 +82,11 @@ class AutomaticQATests(ContinuationTests):
     page=self.install(index);directory=self.root/str(index);directory.mkdir()
     old=next(x for x in plan['scenarios'] if x['kind']=='roundtrip');steps=old['steps']
     csv=next(x for x in steps if x['op']=='download_csv');js=next(x for x in steps if x['op']=='download_json');restore=next(x for x in steps if x['op']=='restore_file')
-    binding=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=[x for x in steps if x['op'] in ('fill','select','click')],checks=old['checks'],acceptance=old['acceptance'],rationale=old.get('rationale','実バックアップの取得・変更・復元前後を照合する'))
+    binding=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=steps[2:next(i for i,x in enumerate(steps) if x['op']=='restore_file')],confirmation_mode='inline',cancel_selector=next(x['selector'] for x in steps if x['op']=='cancel_restore'),confirmation_steps=steps[max(i for i,x in enumerate(steps) if x['op']=='restore_file')+1:],checks=old['checks'],acceptance=old['acceptance'],rationale=old.get('rationale','実バックアップの取得・変更・復元前後を照合する'))
     plan['scenarios']=[dict(app.compile_qa_roundtrip(binding,len(app.get_product_spec(self.name)['acceptance'])),kind='roundtrip') if x['kind']=='roundtrip' else x for x in plan['scenarios']]
+    old_invalid=next(x for x in plan['scenarios'] if x['kind']=='invalid')
+    invalid_binding=dict(restore_selector=next(x['selector'] for x in old_invalid['steps'] if x['op']=='restore_invalid'),invalid_steps=[x for x in old_invalid['steps'] if x['op']!='restore_invalid'],checks=old_invalid['checks'],acceptance=old_invalid['acceptance'],rationale='不正ファイルと入力が保存記録を変えないことを検証')
+    plan['scenarios']=[dict(app.compile_qa_invalid(invalid_binding,len(app.get_product_spec(self.name)['acceptance'])),kind='invalid') if x['kind']=='invalid' else x for x in plan['scenarios']]
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)

@@ -38,6 +38,7 @@ def qa_roundtrip_schema(count):
         'csv_contains':{'type':'array','minItems':2,'maxItems':8,'items':{'type':'string','minLength':1,'maxLength':100}},
         'json_selector':{'type':'string','minLength':1,'maxLength':180},
         'restore_selector':{'type':'string','minLength':1,'maxLength':180},
+        'confirmation_mode':{'type':'string','enum':['native','inline']},'cancel_selector':{'type':'string','maxLength':180},
         'mutation_steps':props['steps'],'confirmation_steps':{'type':'array','maxItems':3,'items':props['steps']['items']},
         'checks':props['checks'],'acceptance':props['acceptance'],'rationale':props['rationale'],
         'blocked_features':props['blocked_features']},
@@ -56,12 +57,32 @@ def compile_qa_roundtrip(value,count):
     if any(not isinstance(x,dict) or x.get('op') not in ('fill','select','check','click','wait') for x in mutation):raise AutoQAPlanError('変更操作に出力や復元を混ぜないでください')
     confirm=value.get('confirmation_steps',[])
     if not isinstance(confirm,list) or len(confirm)>3 or any(not isinstance(x,dict) or x.get('op')!='click' for x in confirm):raise AutoQAPlanError('画面内の復元確定操作はclickだけを指定してください')
+    mode=value.get('confirmation_mode','inline' if confirm else 'native')
+    if mode not in ('native','inline'):raise AutoQAPlanError('復元確認方式はnativeまたはinlineです')
+    if mode=='inline' and (not confirm or not isinstance(value.get('cancel_selector'),str) or not value['cancel_selector']):raise AutoQAPlanError('画面内復元にはcancel_selectorとconfirmation_stepsが必要です')
     restore=value['restore_selector']
     steps=[dict(op='download_csv',selector=value['csv_selector'],contains=value.get('csv_contains')),dict(op='download_json',selector=value['json_selector'])]+mutation
     # The harness handles real downloaded bytes, local storage snapshots and
     # native confirm dismissal. The model does not invent this protocol.
-    steps += [dict(op='cancel_restore',selector=restore),dict(op='restore_file',selector=restore),dict(op='restore_file',selector=restore)]+confirm
+    if mode=='inline':
+        steps += [dict(op='restore_file',selector=restore),dict(op='cancel_restore',selector=value['cancel_selector'],inline=True),dict(op='restore_file',selector=restore)]+confirm
+    else:steps += [dict(op='cancel_restore',selector=restore),dict(op='restore_file',selector=restore),dict(op='restore_file',selector=restore)]
     return validate_qa_unit(dict(steps=steps,checks=value.get('checks'),acceptance=value.get('acceptance'),rationale=value.get('rationale')),'roundtrip',count)
+
+
+def qa_invalid_schema(count):
+    props=qa_unit_schema(count,'invalid')['properties']
+    return {'type':'object','properties':{'restore_selector':{'type':'string','minLength':1,'maxLength':180},
+        'invalid_steps':props['steps'],'checks':props['checks'],'acceptance':props['acceptance'],'rationale':props['rationale']},
+        'required':['restore_selector','invalid_steps','checks','acceptance','rationale'],'additionalProperties':False}
+
+
+def compile_qa_invalid(value,count):
+    if not isinstance(value,dict) or not isinstance(value.get('restore_selector'),str) or not value['restore_selector']:raise AutoQAPlanError('不正ファイル検査のrestore_selectorが必要です')
+    steps=value.get('invalid_steps')
+    if not isinstance(steps,list) or any(not isinstance(x,dict) or x.get('op') not in ('fill','select','click','wait') for x in steps):raise AutoQAPlanError('invalid_stepsは実際の誤入力と送信操作だけを指定してください')
+    return validate_qa_unit(dict(steps=[dict(op='restore_invalid',selector=value['restore_selector'])]+steps,
+        checks=value.get('checks'),acceptance=value.get('acceptance'),rationale=value.get('rationale')),'invalid',count)
 
 
 class _QAInventory(HTMLParser):
@@ -195,13 +216,13 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
-                    return validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else validate(receipt['value'])
+                    return validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
             except (ValueError,TypeError,KeyError):pass
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
             except (ValueError,OSError):pass
         started=qa_time.monotonic()
-        unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else operations)
+        unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
         request=(prompt+('\n'+unit_operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
         try:
             def capture_and_validate(value):
@@ -237,13 +258,20 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         if kind=='roundtrip':
             prompt=('共通検査のうちroundtripの1件。バックアップ検査の対象と変更例だけをJSONで指定。stepsやop:download_csvは返さない。'
                 'csv_selector:CSV出力ボタンのCSS,csv_contains:直前までに保存した入力値2件以上,json_selector:JSON出力ボタンCSS,restore_selector:復元ファイル入力または選択ラベルのCSS,'
+                'confirmation_mode:ブラウザconfirmならnative、画面内に確定とキャンセルがあればinline。inlineではcancel_selectorに画面のキャンセルボタンCSSが必須。'
                 'mutation_steps:別の記録Cをfill/selectしてclick保存する操作2〜14件,confirmation_steps:ファイル選択後に画面内の確定ボタンがある場合だけclick（通常は空配列）,'
                 'checks:復元後に直前のreloadと同じ保存値・集計を照合する期待値2件以上,acceptance:条件番号配列,rationale:根拠。'
                 'ダウンロード→C保存→復元キャンセル→実復元の順序は検査プログラムが組み立てる。サンプル読込やフォーム消去だけを変更としない。'
-                '\n出力オブジェクトの形:{"csv_selector":"CSS","csv_contains":["保存値A","保存値B"],"json_selector":"CSS","restore_selector":"CSS","mutation_steps":[{"op":"fill","selector":"CSS","value":"別の値C"},{"op":"click","selector":"保存ボタンCSS"}],"confirmation_steps":[],"checks":[{"op":"text_equals","selector":"CSS","value":"元の正解"},{"op":"text_equals","selector":"CSS","value":"元の正解2"}],"acceptance":[0],"rationale":"根拠"}'
+                '\n出力オブジェクトの形:{"csv_selector":"CSS","csv_contains":["保存値A","保存値B"],"json_selector":"CSS","restore_selector":"CSS","mutation_steps":[{"op":"fill","selector":"CSS","value":"別の値C"},{"op":"click","selector":"保存ボタンCSS"}],"confirmation_mode":"native","cancel_selector":"","confirmation_steps":[],"checks":[{"op":"text_equals","selector":"CSS","value":"元の正解"},{"op":"text_equals","selector":"CSS","value":"元の正解2"}],"acceptance":[0],"rationale":"根拠"}'
                 '\n先行入力値:'+json.dumps([{x.get('selector'):x.get('value',x.get('label')) for x in row['steps'] if x.get('op') in ('fill','select')} for row in scenarios[:2]],ensure_ascii=False,separators=(',',':'))[:1600]
                 +'\n復元後の期待値:'+json.dumps(scenarios[-1]['checks'],ensure_ascii=False,separators=(',',':'))[:1400])
             value=part('base-roundtrip',prompt,lambda v:compile_qa_roundtrip(v,count),tokens=1200,schema=qa_roundtrip_schema(count))
+        elif kind=='invalid':
+            prompt=('共通検査のうちinvalidの1件。実画面の復元先と誤入力だけをJSONで返す。'
+                '出力形式:{"restore_selector":"復元ファイル入力またはボタンCSS","invalid_steps":[{"op":"fill","selector":"必須入力CSS","value":""},{"op":"click","selector":"保存ボタンCSS"}],"checks":[{"op":"invalid","selector":"必須入力CSS"},{"op":"text_equals","selector":"集計CSS","value":"既存の正解"}],"acceptance":[0],"rationale":"根拠"}。'
+                'requiredがない欄なら実際のエラーメッセージを検査し、入力の種類に合う不正値を使う。入力の検査後に既存保存値が変わらないことを確認。'
+                '\n既存の保存値の期待結果:'+json.dumps(scenarios[-1]['checks'],ensure_ascii=False,separators=(',',':'))[:1600])
+            value=part('base-invalid',prompt,lambda v:compile_qa_invalid(v,count),tokens=800,schema=qa_invalid_schema(count))
         else:
             value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind=='workflow' else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))

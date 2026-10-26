@@ -29,6 +29,8 @@ def main():
         (name,json.dumps(products[name],ensure_ascii=False),1,app.now(),app.now()))
     cfg=dict(app.DEFAULT,model='qwen2.5-coder:7b',code_model='qwen2.5-coder:7b',qa_vision_model='qwen2.5vl:3b',
         url=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11435'),ai_context=8192,autoqa_setup=False,max_revisions=2,publish=False)
+    proposal_model=os.environ.get('VENTURE_LIVE_PROPOSAL_MODEL','').strip()
+    if proposal_model:cfg['department_models']={'proposal':proposal_model}
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):
@@ -43,7 +45,7 @@ def main():
                 return
         raise RuntimeError('部署制御の実生成は3周内に品質基準へ到達していません。未完成のまま保持します。')
     finally:
-        (root/'department-proof.json').write_text(json.dumps(dict(product=name,rounds=results,
+        (root/'department-proof.json').write_text(json.dumps(dict(product=name,models=dict(coding=cfg['model'],proposal=proposal_model or cfg['model'],vision=cfg['qa_vision_model']),rounds=results,
             seconds=round(time.monotonic()-started,2),release_ready=bool(results and results[-1]['stage']=='のぼるさん確認待ち')),
             ensure_ascii=False,indent=2),encoding='utf-8')
 

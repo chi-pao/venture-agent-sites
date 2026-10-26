@@ -32,8 +32,10 @@ class CheckpointedQAPlannerTests(TestCase):
             if kind=='workflow':value['result_selector']=self.full['result_selector']
             if kind=='roundtrip':
                 steps=value['steps'];csv=next(x for x in steps if x['op']=='download_csv');js=next(x for x in steps if x['op']=='download_json');restore=next(x for x in steps if x['op']=='restore_file')
-                value=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=[x for x in steps if x['op'] in ('fill','select','click')],checks=value['checks'],acceptance=value['acceptance'],rationale=value.get('rationale','復元前後の保存値を照合する'))
+                value=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=steps[2:next(i for i,x in enumerate(steps) if x['op']=='restore_file')],confirmation_mode='inline',cancel_selector=next(x['selector'] for x in steps if x['op']=='cancel_restore'),confirmation_steps=steps[max(i for i,x in enumerate(steps) if x['op']=='restore_file')+1:],checks=value['checks'],acceptance=value['acceptance'],rationale=value.get('rationale','復元前後の保存値を照合する'))
 
+            if kind=='invalid':
+                steps=value['steps'];value=dict(restore_selector=next(x['selector'] for x in steps if x['op']=='restore_invalid'),invalid_steps=[x for x in steps if x['op']!='restore_invalid'],checks=value['checks'],acceptance=value['acceptance'],rationale=value.get('rationale','不正な入力で保存が変わらないことを確認'))
         else:
             i,j=map(int,re.search(r'完成条件(\d+)のケース(\d+)',prompt).groups());key=f'feature-{i}-{j}'
             value=copy.deepcopy(next(x for x in self.full['feature_cases'] if x['acceptance_index']==i and x['case_index']==j))
@@ -181,3 +183,17 @@ class CheckpointedQAPlannerTests(TestCase):
             self.assertNotIn('anyOf',schema)
             self.assertTrue(schema['required'])
             self.assertTrue(set(schema['required'])<=set(schema['properties']))
+
+    def test_inline_confirmation_is_not_misclassified_as_native_dialog(self):
+        value=dict(csv_selector='#csv',csv_contains=['注文A','商品A'],json_selector='#json',restore_selector='#restore',confirmation_mode='inline',cancel_selector='#cancelRestore',confirmation_steps=[dict(op='click',selector='#applyRestore')],mutation_steps=[dict(op='fill',selector='#title',value='C'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#count',value='2'),dict(op='text_equals',selector='#summary',value='300円')],acceptance=[0],rationale='復元前後を検証')
+        plan=app.compile_qa_roundtrip(value,5)
+        self.assertEqual([s['op'] for s in plan['steps'][-4:]],['restore_file','cancel_restore','restore_file','click'])
+        self.assertTrue(plan['steps'][-3]['inline'])
+        self.assertEqual(plan['steps'][-3]['selector'],'#cancelRestore')
+        with self.assertRaises(app.AutoQAPlanError):app.compile_qa_roundtrip(dict(value,cancel_selector=''),5)
+
+    def test_invalid_file_selection_cannot_be_omitted_by_model(self):
+        value=dict(restore_selector='#restore',invalid_steps=[dict(op='fill',selector='#title',value=''),dict(op='click',selector='#save')],checks=[dict(op='invalid',selector='#title'),dict(op='text_equals',selector='#count',value='2')],acceptance=[0],rationale='不正入力後の保存値を照合')
+        plan=app.compile_qa_invalid(value,5)
+        self.assertEqual(plan['steps'][0],dict(op='restore_invalid',selector='#restore'))
+        with self.assertRaises(app.AutoQAPlanError):app.compile_qa_invalid(dict(value,invalid_steps=[dict(op='click',selector='#save')]),5)
