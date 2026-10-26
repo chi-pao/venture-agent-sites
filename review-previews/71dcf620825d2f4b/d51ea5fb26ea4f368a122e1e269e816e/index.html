@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_a8e2d84b619da27dbfbb84b2:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会議要約生成アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        .container { max-width: 1280px; margin: 0 auto; padding: 20px; }
+        header { background: #4CAF50; color: white; padding: 10px 20px; text-align: center; }
+        .step { margin-bottom: 20px; }
+        .step h2 { margin-top: 0; }
+        .step p { margin: 10px 0; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 10px; margin-bottom: 10px; }
+        .button { background: #4CAF50; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; border-radius: 5px; cursor: pointer; }
+        .button:hover { background: #45a049; }
+        .result { margin-top: 20px; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <header>
+        <h1>会議要約生成アプリ</h1>
+    </header>
+    <div class="container">
+        <div class="step">
+            <h2>1. ユーザーが録画ファイルをアップロードまたは共有リンクを共有</h2>
+            <p>アップロードされた録画ファイルから正確な要約が生成されます。</p>
+            <form id="uploadForm">
+                <div class="input-group">
+                    <label for="fileInput">ファイルを選択:</label>
+                    <input type="file" id="fileInput" name="fileInput" required>
+                </div>
+                <button class="button" type="submit">アップロード</button>
+            </form>
+        </div>
+        <div class="step" id="summaryStep" style="display: none;">
+            <h2>2. AIが録画を分析し、要約を生成</h2>
+            <p>生成された要約が会議の内容と一致し、重要なポイントを正確に捉えています。</p>
+            <div class="result" id="summaryResult"></div>
+        </div>
+        <div class="step" id="editStep" style="display: none;">
+            <h2>3. 要約の編集・共有</h2>
+            <p>要約の編集・共有機能が簡単に使用でき、意図した結果を得られます。</p>
+            <div class="result" id="editResult"></div>
+        </div>
+        <div class="step" id="shareStep" style="display: none;">
+            <h2>4. 共有機能を使用して要約を他のユーザーに送信</h2>
+            <p>多言語対応により、国際的な会議も効率的に要約できます。</p>
+            <div class="result" id="shareResult"></div>
+        </div>
+    </div>
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('file', file);
+                fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('summaryStep').style.display = 'block';
+                    document.getElementById('summaryResult').innerText = data.summary;
+                })
+                .catch(error => console.error('Error:', error));
+            }
+        });
+    </script>
+</body>
+</html>
