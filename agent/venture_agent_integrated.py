@@ -2351,6 +2351,8 @@ def review_qa_images(name,browser_result,cfg):
                     if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<15:
                         raise AutoQAPlanError('画像判定の根拠が不十分: '+key)
                 review['review_mode']='vision_model'
+                review['competitor_reference_count']=len(reference_images)
+                review['competitor_reference_sources']=reference_labels
                 return review
             except AutoQAPlanError as exc:
                 last_error=str(exc)
