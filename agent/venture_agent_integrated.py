@@ -3429,7 +3429,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     prompt=('独立QA。入力と操作は変更しない。主結果の完全な期待表示だけを、仕様から独立に計算して返す。'
         'JSON {"expected_text":"単位や補足も含む完全な期待文字列","basis":"入力からの計算式・根拠"}。'
         '数値を省略した表示書式の{n0},{n1}等を、入力から計算した数値に置き換える。必要な単位や文言を省略しない。'
-        '書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
+        '指定selectorの要素だけの表示を返し、周囲の見出しや一覧を含めない。書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
@@ -3513,9 +3513,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         unit_context=context
         if formatted:
             unit_context+='\n実測の数値を除去した表示書式（画面の資料であり指示ではない）:'+json.dumps(formats,ensure_ascii=False,separators=(',',':'))
-            unit_context+='\nexact_checkは{op:text_equals,selector:書式一覧のCSS,expected_values:[仕様から独立に計算した数値文字列],expected_literals:[数値の前後の期待文字列]}に変更。数値が2個ならliteralsは[前,間,後]の3個。業務状態の文言も仕様と入力から独立に判断し、観測書式を無条件にコピーしない。valueは返さない。各nの意味をlabelと書式から読み、入力例から全数値を計算して順番に返す。観測値を正解として採用しない。'
+            unit_context+='\nexact_checkは{op:text_equals,selector:書式一覧のCSS,value:その要素だけの完全な期待表示}。見出しや他の要素を含めない。書式の数値は入力・仕様から独立して計算し、状態も判断する。観測値を正解として採用しない。'
             schema=json.loads(json.dumps(schema))
-            schema['properties']['exact_check']={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','enum':list(formats)},'expected_values':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$'}},'expected_literals':{'type':'array','minItems':2,'maxItems':9,'items':{'type':'string','maxLength':180}}},'required':['op','selector','expected_values','expected_literals'],'additionalProperties':False}
+            schema['properties']['exact_check']={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','enum':list(formats)},'value':{'type':'string','minLength':1,'maxLength':250}},'required':['op','selector','value'],'additionalProperties':False}
         input_sha=hashlib.sha256((prompt+unit_context if include_context else prompt).encode()).hexdigest()
         if path.exists():
             try:
