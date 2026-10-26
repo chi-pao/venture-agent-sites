@@ -103,9 +103,14 @@ class ContinuationTests(unittest.TestCase):
   valid=blueprint_fixture(self.name)
   invalid=dict(valid,core_flows=[dict(valid['core_flows'][0],acceptance=[999])])
   urls=['https://nicody.jp/','https://wanderlog.com/']
-  brief=dict(policy=app.COMPETITIVE_POLICY,
+  acceptance=app.get_product_spec(self.name)['acceptance']
+  quote='これは比較先の公式本文で確認したテスト用の説明です。'
+  brief=dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(self.name),
    sources=[dict(url=u,content_sha='a'*64) for u in urls],
-   design_patterns=[dict(source_url=u,evidence_type='official_text',pattern='公式本文で確認した情報整理の説明を使います。',adapt='対象者の入力と結果を同じ画面に配置します。',improvement='対象者が比較結果を見失わないレイアウトにします。',acceptance='別の入力例を使い結果表示までを操作します。') for u in urls])
+   content_comparison=[dict(acceptance_index=i,required_feature=value,
+    competitor_observations=[dict(source_url=u,source_quote=quote,matched_terms=[],evidence_status='本文では未確認。未提供とは断定しない。') for u in urls],
+    own_build_and_test='この完成条件を専用機能へ実装し、結果・保存をブラウザーで検査します。') for i,value in enumerate(acceptance)],
+   design_patterns=[dict(source_url=u,source_quote=quote,evidence_type='official_text',pattern='公式本文で確認した情報整理の説明を使います。',adapt='対象者の入力と結果を同じ画面に配置します。',improvement='対象者が比較結果を見失わないレイアウトにします。',acceptance='別の入力例を使い結果表示までを操作します。') for u in urls])
   with patch.object(app,'ensure_competitive_brief',return_value=brief),patch.object(app,'get_product_blueprint',return_value=None),patch.object(app,'ai',side_effect=[json.dumps(invalid,ensure_ascii=False),json.dumps(valid,ensure_ascii=False)]) as model:
    result=app.ensure_product_blueprint(self.name,dict(app.DEFAULT))
   self.assertEqual(model.call_count,1)
