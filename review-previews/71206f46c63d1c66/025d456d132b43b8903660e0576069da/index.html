@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_0790275a02c2a26dd7b9dea2:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学習記録アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .input-group { margin-bottom: 10px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        .result { margin-top: 20px; }
+        .footer { text-align: center; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>学習記録アプリ</h1>
+            <p>学生、自習者向けの学習記録管理と最適な学習計画提案</p>
+        </div>
+        <div class="input-group">
+            <label for="lesson">授業名:</label>
+            <input type="text" id="lesson" required>
+        </div>
+        <div class="input-group">
+            <label for="date">日付:</label>
+            <input type="date" id="date" required>
+        </div>
+        <div class="input-group">
+            <label for="time">時間:</label>
+            <input type="time" id="time" required>
+        </div>
+        <div class="input-group">
+            <label for="content">内容:</label>
+            <textarea id="content" rows="4" required></textarea>
+        </div>
+        <button id="save">保存</button>
+        <div class="result" id="result"></div>
+        <div class="footer">
+            <button id="export">CSV出力</button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('save').addEventListener('click', function() {
+            const lesson = document.getElementById('lesson').value;
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const content = document.getElementById('content').value;
+
+            if (lesson && date && time && content) {
+                document.getElementById('result').innerText = `授業名: ${lesson}\n日付: ${date}\n時間: ${time}\n内容: ${content}`;
+            } else {
+                alert('すべてのフィールドを入力してください。');
+            }
+        });
+
+        document.getElementById('export').addEventListener('click', function() {
+            const result = document.getElementById('result').innerText;
+            if (result) {
+                const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(result);
+                const link = document.createElement('a');
+                link.href = csvContent;
+                link.download = '学習記録.csv';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                alert('保存データがありません。');
+            }
+        });
+    </script>
+</body>
+</html>
