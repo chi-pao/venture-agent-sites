@@ -115,6 +115,13 @@ def main():
                max_active=2, publish=False)
     summaries = []
     failures = []
+    original_visual_review=app.review_qa_images
+    vision_reviews=[]
+    def tracked_visual_review(*args,**kwargs):
+        result=original_visual_review(*args,**kwargs)
+        vision_reviews.append(result)
+        return result
+    app.review_qa_images=tracked_visual_review
     for name, rationale in PRODUCTS:
         app.execute(
             "INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)",
@@ -135,9 +142,22 @@ def main():
             if not ready:
                 raise RuntimeError(f"build/review did not pass: {build_detail}")
             verify_domain_specific_flow(name, page)
+            vision_reviews.clear()
             passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
             if not passed or stage != "のぼるさん確認待ち":
                 raise RuntimeError(f"end-to-end browser QA did not pass ({stage}): {qa_detail}")
+            if not vision_reviews:
+                raise RuntimeError("live vision model was not used for the generated app screens")
+            visual=vision_reviews[-1]
+            if visual.get("review_mode")!="vision_model" or visual.get("competitor_reference_count",0)<2:
+                raise RuntimeError(f"competitor screenshots did not reach live vision review: {visual}")
+            brief=app.competitive_context(name).get("brief") or {}
+            acceptance=app.get_product_spec(name).get("acceptance",[])
+            matrix=brief.get("content_comparison",[])
+            if not app.competitive_visual_ready(brief):
+                raise RuntimeError("captured competitor PC/mobile screenshots are not verified")
+            if len(matrix)!=len(acceptance) or {x.get("acceptance_index") for x in matrix}!=set(range(len(acceptance))):
+                raise RuntimeError("competitor content comparison does not cover every acceptance criterion")
             summaries.append({"name": name, "status": "pass", "build": build_detail, "qa": qa_detail,
                               "stage": stage, "characters": len(page)})
             print("LIVE_PRODUCT_PASS " + json.dumps(summaries[-1], ensure_ascii=False), flush=True)
@@ -146,6 +166,7 @@ def main():
             summaries.append(result);failures.append(result)
             print("LIVE_PRODUCT_FAIL " + json.dumps(result, ensure_ascii=False), flush=True)
         (root / "live-progress.json").write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
+    app.review_qa_images=original_visual_review
     summary = root / "live-summary.json"
     summary.write_text(json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8")
     print("LIVE_GENERATION_SUMMARY " + json.dumps(summaries, ensure_ascii=False), flush=True)
