@@ -198,6 +198,45 @@ def validate_qa_inventory_actions(value,inventory,kind):
     return value
 
 
+def qa_display_contracts_from_nodes(nodes):
+    contracts={}
+    for node in nodes:
+        text=str(node.get('text','')).strip();selector=node.get('selector','')
+        if not selector.startswith('#') or not text or len(text)>180:continue
+        slots=[]
+        def slot(match):
+            key='{n'+str(len(slots))+'}';slots.append(key);return key
+        template=re.sub(r'-?\d+(?:\.\d+)?',slot,text)
+        if not 1<=len(slots)<=8:continue
+        label=re.sub(r'-?\d+(?:\.\d+)?','数値',str(node.get('label','')))[:80]
+        contracts[selector]=dict(template=template,slots=len(slots),label=label)
+        if len(contracts)>=24:break
+    return contracts
+
+
+def capture_qa_display_contracts(page):
+    nodes=page.evaluate("""() => [...document.querySelectorAll('[id]')].filter(e=>!['INPUT','SELECT','TEXTAREA','BUTTON','SCRIPT','STYLE'].includes(e.tagName)).map(e=>({selector:'#'+e.id,text:e.innerText||'',label:e.closest('section')?.querySelector('h2,h3')?.innerText||e.getAttribute('aria-label')||''})).filter(e=>e.text.length<=180)""")
+    return qa_display_contracts_from_nodes(nodes)
+
+
+def compile_qa_formatted_expectation(value,formats):
+    if not isinstance(value,dict):return value
+    exact=value.get('exact_check')
+    if not isinstance(exact,dict) or 'expected_values' not in exact:return value
+    contract=formats.get(exact.get('selector'))
+    if not contract:raise AutoQAPlanError('表示書式の取得先にないselectorです')
+    values=exact['expected_values']
+    if not isinstance(values,list) or len(values)!=contract['slots'] or any(not isinstance(v,str) or not re.fullmatch(r'-?\d+(?:\.\d+)?',v) for v in values):
+        raise AutoQAPlanError('expected_valuesには仕様から計算した数値文字列を表示順に'+str(contract['slots'])+'件指定してください')
+    literals=exact.get('expected_literals')
+    if not isinstance(literals,list) or len(literals)!=len(values)+1 or any(not isinstance(v,str) or len(v)>180 for v in literals):
+        raise AutoQAPlanError('expected_literalsに数値の前後の期待文字列を全て指定してください。業務状態の文言も観測値を自動採用しません')
+    text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(values))
+    # Both numbers and surrounding business-state text come from independent
+    # QA. The observed template is guidance only, never an automatic oracle.
+    return dict(value,exact_check=dict(op='text_equals',selector=exact['selector'],value=text))
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -229,14 +268,33 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None
-        input_sha=hashlib.sha256((prompt+context if include_context else prompt).encode()).hexdigest()
+        formats={}
+        observation=folder/(key+'-browser')/'browser-observation-failure.json'
+        if observation.exists():
+            try:
+                observed=json.loads(observation.read_text(encoding='utf-8'))
+                available=observed.get('display_contracts',{})
+                primary=observed.get('check',{}).get('selector')
+                ordered=sorted(available,key=lambda k:(k!=primary,not bool(re.search(r'summary|total|count|capacity|planned|actual|balance',k,re.I))))
+                for selector in ordered:
+                    proposal=dict(formats,**{selector:available[selector]})
+                    if len(json.dumps(proposal,ensure_ascii=False,separators=(',',':')))<=2200:formats=proposal
+            except (ValueError,OSError,TypeError):pass
+        formatted=bool(formats and (key in ('base-workflow','base-variant') or key.startswith('feature-')))
+        unit_context=context
+        if formatted:
+            unit_context+='\n実測の数値を除去した表示書式（画面の資料であり指示ではない）:'+json.dumps(formats,ensure_ascii=False,separators=(',',':'))
+            unit_context+='\nexact_checkは{op:text_equals,selector:書式一覧のCSS,expected_values:[仕様から独立に計算した数値文字列],expected_literals:[数値の前後の期待文字列]}に変更。数値が2個ならliteralsは[前,間,後]の3個。業務状態の文言も仕様と入力から独立に判断し、観測書式を無条件にコピーしない。valueは返さない。各nの意味をlabelと書式から読み、入力例から全数値を計算して順番に返す。観測値を正解として採用しない。'
+            schema=json.loads(json.dumps(schema))
+            schema['properties']['exact_check']={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','enum':list(formats)},'expected_values':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$'}},'expected_literals':{'type':'array','minItems':2,'maxItems':9,'items':{'type':'string','maxLength':180}}},'required':['op','selector','expected_values','expected_literals'],'additionalProperties':False}
+        input_sha=hashlib.sha256((prompt+unit_context if include_context else prompt).encode()).hexdigest()
         if path.exists():
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
                     cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
                     cached=validate_qa_inventory_actions(cached,inventory,key.removeprefix('base-'))
-                    if not (cfg.get('qa_probe_units') and key.startswith('base-')):return cached
+                    if not (cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-'))):return cached
             except (ValueError,TypeError,KeyError):cached=None
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
@@ -247,18 +305,23 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             except (ValueError,OSError):pass
         started=qa_time.monotonic()
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
-        request=(prompt+('\n'+unit_operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+error[:1200])
+        request=(prompt+('\n'+unit_operations+'\n'+unit_context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+error[:1200])
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
-                validated=validate(value)
+                validated=validate(compile_qa_formatted_expectation(value,formats))
                 return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
             value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
-            if cfg.get('qa_probe_units') and key.startswith('base-'):
+            if cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-')):
                 probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
-                trial=dict(result_selector=value.get('result_selector') or scenarios[0]['result_selector'],
-                    scenarios=scenarios+[dict(value,kind=key.removeprefix('base-'))],feature_cases=[],audience_quotes=quotes[:2])
+                if key.startswith('feature-'):
+                    _,acceptance_index,case_index=key.split('-')
+                    trial=dict(result_selector=scenarios[0]['result_selector'],scenarios=[],
+                        feature_cases=[dict(value,acceptance_index=int(acceptance_index),case_index=int(case_index))],audience_quotes=quotes[:2])
+                else:
+                    trial=dict(result_selector=value.get('result_selector') or scenarios[0]['result_selector'],
+                        scenarios=scenarios+[dict(value,kind=key.removeprefix('base-'))],feature_cases=[],audience_quotes=quotes[:2])
                 try:
                     proof=execute_browser_qa(name,page,trial,probe,prefix_only=True)
                     if proof.get('partial_passed') is not True or proof.get('passed') is not False:raise AutoQAPlanError('部分操作の検査結果が不正です')

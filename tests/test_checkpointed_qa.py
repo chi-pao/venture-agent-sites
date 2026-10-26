@@ -203,7 +203,7 @@ class CheckpointedQAPlannerTests(TestCase):
         def model(prompt,cfg,tokens,**kw):
             result=original(prompt,cfg,tokens,**kw);order.append('model:'+self.calls[-1]['key']);return result
         def browser(name,page,plan,directory,**kw):
-            self.assertTrue(kw['prefix_only']);order.append('browser:'+plan['scenarios'][-1]['kind'])
+            self.assertTrue(kw['prefix_only']);order.append('browser:'+(plan['scenarios'][-1]['kind'] if plan['scenarios'] else 'feature'))
             return dict(passed=False,partial_passed=True,scenarios=[],screenshots=[])
         with patch.object(app,'ai_json',side_effect=model),patch.object(app,'execute_browser_qa',side_effect=browser):
             app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
@@ -245,3 +245,41 @@ class CheckpointedQAPlannerTests(TestCase):
         role=app.department_configuration(cfg,'verification')
         self.assertEqual(role['model'],'reasoning-fixture')
         self.assertEqual(role['qa_vision_model'],'vision-fixture')
+
+    def test_display_contract_discards_observed_numbers_and_keeps_literal_format(self):
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#rate',text='100%（出席扱い1/1、欠席0）',label='出席率')])
+        self.assertEqual(formats['#rate']['template'],'{n0}%（出席扱い{n1}/{n2}、欠席{n3}）')
+        self.assertNotIn('100',str(formats))
+        test=dict(exact_check=dict(selector='#rate',expected_values=['50','1','2','1'],expected_literals=['','%（出席扱い','/','、欠席','）']))
+        compiled=app.compile_qa_formatted_expectation(test,formats)
+        self.assertEqual(compiled['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+        self.assertNotIn('expected_values',compiled['exact_check'])
+        with self.assertRaises(app.AutoQAPlanError):app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#rate',expected_values=['100'])),formats)
+
+    def test_display_format_can_never_supply_its_own_numeric_oracle(self):
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='7件 / 超過3件')])
+        with self.assertRaises(app.AutoQAPlanError):
+            app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#summary',expected_values=[])),formats)
+        result=app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#summary',expected_values=['2','0'],expected_literals=['','件 / 超過','件'])),formats)
+        self.assertEqual(result['exact_check']['value'],'2件 / 超過0件')
+
+    def test_observed_business_state_is_not_automatically_an_expected_state(self):
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='1件 / 稼働枠内')])
+        with self.assertRaises(app.AutoQAPlanError):
+            app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#summary',expected_values=['2'])),formats)
+        compiled=app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#summary',expected_values=['2'],expected_literals=['','件 / 稼働超過'])),formats)
+        self.assertEqual(compiled['exact_check']['value'],'2件 / 稼働超過')
+
+    def test_feature_case_executes_before_the_next_case_or_semantic_audit(self):
+        order=[];original=self.model
+        def model(prompt,cfg,tokens,**kw):
+            value=original(prompt,cfg,tokens,**kw);order.append(self.calls[-1]['key']);return value
+        def browser(name,page,plan,directory,**kw):
+            if plan['feature_cases']:
+                order.append('feature-browser');raise ValueError('feature actual 0 expected 120')
+            return dict(passed=False,partial_passed=True,scenarios=[],screenshots=[])
+        with patch.object(app,'ai_json',side_effect=model),patch.object(app,'execute_browser_qa',side_effect=browser):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'feature actual'):
+                app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+        self.assertEqual(order[-2:],['feature-0-0','feature-browser'])
+        self.assertNotIn('feature-0-1',order);self.assertNotIn('audit',order)
