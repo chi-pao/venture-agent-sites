@@ -143,13 +143,35 @@ def main():
             if not ready:
                 raise RuntimeError(f"build/review did not pass: {build_detail}")
             verify_domain_specific_flow(name, page)
-            vision_reviews.clear()
-            passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
-            if not passed or stage != "のぼるさん確認待ち":
+            first_visual=None
+            passed=False
+            qa_detail="未実行"
+            stage="自動検証で要修正"
+            for repair_round in range(2):
+                vision_reviews.clear()
+                passed, qa_detail, stage = app.automated_product_qa(0, name, page, cfg)
+                if not vision_reviews:
+                    raise RuntimeError("live vision model was not used for the generated app screens")
+                visual=vision_reviews[-1]
+                if repair_round==0:first_visual=visual
+                if passed and stage=="のぼるさん確認待ち":
+                    break
+                if repair_round==1 or stage!="自動検証で要修正":
+                    raise RuntimeError(f"end-to-end browser QA did not pass ({stage}): {qa_detail}")
+                repair_plan=(business_plan+"\n\nThe real desktop/mobile review found these specific issues. Keep the tested core workflow and existing controls, revise the visual hierarchy, audience/value clarity, readability, and mobile layout using these findings, then re-run all browser checks. Do not claim a score that was not measured.\n"+qa_detail)
+                app.event(0,name+": live QA visual failure; applying one targeted repair and repeating real-browser QA")
+                page,repair_detail,ready=app.build(0,name,cfg,repair_plan,
+                    asset_kind="ライブ生成検証HTML",existing_page=page,allow_partial=True)
+                if not page or not ready:
+                    raise RuntimeError(f"targeted repair did not build a valid candidate: {repair_detail}")
+                verify_domain_specific_flow(name,page)
+            if not passed or stage!="のぼるさん確認待ち":
                 raise RuntimeError(f"end-to-end browser QA did not pass ({stage}): {qa_detail}")
-            if not vision_reviews:
-                raise RuntimeError("live vision model was not used for the generated app screens")
-            visual=vision_reviews[-1]
+            if first_visual and visual.get("review_mode")=="vision_model":
+                initial_scores=[int(first_visual.get(k,{}).get("score",0)) for k in ("audience","design","readability","mobile","usefulness")]
+                final_scores=[int(visual.get(k,{}).get("score",0)) for k in ("audience","design","readability","mobile","usefulness")]
+                if min(initial_scores)<4 and min(final_scores)<4:
+                    raise RuntimeError(f"targeted visual repair still failed the minimum bar: before={initial_scores}; after={final_scores}; {qa_detail}")
             if visual.get("review_mode")!="vision_model" or visual.get("competitor_reference_count",0)<2:
                 raise RuntimeError(f"competitor screenshots did not reach live vision review: {visual}")
             brief=app.competitive_context(name).get("brief") or {}
