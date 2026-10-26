@@ -3052,6 +3052,11 @@ def department_configuration(cfg, department):
 
 def department_failure_target(report, stage):
     phase = str(report.get('failed_step') or '')
+    detail = str(report.get('details') or '')
+    # A planner unable to write a test because the feature is absent is a
+    # product defect, not a reason to keep regenerating the same QA plan.
+    if '実装不足' in detail or report.get('blocked_features'): return 'development'
+    if '初回画面に対象者と使い方' in detail: return 'design'
     if report.get('local_qa_passed') and report.get('passed') is not True: return 'research'
     if stage in ('検証環境の準備待ち', '自動検証の再試行待ち'):
         return 'verification'

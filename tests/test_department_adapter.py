@@ -62,6 +62,7 @@ class DepartmentAdapterTests(TestCase):
         self.assertEqual(app.department_failure_target({'failed_step':'実ブラウザー操作'},'自動検証で要修正'),'development')
         self.assertEqual(app.department_failure_target({'failed_step':'環境準備'},'検証環境の準備待ち'),'verification')
         self.assertEqual(app.department_failure_target({'local_qa_passed':True},'自動検証の再試行待ち'),'research')
+        self.assertEqual(app.department_failure_target({'failed_step':'操作シナリオ設計','details':'実装不足で共通操作テストを作れません'},'自動検証の再試行待ち'),'development')
 
     def test_stop_before_handler_keeps_source_and_does_not_call_engines(self):
         app.execute('UPDATE autonomous_control SET enabled=0')

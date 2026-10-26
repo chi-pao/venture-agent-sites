@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: venture-departments-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   live-model-and-browser:
