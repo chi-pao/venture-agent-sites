@@ -219,6 +219,18 @@ class AutomaticQATests(ContinuationTests):
   broken['design_patterns'][0]['source_quote']='実際には取得していない競合の機能の説明です'
   with self.assertRaises(app.AutoQAPlanError):
    app.validate_competitive_design(broken,{url:reference(url) for url in urls})
+ def test_text_only_cached_competitor_brief_retries_visual_capture(self):
+  urls=['https://nicody.jp/','https://wanderlog.com/']
+  text='公式ページの機能説明を取得したテスト用本文です。利用者が予定や作業を記録し、一覧で整理し、必要な情報を確認できる仕組みを紹介しています。'*2
+  refs=[dict(url=u,status='本文取得',text=text,checked_at=app.now(),content_sha=('a' if i==0 else 'b')*64) for i,u in enumerate(urls)]
+  cached=app.deterministic_competitive_brief(self.name,refs)
+  self.assertFalse(app.competitive_visual_ready(cached))
+  visual=design_brief(self.name)['visual_observations']
+  context=dict(brief=cached,official_comparison_candidates=urls)
+  with patch.object(app,'competitive_context',return_value=context),patch.object(app,'read_research_reference',side_effect=refs),patch.object(app,'capture_competitor_visual_references',return_value=visual) as capture:
+   refreshed=app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
+  capture.assert_called_once()
+  self.assertTrue(app.competitive_visual_ready(refreshed))
  def test_missing_or_single_design_source_never_passes(self):
   brief=design_brief(self.name);self.assertTrue(app.competitive_design_ready(brief))
   brief['design_patterns'][1]['source_url']=brief['design_patterns'][0]['source_url']
