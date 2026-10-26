@@ -25,6 +25,7 @@ class DepartmentSpecContractTests(TestCase):
 
     def test_only_acceptance_is_repaired_and_original_features_are_preserved(self):
         def answer(prompt,cfg,tokens,**kw):
+            if prompt.startswith('完成条件の独立監査。'):return kw['validator'](dict(valid=True,issues=[]))
             self.calls+=1
             return kw['validator'](dict(input='開始09時、終了17時、休憩60分を入力',action='稼働枠の計算ボタンを押して結果を表示',expected='稼働可能時間は420分として画面に表示される'))
         with patch.object(app,'ensure_product_spec',return_value=self.spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計・未確認')]),patch.object(app,'ai_json',side_effect=answer),patch.object(app,'store_product_spec',side_effect=lambda name,spec,**kw:spec):
@@ -42,6 +43,7 @@ class DepartmentSpecContractTests(TestCase):
     def test_completed_requirement_parts_survive_a_later_timeout(self):
         seen=[];fail=[True]
         def answer(prompt,cfg,tokens,**kw):
+            if prompt.startswith('完成条件の独立監査。'):return kw['validator'](dict(valid=True,issues=[]))
             key=next(x for x in self.spec['must_have'] if '今回の必須機能:'+x in prompt);seen.append(key)
             if key==self.spec['must_have'][1] and fail[0]:fail[0]=False;raise TimeoutError('unit fixture')
             return kw['validator'](dict(input='具体的な予定120分と実績90分を入力する',action='登録した作業の比較結果を画面に表示する',expected='予定と実績の差がマイナス30分と表示される'))
@@ -49,3 +51,15 @@ class DepartmentSpecContractTests(TestCase):
             with self.assertRaises(TimeoutError):app.ensure_department_product_spec('在宅ワーク',self.cfg)
             app.ensure_department_product_spec('在宅ワーク',self.cfg)
         self.assertEqual(seen.count(self.spec['must_have'][0]),1)
+
+    def test_incorrect_oracle_is_returned_to_proposal_not_stored_as_product_spec(self):
+        def answer(prompt,cfg,tokens,**kw):
+            if prompt.startswith('完成条件の独立監査。'):
+                return kw['validator'](dict(valid=False,issues=['09:00〜17:00から休憩60分を引くと420分、480分ではない']))
+            return kw['validator'](dict(input='開始09:00、終了17:00、休憩60分を入力する',action='稼働枠の計算を実行して計算結果を表示する',expected='稼働可能時間480分を結果欄に表示する'))
+        with patch.object(app,'ensure_product_spec',return_value=self.spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'ai_json',side_effect=answer),patch.object(app,'store_product_spec') as save:
+            with self.assertRaisesRegex(app.AutoQAPlanError,'独立監査'):
+                app.ensure_department_product_spec('在宅ワーク',self.cfg)
+            save.assert_not_called()
+        self.assertFalse(list(self.root.rglob('0.json')))
+        self.assertIn('420分',next(self.root.rglob('0-error.json')).read_text())

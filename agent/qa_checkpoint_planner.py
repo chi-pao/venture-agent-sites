@@ -5,7 +5,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-3'
+CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
 
 def qa_unit_schema(count,kind):
@@ -19,12 +19,13 @@ def qa_unit_schema(count,kind):
         'op':{'type':'string','enum':['text_equals','text_contains','value_equals','count','invalid','visible']},
         'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
         'nth':{'type':'integer','minimum':0,'maximum':30}},'required':['op','selector'],'additionalProperties':False}
-    required=['steps','checks','acceptance','rationale']+(['result_selector'] if kind=='workflow' else [])
+    required=['steps','checks','acceptance','rationale']+(['exact_check'] if kind in ('workflow','variant','feature') else [])+(['result_selector'] if kind=='workflow' else [])
+    exact_check={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','maxLength':180},'value':{'type':'string','minLength':1,'maxLength':250}},'required':['op','selector','value'],'additionalProperties':False}
     return {'type':'object','properties':{
         'steps':{'type':'array','minItems':1,'maxItems':24,'items':step},
         'checks':{'type':'array','minItems':2,'maxItems':8,'items':check},
         'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}},
-        'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
+        'exact_check':exact_check,'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
         'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
         'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
 
@@ -88,7 +89,14 @@ def compact_qa_inventory(page):
 def validate_qa_unit(value,kind,acceptance_count):
     if not isinstance(value,dict):raise AutoQAPlanError('検査1件のJSONオブジェクトが必要です')
     if value.get('blocked_features'):raise AutoQAPlanError('実装不足: '+' / '.join(map(str,value['blocked_features'])))
+    value=dict(value)
     steps=value.get('steps');checks=value.get('checks');covers=value.get('acceptance')
+    exact=value.pop('exact_check',None)
+    if exact is not None:
+        if not isinstance(exact,dict) or exact.get('op')!='text_equals':raise AutoQAPlanError('exact_check.opはtext_equalsにしてください')
+        if isinstance(checks,list):
+            checks=[exact]+[c for c in checks if c!=exact]
+            value['checks']=checks
     if not isinstance(steps,list) or not 1<=len(steps)<=24 or not isinstance(checks,list) or not 2<=len(checks)<=8:
         raise AutoQAPlanError('検査1件には操作1〜24件と期待結果2〜8件が必要です')
     if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<acceptance_count for i in covers):
@@ -141,7 +149,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'waitのvalueは整数ミリ秒（例:500）であり表示文は禁止。結果を待つためのwaitは通常不要。'
         'acceptanceは整数配列のみ、例:[0,1]。条件本文や{index,condition}は入れない。'
         'result_selectorは画面に実在するCSS（例:#summaryValue）でありtext_contains等の命令名は禁止。'
-        'checksの最低1件は具体的な処理結果をtext_equalsで完全一致照合。bodyやhtml禁止。説明やMarkdown不要。')
+        'exact_check:{op:text_equals,selector:主結果CSS,value:計算済みの完全な正解文字列}はworkflow/variant/featureで必須。'
+        'checksは別の期待結果を2件以上。部分一致の数字1だけ、入力の写し、保存成功文だけでは主結果の検証にならない。'
+        'fillはinput/textareaだけ、select要素はselectとvalueまたはlabelで選択。checkはcheckbox/radioのみに使い、結果表示には使わない。'
+        'bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
@@ -159,7 +170,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
-                return validate(value)
+                validated=validate(value)
+                for step in validated.get('steps',[]):
+                    target=next((n for n in inventory['controls'] if n['selector']==step.get('selector')),None)
+                    if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
+                        raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
+                return validated
             value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             write_framework_json(path,dict(input_sha=input_sha,value=value))
@@ -180,7 +196,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     }
     for kind in ('workflow','variant','reload','roundtrip','invalid'):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
-        prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[期待結果2件以上],acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
+        prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
         value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))
@@ -189,7 +205,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         pair=[]
         for case in (0,1):
             previous=pair[0] if pair else None
-            prompt=('独立した検証担当。完成条件'+str(index)+'のケース'+str(case)+'を1件だけJSON {steps:[操作],checks:[具体的期待結果2件以上],acceptance:['+str(index)+'],rationale:正解の根拠}で設計。'
+            prompt=('独立した検証担当。完成条件'+str(index)+'のケース'+str(case)+'を1件だけJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:['+str(index)+'],rationale:正解の根拠}で設計。'
                 '各ケースは空の保存状態から開始。条件そのものを操作し、入力の写しや汎用の件数確認だけで済ませない。実装不足なら{blocked_features:[不足機能]}。'
                 '\n今回の条件:'+condition+'\nケース0（ケース1は違う入力値にする）:'+json.dumps(previous,sort_keys=True,ensure_ascii=False,separators=(',',':'))[:2000])
             def validate(value,previous=previous):

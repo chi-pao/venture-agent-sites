@@ -3045,7 +3045,7 @@ class DepartmentManager:
 
 """Repair demonstrably contaminated model acceptance criteria from original scope."""
 
-DEPARTMENT_SPEC_POLICY='2026-10-26-source-grounded-acceptance-1'
+DEPARTMENT_SPEC_POLICY='2026-10-26-source-grounded-acceptance-2'
 
 
 def department_spec_contract_issue(spec,rationale):
@@ -3066,6 +3066,8 @@ def ensure_department_product_spec(name,cfg):
     spec=ensure_product_spec(name,cfg)
     rationale=idea_details(name)
     issue=department_spec_contract_issue(spec,rationale)
+    if not issue and spec.get('acceptance_repair_reason') and spec.get('acceptance_contract_policy')!=DEPARTMENT_SPEC_POLICY:
+        issue='旧修復条件の計算・操作範囲は独立監査されていません'
     if not issue:return spec
     rows=query('SELECT source FROM venture_product_specs WHERE idea=?',(name,))
     if rows and str(rows[0]['source']).startswith('ユーザー'):
@@ -3079,8 +3081,8 @@ def ensure_department_product_spec(name,cfg):
         path=folder/(str(index)+'.json')
         def validate(value):
             write_framework_json(folder/(str(index)+'-last-response.json'),value)
-            if not isinstance(value,dict) or any(not isinstance(value.get(k),str) or len(value[k].strip())<8 for k in ('input','action','expected')):
-                missing=[k for k in ('input','action','expected') if not isinstance(value,dict) or not isinstance(value.get(k),str) or len(value[k].strip())<8]
+            if not isinstance(value,dict) or any(not isinstance(value.get(k),str) or not 8<=len(value[k].strip())<=400 for k in ('input','action','expected')):
+                missing=[k for k in ('input','action','expected') if not isinstance(value,dict) or not isinstance(value.get(k),str) or not 8<=len(value[k].strip())<=400]
                 raise AutoQAPlanError('完成条件に具体的な入力・操作・正解が必要です。不足: '+','.join(missing))
             if any(term in value['expected'] for term in ('使いやすい','期待通り','正しく動作','効果的','実装予定','要検証')):
                 raise AutoQAPlanError('抽象評価ではなく照合する具体値・保存状態を指定してください')
@@ -3098,18 +3100,43 @@ def ensure_department_product_spec(name,cfg):
                 try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
                 except (ValueError,OSError):pass
             prompt=('製品要件担当。壊れた完成条件を元の事業範囲から修復します。今回の必須機能1件だけについて、'
-                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜120字で短く具体的に書く。'
+                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜400字で、必要な操作を末尾で切らず、単位・計算式と照合値を具体的に書く。'
                 '画面の見やすさ等は別の画像審査で評価する。一般論や機能名の言い換えは不可。依頼されていない検索・共同編集・AI機能を追加しない。'
                 '元の要件がAPI機能を含む場合だけ、サンプル操作と外部接続後の検証を分け、実取得したと偽らない。'
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
                 +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n前回の不備:'+error[:500])
-            schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':120} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
-            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),650,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
+            schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':400} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
+            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),1100,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
             except Exception as exc:
                 write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],checked=now()))
                 raise
             write_framework_json(path,value)
             error_path.unlink(missing_ok=True)
+        # A valid JSON shape does not prove a correct oracle. Audit the
+        # source requirement, units, arithmetic and coverage independently.
+        audit_path=folder/(str(index)+'-audit.json')
+        audit_sha=hashlib.sha256(json.dumps(dict(requirement=requirement,value=value),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        audit=None
+        if audit_path.exists():
+            try:
+                saved=json.loads(audit_path.read_text(encoding='utf-8'))
+                if saved.get('input_sha')==audit_sha and saved.get('valid') is True:audit=saved
+            except (ValueError,TypeError):pass
+        if audit is None:
+            def validate_audit(result):
+                write_framework_json(folder/(str(index)+'-audit-last-response.json'),result)
+                if not isinstance(result,dict) or result.get('valid') is not True:
+                    reasons=str(result.get('issues') if isinstance(result,dict) else result)[:1200]
+                    if isinstance(result,dict) and result.get('valid') is False:
+                        path.unlink(missing_ok=True)
+                        write_framework_json(folder/(str(index)+'-error.json'),dict(error='独立監査: '+reasons,checked=now()))
+                    raise AutoQAPlanError('完成条件の独立監査: '+reasons)
+                return result
+            audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'issues':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':200}}},'required':['valid','issues'],'additionalProperties':False}
+            audit=ai_json('完成条件の独立監査。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
+                +'\n元の必須機能:'+str(requirement)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
+                dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=180,validator=validate_audit)
+            write_framework_json(audit_path,dict(audit,input_sha=audit_sha))
         conditions.append('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected'])
     if len(conditions)<3:raise AutoQAPlanError('元の必須機能が3件未満のため完成条件を再設計する必要があります')
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,
@@ -3124,7 +3151,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-3'
+CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
 
 def qa_unit_schema(count,kind):
@@ -3138,12 +3165,13 @@ def qa_unit_schema(count,kind):
         'op':{'type':'string','enum':['text_equals','text_contains','value_equals','count','invalid','visible']},
         'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
         'nth':{'type':'integer','minimum':0,'maximum':30}},'required':['op','selector'],'additionalProperties':False}
-    required=['steps','checks','acceptance','rationale']+(['result_selector'] if kind=='workflow' else [])
+    required=['steps','checks','acceptance','rationale']+(['exact_check'] if kind in ('workflow','variant','feature') else [])+(['result_selector'] if kind=='workflow' else [])
+    exact_check={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','maxLength':180},'value':{'type':'string','minLength':1,'maxLength':250}},'required':['op','selector','value'],'additionalProperties':False}
     return {'type':'object','properties':{
         'steps':{'type':'array','minItems':1,'maxItems':24,'items':step},
         'checks':{'type':'array','minItems':2,'maxItems':8,'items':check},
         'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}},
-        'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
+        'exact_check':exact_check,'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
         'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
         'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
 
@@ -3207,7 +3235,14 @@ def compact_qa_inventory(page):
 def validate_qa_unit(value,kind,acceptance_count):
     if not isinstance(value,dict):raise AutoQAPlanError('検査1件のJSONオブジェクトが必要です')
     if value.get('blocked_features'):raise AutoQAPlanError('実装不足: '+' / '.join(map(str,value['blocked_features'])))
+    value=dict(value)
     steps=value.get('steps');checks=value.get('checks');covers=value.get('acceptance')
+    exact=value.pop('exact_check',None)
+    if exact is not None:
+        if not isinstance(exact,dict) or exact.get('op')!='text_equals':raise AutoQAPlanError('exact_check.opはtext_equalsにしてください')
+        if isinstance(checks,list):
+            checks=[exact]+[c for c in checks if c!=exact]
+            value['checks']=checks
     if not isinstance(steps,list) or not 1<=len(steps)<=24 or not isinstance(checks,list) or not 2<=len(checks)<=8:
         raise AutoQAPlanError('検査1件には操作1〜24件と期待結果2〜8件が必要です')
     if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<acceptance_count for i in covers):
@@ -3260,7 +3295,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'waitのvalueは整数ミリ秒（例:500）であり表示文は禁止。結果を待つためのwaitは通常不要。'
         'acceptanceは整数配列のみ、例:[0,1]。条件本文や{index,condition}は入れない。'
         'result_selectorは画面に実在するCSS（例:#summaryValue）でありtext_contains等の命令名は禁止。'
-        'checksの最低1件は具体的な処理結果をtext_equalsで完全一致照合。bodyやhtml禁止。説明やMarkdown不要。')
+        'exact_check:{op:text_equals,selector:主結果CSS,value:計算済みの完全な正解文字列}はworkflow/variant/featureで必須。'
+        'checksは別の期待結果を2件以上。部分一致の数字1だけ、入力の写し、保存成功文だけでは主結果の検証にならない。'
+        'fillはinput/textareaだけ、select要素はselectとvalueまたはlabelで選択。checkはcheckbox/radioのみに使い、結果表示には使わない。'
+        'bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
@@ -3278,7 +3316,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
-                return validate(value)
+                validated=validate(value)
+                for step in validated.get('steps',[]):
+                    target=next((n for n in inventory['controls'] if n['selector']==step.get('selector')),None)
+                    if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
+                        raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
+                return validated
             value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             write_framework_json(path,dict(input_sha=input_sha,value=value))
@@ -3299,7 +3342,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     }
     for kind in ('workflow','variant','reload','roundtrip','invalid'):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
-        prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[期待結果2件以上],acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
+        prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
         value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))
@@ -3308,7 +3351,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         pair=[]
         for case in (0,1):
             previous=pair[0] if pair else None
-            prompt=('独立した検証担当。完成条件'+str(index)+'のケース'+str(case)+'を1件だけJSON {steps:[操作],checks:[具体的期待結果2件以上],acceptance:['+str(index)+'],rationale:正解の根拠}で設計。'
+            prompt=('独立した検証担当。完成条件'+str(index)+'のケース'+str(case)+'を1件だけJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:['+str(index)+'],rationale:正解の根拠}で設計。'
                 '各ケースは空の保存状態から開始。条件そのものを操作し、入力の写しや汎用の件数確認だけで済ませない。実装不足なら{blocked_features:[不足機能]}。'
                 '\n今回の条件:'+condition+'\nケース0（ケース1は違う入力値にする）:'+json.dumps(previous,sort_keys=True,ensure_ascii=False,separators=(',',':'))[:2000])
             def validate(value,previous=previous):

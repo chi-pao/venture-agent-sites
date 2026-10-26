@@ -132,3 +132,26 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertIn('acceptance_by_index',prompt)
         self.assertNotIn('"index":0,"condition"',prompt)
         self.assertIn('整数ミリ秒',prompt)
+
+    def test_primary_exact_result_is_explicit_and_not_inferred_from_partial_text(self):
+        value=copy.deepcopy(self.full['scenarios'][0]);value['result_selector']=self.full['result_selector']
+        value['checks']=[dict(op='text_contains',selector='#summary',value='1'),dict(op='text_contains',selector='#result',value='保存')]
+        with self.assertRaises(app.AutoQAPlanError):app.validate_qa_unit(value,'workflow',5)
+        value['exact_check']=dict(op='text_equals',selector='#planned',value='120分')
+        checked=app.validate_qa_unit(value,'workflow',5)
+        self.assertEqual(checked['checks'][0],value['exact_check'])
+        self.assertNotIn('exact_check',checked)
+        schema=app.qa_unit_schema(5,'workflow')
+        self.assertIn('exact_check',schema['anyOf'][0]['required'])
+
+    def test_select_cannot_be_filled_as_a_text_input(self):
+        page=self.page+'<select id="work_status"><option value="done">完了</option></select>'
+        original=self.model
+        def model(prompt,cfg,tokens,**kw):
+            def reject_target(value):
+                value['steps'].insert(0,dict(op='fill',selector='#work_status',value='done'))
+                return kw['validator'](value)
+            return original(prompt,cfg,tokens,**dict(kw,validator=reject_target))
+        with patch.object(app,'ai_json',side_effect=model):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'要素に合わない操作'):
+                app.checkpointed_independent_qa_plan('在宅ワーク',page,self.cfg,self.spec,['対象者向けの説明です','最初の使い方の説明です'])
