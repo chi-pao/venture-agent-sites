@@ -1,11 +1,6 @@
 name: Isolated production vision replay
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'agent/**'
-      - 'tests/vision_model_probe.py'
-      - '.github/workflows/venture-vision-probe.yml'
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read

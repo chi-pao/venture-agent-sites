@@ -214,6 +214,25 @@ class AutomaticQATests(ContinuationTests):
   mobile=app.base64.b64decode(calls[-1]['images'][2])
   with Image.open(io.BytesIO(mobile)) as image:self.assertEqual(image.size,(296,640))
   self.assertFalse(calls[-1]['stream'])
+ def test_vision_context_capacity_error_is_repaired_once(self):
+  from PIL import Image
+  pc=self.root/'start-1280.png';Image.new('RGB',(1280,900),'white').save(pc)
+  mobile=self.root/'start-390.png';Image.new('RGB',(390,844),'white').save(mobile)
+  calls=[]
+  visual={key:dict(score=4,reason='画像APIの容量調整だけを模擬して確認しています') for key in ('audience','design','readability','mobile','usefulness')}
+  def response(request,**kw):
+   payload=json.loads(request.data)
+   if payload.get('images'):
+    calls.append(payload)
+    if len(calls)==1:
+     raise app.urllib.error.HTTPError(request.full_url,400,'Bad Request',{},io.BytesIO(b'{"error":"request (4368 tokens) exceeds the available context size (4096 tokens)"}'))
+   return io.BytesIO(json.dumps({'response':json.dumps(visual)}).encode())
+  with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=design_brief(self.name))):
+   result=app.review_qa_images(self.name,dict(screenshots=[str(pc),str(mobile)],scenarios=[],layouts=[]),dict(app.DEFAULT))
+  self.assertEqual(result['review_mode'],'vision_model')
+  self.assertEqual(len(calls),2)
+  self.assertEqual(calls[0]['options']['num_ctx'],4096)
+  self.assertEqual(calls[1]['options']['num_ctx'],5120)
  def test_low_score_with_positive_reason_is_rejected_as_contradictory(self):
   review={'design':{'score':2,'reason':'余白と情報階層が整っていて、見やすく使いやすい画面です'}}
   with self.assertRaisesRegex(app.AutoQAPlanError,'点数と根拠が矛盾'):app.validate_visual_review_evidence(review,['design'])

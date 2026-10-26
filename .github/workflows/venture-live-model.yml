@@ -10,13 +10,17 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: venture-live-model-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  vision-preflight:
+    uses: ./.github/workflows/venture-vision-probe.yml
   live-model-and-browser:
+    needs: vision-preflight
     strategy:
       fail-fast: false
       matrix:

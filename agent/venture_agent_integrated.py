@@ -2352,7 +2352,7 @@ def review_qa_images(name,browser_result,cfg):
         competitor_scope=('最初の1枚は比較シートです。左から同業・代替サービスの実画面2件を配置しています。URL順: '+', '.join(reference_labels)+'。2枚目は今回の制作画面です。競合画像の画面階層・カード・ナビ・配色を実際に見て、良い設計原則だけを対象利用者向けに応用し、文言や見た目をそのまま模倣しないでください。'
             if reference_images else '比較サービスの画像資料はありません。比較を見たふりをせず、以下のテキスト資料と製品要件だけで評価してください。')
         layouts=browser_result.get('layouts',[])
-        visible_copy=' '.join(str(layout.get('body','')) for layout in layouts if layout.get('width')==1280)[:2400]
+        visible_copy=next((str(layout.get('body','')) for layout in layouts if layout.get('width')==1280),'')[:900]
         layout_facts='; '.join('幅'+str(x.get('width'))+'px: 見出し='+str(x.get('heading',''))+
             ', 横はみ出し='+str(bool(x.get('overflow')))+', 小さい操作='+str(x.get('smallControls',[]))+
             ', 極小文字='+str(x.get('tinyText',0)) for x in layouts)
@@ -2391,14 +2391,21 @@ def review_qa_images(name,browser_result,cfg):
                 images.append(base64.b64encode(buffer.getvalue()).decode())
 
         last_error='画像判定のJSONを読み取れません'
-        for retry in range(1):
+        vision_context=int(cfg.get('qa_vision_context',4096))
+        for retry in range(2):
             payload={'model':model,'prompt':prompt,'images':images,
-                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':420,'num_ctx':int(cfg.get('qa_vision_context',4096))}}
+                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':420,'num_ctx':vision_context}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             try:
                 with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',300)))) as r:data=json.load(r)
             except urllib.error.HTTPError as exc:
                 body=exc.read().decode('utf-8','replace').strip()
+                required=re.search(r'request \((\d+) tokens\) exceeds',body)
+                if exc.code==400 and required and retry==0:
+                    needed=((int(required.group(1))+420+1023)//1024)*1024
+                    if vision_context<needed<=8192:
+                        vision_context=needed
+                        continue
                 raise AutoQAEnvironmentError('画像モデルHTTP '+str(exc.code)+': '+(body[:700] or str(exc.reason))) from exc
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
             try:
@@ -2409,8 +2416,8 @@ def review_qa_images(name,browser_result,cfg):
                 review['competitor_reference_sources']=reference_labels
                 return review
             except AutoQAPlanError as exc:
-                last_error=str(exc)
-        raise AutoQAPlanError(last_error+'（画像判定の修正を1回試行後も未解決）')
+                raise
+        raise AutoQAPlanError(last_error+'（画像入力の容量調整後も未解決）')
     finally:release_runtime('local_ai',owner)
 
 
