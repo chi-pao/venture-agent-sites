@@ -102,6 +102,8 @@ class _QAInventory(HTMLParser):
                 if ancestor:selector='#'+ancestor+' '+tag
             if selector:
                 node=dict(tag=tag,selector=selector)
+                form_id=a.get('form') or next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='form' and v.get('id')),None)
+                if form_id:node['form']='#'+form_id
                 for key in ('type','value','placeholder','min','max','required','name'):
                     if key in a:node[key]=a[key] if a[key] is not None else True
                 self.nodes.append(node)
@@ -305,7 +307,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             result.append(node)
         return result
     inventory=dict(controls=fit(inventory['controls'],2600),outputs=fit(inventory['outputs'],1300))
-    context='仕様:'+json.dumps(minimal_spec,sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n実画面:'+json.dumps(inventory,sort_keys=True,ensure_ascii=False,separators=(',',':'))
+    context='同じformに属する必須項目を入力し、そのformの送信ボタンを押してください。別の保存ボタンは別操作です。画面の実際の出力要素とその表示形式だけを期待値に使ってください。\n仕様:'+json.dumps(minimal_spec,sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n実画面:'+json.dumps(inventory,sort_keys=True,ensure_ascii=False,separators=(',',':'))
     operations=('stepsは{op,selector,value?,label?,nth?,contains?}。opはfill,click,select,check,reload,wait,download_csv,download_json,restore_file,restore_invalid,cancel_restoreのみ。'
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
         'waitのvalueは整数ミリ秒（例:500）であり表示文は禁止。結果を待つためのwaitは通常不要。'
