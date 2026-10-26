@@ -90,6 +90,17 @@ class AutomaticQATests(ContinuationTests):
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)
+ def test_real_browser_prefix_never_grants_final_acceptance_and_records_observed_mismatch(self):
+  page=self.install(1);plan=work_plan();plan['scenarios']=plan['scenarios'][:1];plan['feature_cases']=[]
+  directory=self.root/'prefix';directory.mkdir()
+  proof=app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  self.assertFalse(proof['passed']);self.assertTrue(proof['partial_passed']);self.assertEqual(len(proof['scenarios']),2)
+  plan['scenarios'][0]['checks'][1]['value']='999分'
+  with self.assertRaisesRegex(ValueError,'180分'):
+   app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  observed=json.loads((directory/'browser-observation-failure.json').read_text())
+  self.assertEqual(observed['actual'],'180分');self.assertEqual(observed['check']['value'],'999分')
+  self.assertTrue(Path(observed['screenshot']).is_file())
  def structured_candidate(self,name):
   spec=dict(audience='小規模事業者・個人利用者',requested_outcome='中心作業を整理し、入力から結果・保存までを一続きで行う',differentiation='専用操作の結果を入力条件に応じて表示する',workflow=['対象情報を入力する','用途別処理を実行して結果を確認する','保存・検索・出力する'],must_have=['必須入力の検証','用途別処理と結果','保存・再読込','CSVとJSONバックアップ'],acceptance=['中心作業の具体値を入力し用途別の結果を確認できる','異なる入力値で結果の変化を確認できる','登録後に再読込して同じ記録を確認できる','CSVとJSONバックアップを取得して復元できる'],delivery_mode='browser_local',dependencies=[])
   app.execute('INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)',(name,json.dumps({'customer_pain':'手作業の困りごと','target_customer':'小規模利用者'}),1,app.now(),app.now()))

@@ -210,13 +210,14 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
-        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
+        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None
         input_sha=hashlib.sha256((prompt+context if include_context else prompt).encode()).hexdigest()
         if path.exists():
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
-                    return validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
+                    cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
+                    if not (cfg.get('qa_probe_units') and key.startswith('base-')):return cached
             except (ValueError,TypeError,KeyError):pass
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
@@ -233,8 +234,19 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
                         raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
                 return validated
-            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
+            value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
+            if cfg.get('qa_probe_units') and key.startswith('base-'):
+                probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
+                trial=dict(result_selector=value.get('result_selector') or scenarios[0]['result_selector'],
+                    scenarios=scenarios+[dict(value,kind=key.removeprefix('base-'))],feature_cases=[],audience_quotes=quotes[:2])
+                try:
+                    proof=execute_browser_qa(name,page,trial,probe,prefix_only=True)
+                    if proof.get('partial_passed') is not True or proof.get('passed') is not False:raise AutoQAPlanError('部分操作の検査結果が不正です')
+                    write_framework_json(probe/'partial-proof.json',proof)
+                except Exception as exc:
+                    path.unlink(missing_ok=True)
+                    raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
             error_path.unlink(missing_ok=True)

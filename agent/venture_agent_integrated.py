@@ -2126,7 +2126,7 @@ QA_LAYOUT_SCRIPT=r'''() => {
 }'''
 
 
-def execute_browser_qa(name,page_source,plan,directory):
+def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
     from playwright.sync_api import sync_playwright
     preview=ensure_product_preview(name,page_source,{})
     url=preview['local_url'] if 'local_url' in preview else preview['url']
@@ -2225,13 +2225,18 @@ def execute_browser_qa(name,page_source,plan,directory):
                             else:page.wait_for_timeout(200)
                     for check in scenario['checks']:
                         loc=locate(check);op=check['op'];value=check.get('value')
-                        if op=='text_equals':ok=loc.inner_text().strip()==value
-                        elif op=='text_contains':ok=value in loc.inner_text()
-                        elif op=='value_equals':ok=loc.input_value()==value
-                        elif op=='count':ok=type(value) is int and loc.count()==value
-                        elif op=='invalid':ok=loc.evaluate('(e)=>typeof e.checkValidity==="function"&&!e.checkValidity()')
-                        else:ok=loc.is_visible()
-                        if not ok:raise ValueError(scenario['kind']+'の期待結果と不一致: '+json.dumps(check,ensure_ascii=False))
+                        if op=='text_equals':actual=loc.inner_text().strip();ok=actual==value
+                        elif op=='text_contains':actual=loc.inner_text();ok=value in actual
+                        elif op=='value_equals':actual=loc.input_value();ok=actual==value
+                        elif op=='count':actual=loc.count();ok=type(value) is int and actual==value
+                        elif op=='invalid':actual=loc.evaluate('(e)=>typeof e.checkValidity==="function"&&!e.checkValidity()');ok=actual
+                        else:actual=loc.is_visible();ok=actual
+                        if not ok:
+                            failure=dict(width=width,scenario=scenario['kind'],check=check,actual=actual,steps=scenario['steps'],javascript_errors=errors[:3])
+                            shot=directory/('failed-'+str(width)+'.png');page.screenshot(path=str(shot));failure['screenshot']=str(shot)
+                            write_framework_json(directory/'browser-observation-failure.json',failure)
+                            if errors:raise ValueError('実装不足: 実操作中のJavaScriptエラー: '+errors[0][:500])
+                            raise ValueError(scenario['kind']+'の期待結果と不一致: '+json.dumps(dict(expected=check,actual=actual),ensure_ascii=False)[:1200])
                     if scenario['kind'] in ('workflow','variant'):output.append(page.locator(plan['result_selector']).inner_text())
                     if scenario['kind']=='reload' and not snapshot():raise ValueError('再読込後の保存記録が空です')
                     if scenario['kind']=='roundtrip':
@@ -2245,7 +2250,7 @@ def execute_browser_qa(name,page_source,plan,directory):
                     result=dict(width=width,kind=scenario['kind'],passed=True,checks=len(scenario['checks']))
                     if scenario['kind']=='feature':result.update(acceptance_index=scenario['acceptance_index'],case_index=scenario['case_index'])
                     results.append(result)
-                if len(output)!=2 or not output[0].strip() or output[0]==output[1]:raise ValueError('具体的な入力を変えても主処理の結果が変わりません')
+                if (not prefix_only or len(output)>=2) and (len(output)!=2 or not output[0].strip() or output[0]==output[1]):raise ValueError('具体的な入力を変えても主処理の結果が変わりません')
                 page.locator(plan['result_selector']).scroll_into_view_if_needed();page.wait_for_timeout(150)
                 layout=page.evaluate(QA_LAYOUT_SCRIPT);layouts.append(layout)
                 if layout['overflow'] or layout['smallControls'] or layout['tinyText']:
@@ -2253,7 +2258,7 @@ def execute_browser_qa(name,page_source,plan,directory):
                 shot=directory/('result-'+str(width)+'.png');page.screenshot(path=str(shot));shots.append(str(shot))
                 context.close()
         finally:browser.close()
-    return {'passed':True,'scenarios':results,'layouts':layouts,'screenshots':shots}
+    return {'passed':not prefix_only,'partial_passed':bool(prefix_only),'scenarios':results,'layouts':layouts,'screenshots':shots}
 
 
 def review_qa_images_programmatic(name,browser_result,page_source,plan):
@@ -3370,13 +3375,14 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
-        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
+        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None
         input_sha=hashlib.sha256((prompt+context if include_context else prompt).encode()).hexdigest()
         if path.exists():
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
-                    return validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
+                    cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
+                    if not (cfg.get('qa_probe_units') and key.startswith('base-')):return cached
             except (ValueError,TypeError,KeyError):pass
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
@@ -3393,8 +3399,19 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
                         raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
                 return validated
-            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
+            value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
+            if cfg.get('qa_probe_units') and key.startswith('base-'):
+                probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
+                trial=dict(result_selector=value.get('result_selector') or scenarios[0]['result_selector'],
+                    scenarios=scenarios+[dict(value,kind=key.removeprefix('base-'))],feature_cases=[],audience_quotes=quotes[:2])
+                try:
+                    proof=execute_browser_qa(name,page,trial,probe,prefix_only=True)
+                    if proof.get('partial_passed') is not True or proof.get('passed') is not False:raise AutoQAPlanError('部分操作の検査結果が不正です')
+                    write_framework_json(probe/'partial-proof.json',proof)
+                except Exception as exc:
+                    path.unlink(missing_ok=True)
+                    raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
             error_path.unlink(missing_ok=True)
@@ -3611,7 +3628,7 @@ def run_product_departments(job, name, cfg):
         event(job, name + ': 検証担当が同じ候補をPC・スマホで実操作・画像比較')
         passed, detail, stage = automated_product_qa(job, name, page,
             dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design'],
-                _department_independent_qa=True,
+                _department_independent_qa=True,qa_probe_units=True,
                 _department_feedback=context['feedback'].get('verification',{}).get('detail','')))
         rows = query("SELECT path FROM agent_assets WHERE idea=? AND kind='自動品質検査レポート' ORDER BY id DESC LIMIT 1", (name,))
         report = json.loads(Path(rows[0]['path']).read_text(encoding='utf-8')) if rows else {}

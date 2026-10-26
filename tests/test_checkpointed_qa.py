@@ -197,3 +197,22 @@ class CheckpointedQAPlannerTests(TestCase):
         plan=app.compile_qa_invalid(value,5)
         self.assertEqual(plan['steps'][0],dict(op='restore_invalid',selector='#restore'))
         with self.assertRaises(app.AutoQAPlanError):app.compile_qa_invalid(dict(value,invalid_steps=[dict(op='click',selector='#save')]),5)
+
+    def test_each_base_unit_reaches_browser_before_next_model_request(self):
+        order=[];original=self.model
+        def model(prompt,cfg,tokens,**kw):
+            result=original(prompt,cfg,tokens,**kw);order.append('model:'+self.calls[-1]['key']);return result
+        def browser(name,page,plan,directory,**kw):
+            self.assertTrue(kw['prefix_only']);order.append('browser:'+plan['scenarios'][-1]['kind'])
+            return dict(passed=False,partial_passed=True,scenarios=[],screenshots=[])
+        with patch.object(app,'ai_json',side_effect=model),patch.object(app,'execute_browser_qa',side_effect=browser):
+            app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+        self.assertEqual(order[:4],['model:workflow','browser:workflow','model:variant','browser:variant'])
+
+    def test_browser_rejection_keeps_source_and_stops_remaining_planning(self):
+        with patch.object(app,'ai_json',side_effect=self.model),patch.object(app,'execute_browser_qa',side_effect=ValueError('expected 120分 actual 90分')):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'actual 90分'):
+                app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+        self.assertEqual([c['key'] for c in self.calls],['workflow'])
+        self.assertFalse(list(self.root.rglob('base-workflow.json')))
+        self.assertIn('actual 90分',next(self.root.rglob('base-workflow-error.json')).read_text())

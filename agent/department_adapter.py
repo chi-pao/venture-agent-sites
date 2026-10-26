@@ -129,7 +129,7 @@ def run_product_departments(job, name, cfg):
         event(job, name + ': 検証担当が同じ候補をPC・スマホで実操作・画像比較')
         passed, detail, stage = automated_product_qa(job, name, page,
             dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design'],
-                _department_independent_qa=True,
+                _department_independent_qa=True,qa_probe_units=True,
                 _department_feedback=context['feedback'].get('verification',{}).get('detail','')))
         rows = query("SELECT path FROM agent_assets WHERE idea=? AND kind='自動品質検査レポート' ORDER BY id DESC LIMIT 1", (name,))
         report = json.loads(Path(rows[0]['path']).read_text(encoding='utf-8')) if rows else {}
