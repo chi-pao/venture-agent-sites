@@ -99,12 +99,13 @@ jobs:
         run: |
           ollama pull qwen2.5-coder:7b
           ollama pull qwen2.5vl:3b
-          if [ '${{ matrix.product }}' = 'workday' ]; then ollama pull qwen2.5:7b; fi
+          ollama pull qwen2.5:7b
       - name: Compile production code and live test
         env:
           PYTHONPATH: tests
           VENTURE_LIVE_MODEL: qwen2.5-coder:7b
           VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
+          VENTURE_LIVE_QA_MODEL: qwen2.5:7b
           VENTURE_LIVE_PROPOSAL_MODEL: ${{ matrix.product == 'workday' && 'qwen2.5:7b' || '' }}
           VENTURE_LIVE_DATA_HOME: department-live-artifacts/${{ matrix.product }}
           VENTURE_LIVE_PRODUCT: ${{ matrix.product }}

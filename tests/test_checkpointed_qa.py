@@ -216,3 +216,32 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual([c['key'] for c in self.calls],['workflow'])
         self.assertFalse(list(self.root.rglob('base-workflow.json')))
         self.assertIn('actual 90分',next(self.root.rglob('base-workflow-error.json')).read_text())
+
+    def test_display_nodes_cannot_be_operated_as_checkboxes_and_files_cannot_be_clicked(self):
+        inventory=app.compact_qa_inventory(self.page+'<input type="file" id="restoreFile">')
+        for step in (dict(op='check',selector='#planned'),dict(op='click',selector='#restoreFile')):
+            with self.subTest(step=step),self.assertRaises(app.AutoQAPlanError):
+                app.validate_qa_inventory_actions(dict(steps=[step]),inventory,'workflow')
+        valid=dict(steps=[dict(op='fill',selector='#title',value='入力')])
+        self.assertEqual(app.validate_qa_inventory_actions(valid,inventory,'workflow'),valid)
+
+    def test_repair_prompt_includes_previous_test_and_observed_error(self):
+        original=self.model;fail=[True];prompts=[]
+        def model(prompt,cfg,tokens,**kw):
+            prompts.append(prompt)
+            return original(prompt,cfg,tokens,**kw)
+        def browser(*args,**kwargs):
+            if fail[0]:fail[0]=False;raise ValueError('expected 1 actual 100%')
+            return dict(passed=False,partial_passed=True,scenarios=[],screenshots=[])
+        with patch.object(app,'ai_json',side_effect=model),patch.object(app,'execute_browser_qa',side_effect=browser):
+            with self.assertRaises(app.AutoQAPlanError):
+                app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+            app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+        self.assertIn('前回の不合格検査:',prompts[1]);self.assertIn('actual 100%',prompts[1])
+        self.assertIn('仕様から正解を再計算',prompts[1])
+
+    def test_verification_text_override_preserves_independent_vision_model(self):
+        cfg=dict(self.cfg,qa_vision_model='vision-fixture',department_models={'verification':'reasoning-fixture'})
+        role=app.department_configuration(cfg,'verification')
+        self.assertEqual(role['model'],'reasoning-fixture')
+        self.assertEqual(role['qa_vision_model'],'vision-fixture')

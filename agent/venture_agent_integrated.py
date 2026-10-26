@@ -3345,6 +3345,24 @@ def validate_qa_unit(value,kind,acceptance_count):
     return value
 
 
+def validate_qa_inventory_actions(value,inventory,kind):
+    nodes=inventory['controls']+inventory['outputs']
+    for step in value.get('steps',[]):
+        op=step['op'];selector=step.get('selector','')
+        target=next((n for n in nodes if n['selector']==selector),None)
+        if not target:continue  # Dynamic controls are checked by the real browser.
+        tag=target['tag'];typ=target.get('type','')
+        if op=='check' and not (tag=='input' and typ in ('checkbox','radio')):
+            raise AutoQAPlanError('checkはcheckbox/radioだけです: '+selector+' は '+tag+'/'+typ+'。表示の照合はchecksへ記述してください')
+        if op=='fill' and (tag not in ('input','textarea') or typ in ('file','checkbox','radio','button','submit')):
+            raise AutoQAPlanError('実画面の要素に合わない操作: fill '+selector+' は '+tag+'/'+typ+'。選択欄にはselectを使ってください')
+        if op=='select' and tag!='select':raise AutoQAPlanError('selectは選択欄だけです: '+selector)
+        if op=='click' and typ=='file':raise AutoQAPlanError('ファイル入力へclickはできません。復元専用の検査を使用: '+selector)
+        if kind in ('workflow','variant') and op in ('download_csv','download_json','restore_file','restore_invalid','cancel_restore'):
+            raise AutoQAPlanError('中心作業の検査にバックアップ検査を混ぜないでください')
+    return value
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -3382,23 +3400,24 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
                     cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
+                    cached=validate_qa_inventory_actions(cached,inventory,key.removeprefix('base-'))
                     if not (cfg.get('qa_probe_units') and key.startswith('base-')):return cached
-            except (ValueError,TypeError,KeyError):pass
+            except (ValueError,TypeError,KeyError):cached=None
         if error_path.exists():
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
             except (ValueError,OSError):pass
+        previous=''
+        if error and (folder/(key+'-last-response.json')).exists():
+            try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]
+            except (ValueError,OSError):pass
         started=qa_time.monotonic()
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
-        request=(prompt+('\n'+unit_operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
+        request=(prompt+('\n'+unit_operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+error[:1200])
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 validated=validate(value)
-                for step in validated.get('steps',[]):
-                    target=next((n for n in inventory['controls'] if n['selector']==step.get('selector')),None)
-                    if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
-                        raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
-                return validated
+                return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
             value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             if cfg.get('qa_probe_units') and key.startswith('base-'):
@@ -3510,7 +3529,8 @@ def department_configuration(cfg, department):
     if overrides.get(department):
         role['model'] = str(overrides[department])
         if department == 'development': role['code_model'] = role['model']
-        if department == 'verification': role['qa_vision_model'] = role['model']
+        # Textual test planning and image review are separate capabilities.
+        # A text-role override must not replace the configured vision model.
     return role
 
 

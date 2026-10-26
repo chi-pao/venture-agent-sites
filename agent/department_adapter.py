@@ -11,7 +11,8 @@ def department_configuration(cfg, department):
     if overrides.get(department):
         role['model'] = str(overrides[department])
         if department == 'development': role['code_model'] = role['model']
-        if department == 'verification': role['qa_vision_model'] = role['model']
+        # Textual test planning and image review are separate capabilities.
+        # A text-role override must not replace the configured vision model.
     return role
 
 
