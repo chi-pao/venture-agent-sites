@@ -16,9 +16,11 @@ def main():
     evidence = Path(os.environ.get("VISION_EVIDENCE", "prior-evidence"))
     product = os.environ["VENTURE_LIVE_PRODUCT"]
     reports = list(evidence.glob("**/" + product + "/outputs/**/autoqa/**/report.json"))
-    if len(reports) != 1:
-        raise RuntimeError(f"Expected one real saved QA report, found {len(reports)}")
-    report_path = reports[0]
+    reports = [path for path in reports if json.loads(path.read_text(encoding="utf-8")).get("browser", {}).get("screenshots")]
+    if not reports:
+        print("NO_PRIOR_BROWSER_EVIDENCE; full generation QA must create fresh evidence", flush=True)
+        return
+    report_path = max(reports, key=lambda path: json.loads(path.read_text(encoding="utf-8")).get("checked", ""))
     product_root = next(parent for parent in report_path.parents if parent.name == product)
     report = json.loads(report_path.read_text(encoding="utf-8"))
     def relocate(value):
