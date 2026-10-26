@@ -43,10 +43,23 @@ def main():
     started=time.monotonic()
     try:
         print("SAVED_REPAIR_START",name,flush=True)
-        candidate,detail=app.incremental_product_repair(0,name,page,old["details"],cfg,diagnose=True)
+        prior_path=output/"repair-result.json"
+        prior=json.loads(prior_path.read_text(encoding="utf-8")) if prior_path.exists() else {}
+        resume=None
+        if "対象者・使い方の案内が画面に見つかりません" in prior.get("error",""):
+            assets=app.query("SELECT path FROM agent_assets WHERE idea=? AND kind='修正単独検証HTML' ORDER BY id DESC LIMIT 1",(name,))
+            if assets:
+                saved=Path(relocate(assets[0]["path"]))
+                if saved.is_file():resume=saved.read_text(encoding="utf-8")
+        if resume:
+            candidate,detail=resume,"前回保存した修正案から検査を再開"
+            result["resumed_saved_candidate"]=True
+        else:
+            candidate,detail=app.incremental_product_repair(0,name,page,old["details"],cfg,diagnose=True)
         result["repair_seconds"]=round(time.monotonic()-started,2)
         print("SAVED_REPAIR_GENERATED",result["repair_seconds"],detail,flush=True)
         path=app.save(0,name,"修正単独検証HTML",candidate,"html","機能・画像の再検証前")
+        result["candidate"]=str(path)
         errors=app.validate_html(candidate,name)+app.preserve_checkpoint_features(page,candidate)
         if errors:raise RuntimeError(" / ".join(errors))
         if re.findall(r'<script\b[^>]*>.*?</script\s*>',candidate,re.I|re.S)!=re.findall(r'<script\b[^>]*>.*?</script\s*>',page,re.I|re.S):
@@ -54,13 +67,14 @@ def main():
         digest=hashlib.sha256(candidate.encode()).hexdigest()
         directory=report_path.parents[2]/digest[:16]/app.uuid.uuid4().hex
         directory.mkdir(parents=True,exist_ok=True)
-        plan=app.validate_qa_plan(old["plan"],app.get_product_spec(name))
+        plan=dict(old["plan"],audience_quotes=app.visible_audience_copy(candidate)[:2])
+        plan=app.validate_qa_plan(plan,app.get_product_spec(name))
         browser=app.execute_browser_qa(name,candidate,plan,directory)
         print("SAVED_REPAIR_BROWSER_PASS",len(browser["scenarios"]),flush=True)
         visual=app.review_qa_images(name,browser,cfg)
         keys=("audience","design","readability","mobile","usefulness")
         issues=[key+": "+visual[key]["reason"] for key in keys if visual[key]["score"]<4]
-        updated=dict(old,checked=app.now(),content_sha=digest,browser=browser,visual=visual,passed=not issues,
+        updated=dict(old,checked=app.now(),content_sha=digest,browser=browser,plan=plan,visual=visual,passed=not issues,
                      details="画像判定で改善が必要: "+" / ".join(issues) if issues else "修正単独検証合格。全生成検証・公開許可は別。",
                      repair_seconds=result["repair_seconds"])
         app.write_framework_json(directory/"report.json",updated)

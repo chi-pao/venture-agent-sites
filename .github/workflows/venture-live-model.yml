@@ -5,6 +5,8 @@ on:
     paths:
       - 'agent/**'
       - 'tests/live_generation_smoke.py'
+      - 'tests/saved_repair_replay.py'
+      - '.github/workflows/venture-repair-replay.yml'
       - '.github/workflows/venture-live-model.yml'
   workflow_dispatch:
 

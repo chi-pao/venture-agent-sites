@@ -53,7 +53,7 @@ jobs:
               req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
               with urllib.request.urlopen(req, timeout=30) as response:
                   artifacts = json.load(response)["artifacts"]
-              match = next((item for item in artifacts if item["name"] in names and not item["expired"]), None)
+              match = next((item for item in artifacts if item["name"] in names and not item["expired"] and item["size_in_bytes"] > 50000), None)
               if match:
                   run_id = str(match["workflow_run"]["id"])
                   artifact_name = match["name"]
@@ -89,13 +89,17 @@ jobs:
           VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
         run: python -u tests/saved_repair_replay.py
       - name: Collect runtime evidence
+        id: evidence
         if: always()
         run: |
           mkdir -p saved-repair-evidence
           cp "$RUNNER_TEMP/ollama.log" saved-repair-evidence/ollama.log
           free -m > saved-repair-evidence/memory.txt
+          if [ -f "saved-repair-evidence/${{ matrix.product }}/live.db" ]; then
+            echo "checkpoint=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.evidence.outputs.checkpoint == 'true'
         with:
           name: saved-repair-evidence-${{ matrix.product }}
           path: saved-repair-evidence/
