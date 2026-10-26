@@ -51,3 +51,19 @@ class VisualRepairSpeedTests(TestCase):
             second=app.visual_product_repair('出欠管理',self.source,'designの改善',dict(app.DEFAULT))
         self.assertEqual(first,second)
         self.assertEqual(model.call_count,1)
+
+    def test_noop_copy_across_multiple_nodes_is_ignored(self):
+        source='<html><head><style>p{color:red}</style></head><body><h1>在宅ワーク時間・作業管理</h1><div>01 入力</div><div>02 整理</div></body></html>'
+        got=app.apply_visual_product_edits(source,dict(css='h1{color:navy}',copy=[
+            dict(old='在宅ワーク時間・作業管理',new='在宅ワーク時間と作業管理'),
+            dict(old='01 入力 02 整理',new='01 入力 02 整理')]))
+        self.assertIn('<h1>在宅ワーク時間と作業管理</h1>',got)
+        self.assertIn('<div>01 入力</div><div>02 整理</div>',got)
+    def test_copy_normalizes_display_whitespace_and_entities(self):
+        source='<html><body><h1>予定 &amp; 実績を\n    一緒に管理</h1></body></html>'
+        got=app.replace_visible_product_copy(source,'予定 & 実績を 一緒に管理','予定と実績をまとめて管理')
+        self.assertIn('<h1>予定と実績をまとめて管理</h1>',got)
+    def test_visual_css_cannot_hide_existing_actions(self):
+        for css in ('.toolbar{display: none}', '.actions {visibility:hidden}'):
+            with self.subTest(css=css),self.assertRaisesRegex(ValueError,'非表示'):
+                app.apply_visual_product_edits(self.source,dict(css=css,copy=[]))

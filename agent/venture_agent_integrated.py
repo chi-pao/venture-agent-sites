@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.3'
+APP_VERSION='2026.10.26.4'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -5107,10 +5107,11 @@ def apply_visual_product_edits(source,proposal):
         for edit in copies:
             if not isinstance(edit,dict) or any(not isinstance(edit.get(k),str) or '<' in edit[k] or '>' in edit[k] for k in ('old','new')):
                 raise ValueError('文言修正には表示テキストだけを指定してください')
-            visible_source=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>','',source,flags=re.I|re.S)
-            if edit['old'] not in visible_source:raise ValueError('修正元は実画面の文言から選んでください')
         for edit in copies:
+            if edit['old']==edit['new']:continue
             page=replace_visible_product_copy(page,edit['old'],edit['new'])
+    if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden',css,re.I):
+        raise ValueError('画面修正で既存の機能や操作を非表示にできません。配置・余白・折返しで改善してください')
     if css.strip():
         matches=list(re.finditer(r'</style\s*>',page,re.I))
         if matches:
@@ -5135,7 +5136,7 @@ def visual_product_repair(name,source,problem,cfg):
     prompt=('既存アプリの画面デザイン担当。JavaScript・保存・計算・IDは変更しない。'
         '現在の実画面のCSS・HTMLを読み、指摘の原因に対応する小さな上書きCSSと必要な説明文の修正だけを返す。'
         'JSONだけ: {"reason":"具体的な修正理由","css":"末尾へ追加するCSS","copy":[{"old":"実画面に一意に存在する8文字以上の表示文言","new":"改善文言"}]}。'
-        '既存のclass・id・要素を使う。cssは最大1600文字、copyは最大2件。HTMLタグやJavaScript、外部URLを追加しない。'
+        '既存のclass・id・要素を使う。cssは最大1600文字、copyは最大2件。変更しない文言はcopyへ入れない。HTMLタグやJavaScript、外部URLを追加しない。保存・CSV・復元などの機能をdisplay:noneやvisibility:hiddenで隠さない。'
         '全体のCSSを複写せず、対象箇所に必要なルールだけ追加する。スマホの縦積みと主要操作、対象者と価値、結果までの導線を具体化する。'
         '\n実測の改善課題:'+str(problem)[:900]
         +'\n対象・利用価値:'+json.dumps(compact,ensure_ascii=False)[:900]

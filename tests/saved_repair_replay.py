@@ -25,6 +25,7 @@ def main():
     reports=[p for p in reports if json.loads(p.read_text(encoding="utf-8")).get("browser",{}).get("screenshots")]
     report_path=max(reports,key=lambda p:json.loads(p.read_text(encoding="utf-8")).get("checked",""))
     old=json.loads(report_path.read_text(encoding="utf-8"))
+    selected_report_checked=old.get("checked")
     def relocate(value):
         if isinstance(value,dict):return {k:relocate(v) for k,v in value.items()}
         if isinstance(value,list):return [relocate(v) for v in value]
@@ -39,7 +40,7 @@ def main():
     app.competitive_context=lambda _:{"brief":brief}
     cfg=dict(app.DEFAULT,model="qwen2.5-coder:7b",qa_vision_model="qwen2.5vl:3b",
              url=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434"),ai_context=8192,visual_repair_timeout=300,autoqa_setup=False)
-    result={"product":product,"name":name,"source_sha":old["content_sha"],"before_visual":old.get("visual"),"status":"failed"}
+    result={"product":product,"name":name,"selected_report_checked":selected_report_checked,"source_sha":old["content_sha"],"before_visual":old.get("visual"),"status":"failed"}
     started=time.monotonic()
     try:
         print("SAVED_REPAIR_START",name,flush=True)
