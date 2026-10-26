@@ -176,7 +176,7 @@ class AutomaticQATests(ContinuationTests):
   build.assert_not_called();self.assertEqual(row['stage'],'のぼるさん確認待ち')
 
  def test_image_low_score_returns_to_repair(self):
-  page=self.install(1);visual={key:dict(score=3 if key=='design' else 4,reason='画面の余白や入力と結果の区分に改善が必要です') for key in ('audience','design','readability','mobile','usefulness')}
+  page=self.install(1);visual={**{key:dict(score=3 if key=='design' else 4,reason='画面の余白や入力と結果の区分に改善が必要です') for key in ('audience','design','readability','mobile','usefulness')},'review_mode':'vision_model','competitor_reference_count':2,'competitor_reference_sources':['https://example.com/a','https://example.com/b']}
   browser=dict(scenarios=[],screenshots=[])
   with patch.object(app,'ensure_competitive_brief',return_value=design_brief(self.name)),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'execute_browser_qa',return_value=browser),patch.object(app,'review_qa_images',return_value=visual),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
@@ -197,7 +197,7 @@ class AutomaticQATests(ContinuationTests):
   brief=design_brief(self.name)
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
    got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
-  self.assertEqual(got,{**visual,'review_mode':'vision_model'});self.assertEqual(len(calls[-1]['images']),4)
+  self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),4)
   self.assertIn('最初の2枚は同業・代替サービスの実画面',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(480,338))
@@ -263,7 +263,7 @@ class AutomaticQATests(ContinuationTests):
   for name,domain in [('在宅ワーク管理アプリ','clockify.me'),('授業参加管理アプリ','classdojo.com'),('CSV照合アプリ','openrefine.org')]:
    self.assertTrue(any(domain in u for u in app.competitive_reference_candidates(name)))
  def test_unresearched_design_does_not_reach_owner_review(self):
-  page=self.install(1);visual={key:dict(score=4,reason='試験用画像判定。実利用や競合比較の証明とは区別しています。') for key in ('audience','design','readability','mobile','usefulness')}
+  page=self.install(1);visual={**{key:dict(score=4,reason='試験用画像判定。実利用や競合比較の証明とは区別しています。') for key in ('audience','design','readability','mobile','usefulness')},'review_mode':'vision_model','competitor_reference_count':2,'competitor_reference_sources':['https://example.com/a','https://example.com/b']}
   result=dict(scenarios=[],screenshots=[])
   with patch.object(app,'ensure_competitive_brief',side_effect=app.AutoQAEnvironmentError('競合資料を取得できません')),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'ensure_product_blueprint',return_value=blueprint_fixture(self.name)),patch.object(app,'validate_product_blueprint',return_value=True),patch.object(app,'ensure_implementation_plan',return_value=implementation_plan_fixture(self.name)),patch.object(app,'validate_implementation_plan',return_value=True),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'execute_browser_qa',return_value=result) as browser,patch.object(app,'review_qa_images',return_value=visual),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
