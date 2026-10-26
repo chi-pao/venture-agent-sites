@@ -7,6 +7,7 @@ inspect it, and execute real browser QA. Any incomplete candidate fails the job.
 import json
 import os
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from test_preview import app
@@ -51,7 +52,7 @@ def verify_domain_specific_flow(name, html):
             if "在宅ワーク" in name:
                 if operation != "workday":
                     raise AssertionError(f"expected workday operation, got {operation}")
-                page.locator("#workdayDate").fill("2026-10-25")
+                page.locator("#workdayDate").fill(date.today().isoformat())
                 page.locator("#workdayStart").fill("09:00")
                 page.locator("#workdayEnd").fill("17:00")
                 page.locator("#workdayBreak").fill("60")
@@ -75,7 +76,7 @@ def verify_domain_specific_flow(name, html):
                             continue
                         locator = page.locator("#" + field["id"])
                         if field["role"] == "date":
-                            locator.fill("2026-10-25")
+                            locator.fill(date.today().isoformat())
                         elif field["role"] == "status":
                             locator.select_option(label=status)
                         elif field["role"] == "title":

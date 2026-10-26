@@ -150,7 +150,7 @@ class AutomaticQATests(ContinuationTests):
   self.assertFalse(passed);self.assertEqual(stage,'自動検証で要修正');self.assertIn('999分',detail)
   self.assertIsNone(app.production_acceptance(self.name,hashlib.sha256(page.encode()).hexdigest()))
  def test_verified_browser_proof_and_image_mock_bound_to_exact_artifacts(self):
-  page=self.install(1);visual={key:dict(score=4,reason='画像判定の接続だけを模擬し実際の画像品質を合格と主張しません') for key in ('audience','design','readability','mobile','usefulness')}
+  page=self.install(1);visual={**{key:dict(score=4,reason='画像判定の接続だけを模擬し実際の画像品質を合格と主張しません') for key in ('audience','design','readability','mobile','usefulness')},'review_mode':'vision_model','competitor_reference_count':2,'competitor_reference_sources':['https://example.com/a','https://example.com/b']}
   with patch.object(app,'ensure_competitive_brief',return_value=design_brief(self.name)),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'review_qa_images',return_value=visual),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
   self.assertTrue(passed);self.assertEqual(stage,'のぼるさん確認待ち')
@@ -158,6 +158,15 @@ class AutomaticQATests(ContinuationTests):
   self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
   Path(next(iter(proof['screenshots']))).write_bytes(b'changed')
   self.assertIsNone(app.production_acceptance(self.name,digest))
+ def test_programmatic_visual_metrics_cannot_grant_owner_review(self):
+  page=self.install(1)
+  visual={key:dict(score=4,reason='DOMやCSSの計測で画像AI判定を行っていない模擬結果です') for key in ('audience','design','readability','mobile','usefulness')}
+  visual.update(review_mode='programmatic_browser_metrics',competitor_reference_count=2)
+  with patch.object(app,'ensure_competitive_brief',return_value=design_brief(self.name)),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'make_qa_plan',return_value=work_plan()),patch.object(app,'execute_browser_qa',return_value=dict(scenarios=[],screenshots=[])),patch.object(app,'review_qa_images',return_value=visual),patch.object(app,'event'):
+   passed,detail,stage=app.automated_product_qa(1,self.name,page,dict(app.DEFAULT))
+  self.assertFalse(passed);self.assertEqual(stage,'検証環境の準備待ち');self.assertIn('画像AI',detail)
+  self.assertIsNone(app.production_acceptance(self.name,hashlib.sha256(page.encode()).hexdigest()))
+
  def test_environment_does_not_pass_or_trigger_product_repair(self):
   with patch.object(app,'ensure_autoqa_environment',side_effect=app.AutoQAEnvironmentError('画像モデル未準備')),patch.object(app,'event'):
    passed,detail,stage=app.automated_product_qa(1,self.name,'<html>draft</html>',dict(app.DEFAULT))

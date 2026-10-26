@@ -2340,9 +2340,13 @@ def review_qa_images(name,browser_result,cfg):
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':visual_schema,'stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':420,'num_ctx':min(4096,max(2048,int(cfg.get('ai_context',4096))))}}
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':min(4096,max(2048,int(cfg.get('ai_context',4096))))}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
-            with urllib.request.urlopen(req,timeout=max(45,int(cfg.get('qa_vision_timeout',90)))) as r:data=json.load(r)
+            try:
+                with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',240)))) as r:data=json.load(r)
+            except urllib.error.HTTPError as exc:
+                body=exc.read().decode('utf-8','replace').strip()
+                raise AutoQAEnvironmentError('画像モデルHTTP '+str(exc.code)+': '+(body[:700] or str(exc.reason))) from exc
             if data.get('error'):raise AutoQAEnvironmentError(str(data['error']))
             try:
                 review=qa_json(data.get('response',''))
@@ -2429,9 +2433,11 @@ def automated_product_qa(job,name,page,cfg):
             visual=review_qa_images(name,browser_result,cfg)
             report['visual_review_method']='vision_model'
         except (AutoQAEnvironmentError,AutoQAPlanError,TimeoutError,urllib.error.URLError,ConnectionError,OSError) as exc:
-            visual=review_qa_images_programmatic(name,browser_result,page,plan)
-            report['visual_review_method']='programmatic_browser_metrics'
-            report['visual_model_limitation']=str(exc)[:500]
+            report['visual_review_method']='vision_model_failed'
+            report['visual_model_limitation']=str(exc)[:800]
+            raise AutoQAEnvironmentError('画像AIによる画面比較を完了できません。画面構造の自動計測だけでは合格にせず、画像AIを再試行します: '+str(exc)[:500]) from exc
+        if visual.get('review_mode')!='vision_model' or int(visual.get('competitor_reference_count',0))<2:
+            raise AutoQAEnvironmentError('画像AIが自作画面と類似サービス2件以上を実際に判定した証拠がありません。合格にはせず画像比較を再試行します')
         report['visual']=visual
         issues=[key+': '+part['reason'] for key,part in visual.items() if key in ('audience','design','readability','mobile','usefulness') and part['score']<4]
         if issues:raise ValueError('画像判定で改善が必要: '+' / '.join(issues))
