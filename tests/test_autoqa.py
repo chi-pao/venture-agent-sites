@@ -65,6 +65,14 @@ def design_brief(name):
  return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,content_comparison=content_comparison,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
 
 class AutomaticQATests(ContinuationTests):
+ def test_department_qa_reuses_validated_design_handoff_but_still_runs_independent_tests(self):
+  page=self.install(1)
+  handoff=dict(brief=design_brief(self.name),blueprint=blueprint_fixture(self.name),implementation_plan=implementation_plan_fixture(self.name))
+  with patch.object(app,'ensure_autoqa_environment'),patch.object(app,'ensure_competitive_brief') as research,patch.object(app,'ensure_product_blueprint') as design,patch.object(app,'ensure_implementation_plan') as engineering,patch.object(app,'make_qa_plan',return_value=work_plan()) as planner,patch.object(app,'execute_browser_qa',return_value=dict(scenarios=[],screenshots=[])) as browser,patch.object(app,'review_qa_images',side_effect=app.AutoQAEnvironmentError('unit test stops before image judgement')):
+   passed,detail,stage=app.automated_product_qa(0,self.name,page,dict(app.DEFAULT,_department_documents=handoff))
+  research.assert_not_called();design.assert_not_called();engineering.assert_not_called()
+  planner.assert_called_once();browser.assert_called_once()
+  self.assertFalse(passed);self.assertEqual(stage,'検証環境の準備待ち')
  def install(self,index):
   product=json.loads(Path('product-rebuilds/product-candidates.json').read_text())['products'][index]
   app.store_product_spec(self.name,product['spec']);return Path('product-rebuilds/'+('attendance' if index==0 else 'workday')+'.html').read_text()
@@ -331,3 +339,4 @@ class VisualReviewEvidenceTests(__import__('unittest').TestCase):
   with self.assertRaises(app.AutoQAPlanError):app.validate_visual_review_evidence(review,['design'])
 
 if __name__=='__main__':import unittest;unittest.main()
+

@@ -78,6 +78,21 @@ class DepartmentAdapterTests(TestCase):
         app.run_product_departments(0,self.name,dict(app.DEFAULT))
         self.assertEqual(self.calls,['research','design','build','qa'])
 
+    def test_transient_development_retry_after_qa_failure_reuses_intact_candidate(self):
+        first=app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        manager=app.product_departments();saved=manager.load(self.name,self.scope)
+        saved['departments']['development']['status']='blocked';manager.persist(saved)
+        self.calls.clear();second=app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        self.assertEqual(self.calls,['qa'])
+        self.assertEqual(first['candidate']['content_sha'],second['candidate']['content_sha'])
+
+    def test_real_development_feedback_still_rebuilds_instead_of_reusing_candidate(self):
+        app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        manager=app.product_departments();saved=manager.load(self.name,self.scope)
+        manager.return_work(saved,'development','保存した値が消える',saved['candidate']['content_sha'])
+        self.calls.clear();app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        self.assertEqual(self.calls,['build','qa'])
+
     def test_independent_qa_does_not_reuse_renderer_expected_results(self):
         # Independent mode must go through the scenario planner even when a
         # structured template exists. It must not certify its own renderer.

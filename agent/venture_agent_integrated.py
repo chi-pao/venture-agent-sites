@@ -2470,25 +2470,27 @@ def automated_product_qa(job,name,page,cfg):
         'connection_scope':{'delivery_mode':spec.get('delivery_mode'),'required':dependencies,
             'status':'未接続・未検証' if dependencies else '外部接続不要',
             'note':'実操作合格は画面内で確認した範囲だけ。未接続の外部API・共有機能を実装済みとは扱わない。'}}
-    stage='自動検証で要修正';research_gap='';phase='環境準備'
+    stage='自動検証で要修正';research_gap='';phase='環境準備';handoff=cfg.get('_department_documents') or {}
     try:
         event(job,name+': 実操作・PC/スマホ画面の自動検証を開始')
         phase='競合比較'
         ensure_autoqa_environment(job,cfg)
         try:
-            brief=ensure_competitive_brief(name,cfg)
+            brief=handoff.get('brief') or ensure_competitive_brief(name,cfg)
             if not competitive_design_ready(brief):raise AutoQAPlanError('関連サービス・設計参考2件以上から機能・画面の学びと改善案をまとめてください')
             if not competitive_visual_ready(brief):
                 research_gap='類似サービスの実画面をPC・スマホで2件確認できていません'
                 event(job,name+': 公式機能説明の比較は完了。実画面の取得・計測が不足しているため確認待ちは保留し、画面調査を再試行します')
         except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,OSError,TimeoutError,urllib.error.URLError) as exc:
             research_gap=str(exc)
-            brief=development_design_reference_bundle(name,research_gap)
+            brief=handoff.get('brief') or development_design_reference_bundle(name,research_gap)
             event(job,name+': 競合比較の根拠が未完了ですが、機能・操作・画面検査は続行します。最終確認には比較完了が必要です')
         phase='製品設計';report['competitive_brief']=brief
-        report['blueprint']=ensure_product_blueprint(name,cfg,allow_unverified=bool(research_gap),competitive_brief=brief)
+        report['blueprint']=handoff.get('blueprint') or ensure_product_blueprint(name,cfg,allow_unverified=bool(research_gap),competitive_brief=brief)
+        if handoff and report['blueprint'].get('scope_sha')!=scope:raise AutoQAPlanError('引継ぎ画面設計と現在の製品要件の版が一致しません')
         validate_product_blueprint(report['blueprint'],spec,report['competitive_brief'])
-        phase='実装計画';report['implementation_plan']=ensure_implementation_plan(name,cfg,report['blueprint'])
+        phase='実装計画';report['implementation_plan']=handoff.get('implementation_plan') or ensure_implementation_plan(name,cfg,report['blueprint'])
+        if handoff and report['implementation_plan'].get('scope_sha')!=scope:raise AutoQAPlanError('引継ぎ機能設計と現在の製品要件の版が一致しません')
         if report['implementation_plan'].get('design_method')=='requirements_compiler_fallback':
             event(job,name+': AI機能設計が条件未達のため、製品要件から受入条件別の計画を再構成。実装・操作検査は続行します')
         validate_implementation_plan(report['implementation_plan'],spec,report['blueprint'])
@@ -3434,6 +3436,15 @@ def run_product_departments(job, name, cfg):
                 previous = Path(candidate['path']).read_text(encoding='utf-8')
                 if hashlib.sha256(previous.encode()).hexdigest() != candidate['content_sha']: previous = ''
             except OSError: pass
+        if previous and candidate.get('preliminary_passed') is True and not any(
+                role in context['feedback'] for role in ('development','design')):
+            # A provisional research refresh, QA-planning failure or transient
+            # environment failure is not evidence of a product defect. Keep
+            # the exact same-scope candidate and run the stronger QA against it.
+            # Actual feature/visual failures return explicit development/design
+            # feedback and therefore still enter the repair path below.
+            event(job,name+': 機能・画面の不具合は未検出。保存候補を保持し、独立検査から再開')
+            return dict(candidate)
         if not previous:
             assets = query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1", (name,))
             if assets and Path(assets[0]['path']).is_file(): previous = Path(assets[0]['path']).read_text(encoding='utf-8')

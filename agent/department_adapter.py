@@ -89,6 +89,15 @@ def run_product_departments(job, name, cfg):
                 previous = Path(candidate['path']).read_text(encoding='utf-8')
                 if hashlib.sha256(previous.encode()).hexdigest() != candidate['content_sha']: previous = ''
             except OSError: pass
+        if previous and candidate.get('preliminary_passed') is True and not any(
+                role in context['feedback'] for role in ('development','design')):
+            # A provisional research refresh, QA-planning failure or transient
+            # environment failure is not evidence of a product defect. Keep
+            # the exact same-scope candidate and run the stronger QA against it.
+            # Actual feature/visual failures return explicit development/design
+            # feedback and therefore still enter the repair path below.
+            event(job,name+': 機能・画面の不具合は未検出。保存候補を保持し、独立検査から再開')
+            return dict(candidate)
         if not previous:
             assets = query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1", (name,))
             if assets and Path(assets[0]['path']).is_file(): previous = Path(assets[0]['path']).read_text(encoding='utf-8')
