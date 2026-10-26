@@ -1,0 +1,76 @@
+name: Department coordinator real generation proof
+on:
+  push:
+    branches: [codex/department-pipeline]
+    paths:
+      - 'agent/**'
+      - 'tests/department_live_smoke.py'
+      - 'tests/saved_repair_replay.py'
+      - '.github/workflows/venture-repair-replay.yml'
+      - '.github/workflows/venture-departments.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: venture-departments-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-model-and-browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [attendance, workday, returns]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OLLAMA_HOST: http://127.0.0.1:11435
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app and browser dependencies
+        run: python -m pip install --upgrade pip streamlit pandas pillow playwright
+      - name: Install real Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start local Ollama service
+        run: |
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11435/api/tags >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/ollama.log"
+          exit 1
+      - name: Pull the same coding and visual models used by the local app
+        run: |
+          ollama pull qwen2.5-coder:7b
+          ollama pull qwen2.5vl:3b
+      - name: Compile production code and live test
+        env:
+          PYTHONPATH: tests
+          VENTURE_LIVE_MODEL: qwen2.5-coder:7b
+          VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/${{ matrix.product }}
+          VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
+          OLLAMA_HOST: http://127.0.0.1:11435
+        run: |
+          python -m py_compile agent/venture_agent_integrated.py tests/department_live_smoke.py
+          python tests/department_live_smoke.py
+      - name: Preserve generated pages, logs, and QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: department-generation-evidence-${{ matrix.product }}
+          path: department-live-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+

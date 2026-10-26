@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.6'
+APP_VERSION='2026.10.26.7-departments-preview'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -45,7 +45,7 @@ AGENT.mkdir(exist_ok=True)
 LOCK = AGENT / 'worker.lock'
 STOP = AGENT / 'stop.flag'
 THREAD_GUARD = threading.Lock()
-DEFAULT = {'model':'qwen2.5:7b','url':'http://localhost:11434','interval':180,'max_businesses':2,
+DEFAULT = {'department_pipeline':True,'model':'qwen2.5:7b','url':'http://localhost:11434','interval':180,'max_businesses':2,
            'ai_context':16384,'qa_vision_model':'qwen2.5vl:3b','autoqa_setup':True,'min_score':35,'max_revisions':3,'publish':False,'github_repo':'',
            'github_branch':'main','publish_webhook':'','max_active':12,'pause_on_errors':3,'payment_url':'','analytics_domain':'','analytics_api_url':'','analytics_api_token':'','stripe_api_key':'','auto_marketing':True,'marketing_webhook':'','auto_improve':True,'min_improve_views':100,'improvement_cooldown_hours':168,'plausible_site_id':'','project_payment_links':{},'project_payment_link_ids':{},'target_first':True,'prototype_budget':1,'max_candidate_pool':80,'learning_horizon_days':90,'value_review_interval_days':14,'discovery_cooldown_hours':24,'auto_sns_publish':True,'sns_daily_limit':3,'mastodon_url':'','research_interval_hours':24,'research_sector_batch':2,'public_base_url':''}
 
@@ -1378,6 +1378,7 @@ def ensure_product_blueprint(name,cfg,allow_unverified=False,competitive_brief=N
         'core_flows:[{input:具体的な入力例,operation:中心機能の操作,expected_result:便利さを確かめる結果,acceptance:[完成条件の0始まり番号]}]（3〜10件・各説明10字以上、全ての完成条件を網羅）、'
         'adaptations:[{source_url:比較の根拠のURL,implementation:同業の良さを取り入れた具体的な画面や機能,improvement:対象者に合わせてもっと使いやすくする点}]（異なる2件以上・各説明15字以上）。'
         '未実装・未検証を実績とせず、使う理由は検証する仮説として書く。単なる説明表示や入力の写しだけでは不可。'
+        +'\n検証担当からの具体的な差し戻し:'+str(cfg.get('_department_feedback',''))[:2000]
         +research_instruction+'\n要件:'+json.dumps(spec,ensure_ascii=False)[:6500]+'\n設計根拠:'+json.dumps(brief,ensure_ascii=False)[:6500])
     try:
         item=ai_json(prompt,cfg,3200,max_attempts=1,
@@ -2855,6 +2856,357 @@ def product_source(name):
         raise ValueError('公開版の変更を検出。保存済みの版を自動で上書きしません')
     return ''
 
+
+# BEGIN GENERATED DEPARTMENT ENGINE
+"""Persistent handoffs for the app factory. No model, publishing, or approval authority.
+
+Handlers run the real research, design, implementation and browser/vision engines.
+Receipts only say that a particular department's contract passed, never that the
+product is profitable or approved. The legacy one-file updater embeds this module.
+"""
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+
+
+DEPARTMENT_POLICY = '2026-10-26-handoffs-1'
+DEPARTMENT_NAMES = {
+    'proposal': '企画・完成条件', 'research': '競合・市場調査',
+    'design': '機能・UX設計', 'development': '開発・統合',
+    'verification': '実操作・画面検証', 'operations': '承認後の運営',
+}
+
+
+def department_digest(value):
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                     separators=(',', ':')).encode()).hexdigest()
+
+
+class DepartmentManager:
+    def __init__(self, query, execute, root, clock):
+        self.query, self.execute = query, execute
+        self.root, self.clock = Path(root), clock
+        execute('''CREATE TABLE IF NOT EXISTS venture_department_state(
+            idea TEXT PRIMARY KEY, scope TEXT NOT NULL, document TEXT NOT NULL, updated TEXT NOT NULL)''')
+
+    def load(self, name, scope):
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', scope):
+            raise ValueError('要件の版識別子が不正です')
+        rows = self.query('SELECT scope,document FROM venture_department_state WHERE idea=?', (name,))
+        if rows and rows[0]['scope'] == scope:
+            state = json.loads(rows[0]['document'])
+            if state.get('policy') == DEPARTMENT_POLICY:
+                return state
+        return dict(policy=DEPARTMENT_POLICY, idea=name, scope=scope, departments={},
+                    feedback={}, history=[], stage='制作待ち', details='')
+
+    def persist(self, state):
+        state['updated'] = self.clock()
+        self.execute('''INSERT INTO venture_department_state(idea,scope,document,updated)
+            VALUES(?,?,?,?) ON CONFLICT(idea) DO UPDATE SET scope=excluded.scope,
+            document=excluded.document,updated=excluded.updated''',
+                     (state['idea'], state['scope'], json.dumps(state, ensure_ascii=False), state['updated']))
+
+    def note(self, state, department, status, detail):
+        state['history'] = (state['history'] + [dict(department=department, status=status,
+                                                    detail=str(detail)[:2000], at=self.clock())])[-40:]
+        self.persist(state)
+
+    def read_receipt(self, receipt):
+        path = Path(receipt['path']).resolve()
+        if not path.is_relative_to(self.root.resolve()):
+            raise ValueError('成果物が部署フォルダーの外にあります')
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != receipt['sha256']:
+            raise ValueError('部署の成果物が変更されています')
+        return json.loads(raw)
+
+    def task(self, state, department, inputs, handler, validate):
+        fingerprint = department_digest(dict(policy=DEPARTMENT_POLICY, inputs=inputs))
+        previous = state['departments'].get(department, {})
+        if previous.get('input_sha') == fingerprint and previous.get('status') == 'completed':
+            try:
+                output = self.read_receipt(previous)
+                validate(output)
+                return output
+            except (OSError, ValueError, TypeError, KeyError):
+                pass  # Missing/corrupt receipts must be regenerated, never trusted.
+        state['departments'][department] = dict(status='running', input_sha=fingerprint)
+        self.note(state, department, 'running', '前段の成果物を受け取り開始')
+        try:
+            output = handler()
+            validate(output)
+            raw = json.dumps(output, ensure_ascii=False, sort_keys=True).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            directory = self.root / department_digest(state['idea'])[:16] / state['scope'] / department
+            directory.mkdir(parents=True, exist_ok=True)
+            path = directory / (digest + '.json')
+            temporary = path.with_suffix('.tmp')
+            temporary.write_bytes(raw)
+            os.replace(temporary, path)
+            state['departments'][department] = dict(status='completed', input_sha=fingerprint,
+                path=str(path), sha256=digest, checked=self.clock())
+            state['feedback'].pop(department, None)
+            self.note(state, department, 'completed', '担当範囲の成果物を保存。製品全体の合格とは別')
+            return output
+        except Exception as exc:
+            detail = type(exc).__name__ + ': ' + str(exc)[:2000]
+            state['departments'][department].update(status='blocked', details=detail)
+            state['stage'] = DEPARTMENT_NAMES[department] + 'の修正待ち'
+            state['details'] = detail
+            self.note(state, department, 'blocked', detail)
+            raise
+
+    def return_work(self, state, department, detail, source_sha):
+        if department not in DEPARTMENT_NAMES or department == 'operations':
+            raise ValueError('差し戻し先が不正です')
+        signature = department_digest([department, detail])
+        memory = state.setdefault('failures', {})
+        previous = memory.get(signature, {})
+        feedback = dict(detail=str(detail)[:4000], source_sha=source_sha, signature=signature,
+                        repeats=previous.get('repeats', 0) + 1 if previous.get('signature') == signature else 1)
+        state['feedback'][department] = feedback
+        memory[signature] = feedback
+        # Bound stored diagnostics; full receipts/history remain on disk.
+        if len(memory)>100: memory.pop(next(iter(memory)))
+        # Invalidate only the responsible department. Downstream input hashes
+        # invalidate changed outputs; independent research is kept intact.
+        state['departments'].setdefault(department, {})['status'] = 'rework'
+        self.note(state, department, 'rework', detail)
+
+    def run(self, name, scope, spec, handlers, validators, configuration, enabled=lambda: True):
+        state = self.load(name, scope)
+        context = dict(spec=spec, feedback=dict(state['feedback']))
+        self.task(state, 'proposal', spec, lambda: spec, validators['proposal'])
+        for department in ('research', 'design', 'development', 'verification'):
+            if not enabled():
+                state.update(stage='停止中', details='停止要求を受け、次の担当へ進みません')
+                self.persist(state)
+                return state
+            # Research failure is tracked independently and does not prevent
+            # offline UX/feature work. It remains required for owner review.
+            inputs = dict(scope=scope, configuration=configuration.get(department, {}),
+                          feedback=state['feedback'].get(department))
+            if department == 'design':
+                inputs.update(spec=spec, research=context.get('research'))
+            elif department == 'development':
+                inputs.update(design=context.get('design'))
+            elif department == 'verification':
+                inputs.update(development=context.get('development'), research=context.get('research'),
+                              design=context.get('design'))
+            try:
+                output = self.task(state, department, inputs,
+                                   lambda d=department: handlers[d](context), validators[department])
+                context[department] = output
+                if department == 'development':
+                    state['candidate'] = output
+                    self.persist(state)
+            except Exception as exc:
+                if department != 'research':
+                    return state
+                context['research'] = dict(verified=False, gap=type(exc).__name__ + ': ' + str(exc)[:1500])
+            context['feedback'] = dict(state['feedback'])
+        result = context['verification']
+        candidate_sha = context['development']['content_sha']
+        if result['passed'] is not True:
+            target = result['return_to']
+            self.return_work(state, target, result['details'], candidate_sha)
+            # A rejected review cannot become a permanently cached verdict.
+            state['departments']['verification']['status'] = 'rework'
+            state.update(stage=DEPARTMENT_NAMES[target] + 'へ差し戻し', details=result['details'])
+        elif context.get('research', {}).get('verified') is not True:
+            self.return_work(state, 'research', '競合の機能・画面比較が未完了', candidate_sha)
+            state.update(stage='比較調査待ち・制作検査済み', details='制作検査は通過。比較調査の完了後に同じ版を再検証')
+        else:
+            state.update(stage='のぼるさん確認待ち', details=result['details'])
+            state['departments']['operations'] = dict(status='approval_wait', content_sha=candidate_sha,
+                                                      details='この版へのユーザー承認と接続確認後に既存の運営処理へ引き継ぐ')
+        state['candidate'] = context['development']
+        self.persist(state)
+        return state
+
+
+"""App-specific handlers. Embedded after department_manager by bundle_departments.py."""
+
+
+def product_departments():
+    return DepartmentManager(query, execute, OUT / 'departments', now)
+
+
+def department_configuration(cfg, department):
+    role = dict(cfg)
+    overrides = cfg.get('department_models') or {}
+    if overrides.get(department):
+        role['model'] = str(overrides[department])
+        if department == 'development': role['code_model'] = role['model']
+        if department == 'verification': role['qa_vision_model'] = role['model']
+    return role
+
+
+def department_failure_target(report, stage):
+    phase = str(report.get('failed_step') or '')
+    if report.get('local_qa_passed') and report.get('passed') is not True: return 'research'
+    if stage in ('検証環境の準備待ち', '自動検証の再試行待ち'):
+        return 'verification'
+    if phase == '競合比較': return 'research'
+    if phase in ('製品設計', '実装計画', '画像デザイン審査'): return 'design'
+    if phase in ('操作シナリオ設計', '環境準備'): return 'verification'
+    return 'development'
+
+
+def run_product_departments(job, name, cfg):
+    manager = product_departments()
+    spec = ensure_product_spec(name, department_configuration(cfg, 'proposal'))
+    scope = product_scope_sha(name)
+    initial = manager.load(name, scope)
+    context_cfg = dict(cfg)
+
+    def require_keys(item, keys):
+        if not isinstance(item, dict) or any(k not in item for k in keys):
+            raise ValueError('担当の成果物に必須項目がありません: ' + ','.join(keys))
+        return item
+
+    def research(context):
+        event(job, name + ': 調査担当が公式機能・実画面の比較を作成')
+        brief = ensure_competitive_brief(name, department_configuration(context_cfg, 'research'))
+        if not competitive_design_ready(brief) or not competitive_visual_ready(brief):
+            raise AutoQAPlanError('公式の機能説明と実画面2件以上の比較が未完了')
+        return dict(verified=True, brief=brief)
+
+    def design(context):
+        event(job, name + ': 設計担当が対象者・利用手順・画面・機能の契約を作成')
+        feedback = context['feedback'].get('design', {})
+        design_cfg = dict(department_configuration(context_cfg, 'design'), _department_feedback=feedback.get('detail', ''))
+        if feedback:
+            # These are derived caches only; accepted artifacts remain immutable
+            # in the manager's receipt folders and product checkpoint files.
+            for key in ('product_blueprint:', 'implementation_plan:'):
+                execute('DELETE FROM agent_settings WHERE key=?', (key + name + ':' + scope,))
+        evidence = context.get('research', {})
+        brief = evidence.get('brief') or development_design_reference_bundle(name, evidence.get('gap', '調査待ち'))
+        blueprint = ensure_product_blueprint(name, design_cfg, allow_unverified=not evidence.get('verified'), competitive_brief=brief)
+        plan = ensure_implementation_plan(name, design_cfg, blueprint)
+        return dict(brief=brief, blueprint=blueprint, implementation_plan=plan)
+
+    def validate_design(item):
+        require_keys(item, ('brief', 'blueprint', 'implementation_plan'))
+        validate_product_blueprint(item['blueprint'], spec, item['brief'])
+        validate_implementation_plan(item['implementation_plan'], spec, item['blueprint'])
+
+    def development(context):
+        event(job, name + ': 開発担当が承認された設計成果物から制作・修正')
+        previous = ''
+        candidate = initial.get('candidate')
+        if candidate:
+            try:
+                previous = Path(candidate['path']).read_text(encoding='utf-8')
+                if hashlib.sha256(previous.encode()).hexdigest() != candidate['content_sha']: previous = ''
+            except OSError: pass
+        if not previous:
+            assets = query("SELECT path FROM agent_assets WHERE idea=? AND kind='品質改善候補HTML' ORDER BY id DESC LIMIT 1", (name,))
+            if assets and Path(assets[0]['path']).is_file(): previous = Path(assets[0]['path']).read_text(encoding='utf-8')
+            else: previous = product_source(name)
+        feedback = '\n'.join(DEPARTMENT_NAMES[k] + 'からの修正指示: ' + v['detail'] for k,v in context['feedback'].items())
+        plan = quality_requirements_text(name) + '\n' + feedback
+        page, verdict, passed = build(job, name, dict(department_configuration(context_cfg, 'development'), _department_documents=context['design']),
+            plan, asset_kind='品質改善候補HTML', existing_page=previous,
+            allow_partial=spec['delivery_mode']=='connected')
+        if not page: raise ValueError(verdict)
+        # Retain the exact candidate even if a preliminary gate failed, so the
+        # next repair uses the failing source rather than an unrelated old page.
+        save(job, name, '部署引継候補HTML', page, 'html', verdict)
+        asset = query("SELECT path FROM agent_assets WHERE idea=? AND kind='部署引継候補HTML' ORDER BY id DESC LIMIT 1", (name,))[0]
+        return dict(path=asset['path'], content_sha=hashlib.sha256(page.encode()).hexdigest(),
+                    preliminary_passed=bool(passed), details=verdict)
+
+    def validate_candidate(item):
+        require_keys(item, ('path', 'content_sha', 'preliminary_passed', 'details'))
+        page = Path(item['path']).read_text(encoding='utf-8')
+        if hashlib.sha256(page.encode()).hexdigest() != item['content_sha']:
+            raise ValueError('候補の版が引継ぎ時点から変更されています')
+
+    def verification(context):
+        candidate = context['development']
+        page = Path(candidate['path']).read_text(encoding='utf-8')
+        if not candidate['preliminary_passed'] and '画面検査: 合格' not in candidate['details']:
+            return dict(passed=False, return_to='development', details=candidate['details'], content_sha=candidate['content_sha'])
+        event(job, name + ': 検証担当が同じ候補をPC・スマホで実操作・画像比較')
+        passed, detail, stage = automated_product_qa(job, name, page,
+            dict(department_configuration(context_cfg, 'verification'), _department_documents=context['design']))
+        rows = query("SELECT path FROM agent_assets WHERE idea=? AND kind='自動品質検査レポート' ORDER BY id DESC LIMIT 1", (name,))
+        report = json.loads(Path(rows[0]['path']).read_text(encoding='utf-8')) if rows else {}
+        if report.get('content_sha') != candidate['content_sha']:
+            raise ValueError('候補と実ブラウザ検証レポートの版が一致しません')
+        return dict(passed=bool(passed), return_to=department_failure_target(report, stage),
+                    details=detail, content_sha=candidate['content_sha'], report=rows[0]['path'])
+
+    def validate_verification(item):
+        require_keys(item, ('passed', 'return_to', 'details', 'content_sha'))
+        if type(item['passed']) is not bool or item['return_to'] not in DEPARTMENT_NAMES:
+            raise ValueError('検証結果の形式が不正です')
+        if item['passed'] and not production_acceptance(name, item['content_sha']):
+            raise ValueError('実操作・画面検査の合格証拠がありません')
+
+    configuration = {
+        'research': dict(policy=COMPETITIVE_POLICY, model=cfg['model']),
+        'design': dict(policy=PRODUCT_BLUEPRINT_POLICY, implementation=IMPLEMENTATION_PLAN_POLICY, model=cfg['model']),
+        'development': dict(version=APP_VERSION, model=coding_config(cfg)['model']),
+        'verification': dict(policy=AUTO_QA_POLICY, vision=cfg.get('qa_vision_model'), model=cfg['model']),
+    }
+    for department, settings in configuration.items():
+        settings['role_model'] = (cfg.get('department_models') or {}).get(department, '')
+    result = manager.run(name, scope, spec,
+        dict(research=research, design=design, development=development, verification=verification),
+        dict(proposal=validate_product_spec, research=lambda x: require_keys(x, ('verified','brief')),
+             design=validate_design, development=validate_candidate, verification=validate_verification),
+        configuration, enabled=lambda: bool(state()['enabled'] and development_allowed(name)))
+    candidate = result.get('candidate', {})
+    product_development_state(name, result['stage'], result['details'],
+        sum(1 for x in result['history'] if x['department']=='development' and x['status']=='running'), candidate.get('path', ''))
+    event(job, name + ': 統括 / ' + result['stage'] + ' / ' + result['details'][:600])
+    return result
+
+
+def department_quality_development_cycle(job, cfg):
+    rows = query('''SELECT a.name,d.updated,d.stage FROM autonomous_ideas a
+        LEFT JOIN venture_product_development d ON d.idea=a.name
+        LEFT JOIN venture_value_state v ON v.idea=a.name
+        LEFT JOIN venture_owner_decisions o ON o.idea=a.name
+        WHERE (a.attempts>0 OR d.idea IS NOT NULL) AND COALESCE(o.decision,'') NOT IN ('中止','保留')
+          AND (o.decision='継続' OR COALESCE(v.phase,'') NOT IN ('中止','保留'))
+        ORDER BY CASE WHEN d.stage='修正依頼あり' THEN 0 ELSE 1 END,COALESCE(d.updated,'')''')
+    for row in rows:
+        if not state()['enabled']: return
+        name = row['name']
+        if not development_allowed(name) or candidate_production_acceptance(name): continue
+        if row['updated'] and row['stage']!='修正依頼あり':
+            try:
+                if (policy_clock()-datetime.fromisoformat(row['updated'])).total_seconds()<180: continue
+            except (ValueError,TypeError): pass
+        try: run_product_departments(job, name, cfg)
+        except Exception as exc:
+            detail=type(exc).__name__+': '+str(exc)[:1600]
+            product_development_state(name, '統括・完成条件の修正待ち', detail)
+            event(job, name+': 統括処理で停止 / '+detail)
+        return
+    event(job, '部署別開発: 対象は確認待ち・停止中・再試行間隔内です')
+
+
+def render_department_status(name):
+    manager = product_departments()
+    data = manager.load(name, product_scope_sha(name))
+    if not data['departments']: return
+    with st.expander('担当部署と引き継ぎ状況', expanded=True):
+        labels = dict(pending='未着手', running='作業中', completed='担当範囲を通過',
+            blocked='問題の解決待ち', rework='差し戻し・改善待ち', approval_wait='この版への承認待ち')
+        st.dataframe([{'担当': label, '状況': labels.get(data['departments'].get(key,{}).get('status','pending'), '未着手'),
+            '問題・次の対応': data['feedback'].get(key,{}).get('detail') or data['departments'].get(key,{}).get('details','')}
+            for key,label in DEPARTMENT_NAMES.items()], hide_index=True, width='stretch')
+        st.caption('担当範囲の通過と製品全体の完成は別です。成果物を保持し、不合格の担当から再開します。')
+
+# END GENERATED DEPARTMENT ENGINE
 
 def quality_development_cycle(job,cfg):
     """Work on one quality gap at a time; draft locally, never self-grant release permission."""
@@ -5353,7 +5705,9 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
     except Exception as exc:
         return '', '完成条件の設計待ち: '+type(exc).__name__, False
     try:
-        blueprint=ensure_product_blueprint(name,cfg,allow_unverified=True)
+        handoff=cfg.get('_department_documents') or {}
+        blueprint=handoff.get('blueprint') or ensure_product_blueprint(name,cfg,allow_unverified=True)
+        if handoff:validate_product_blueprint(blueprint,release_spec,handoff['brief'])
         if blueprint.get('development_only'):
             event(job,name+': 競合比較の根拠は未完了。差別化を主張せず、共通UX原則で制作と操作検査を続行します')
     except Exception as exc:
@@ -5366,7 +5720,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         # Research, UX, and feature-level engineering contracts are required
         # inputs. Do not generate a screen until every acceptance item has a
         # concrete implementation path and browser-test examples.
-        implementation_plan=ensure_implementation_plan(name,cfg,blueprint)
+        implementation_plan=handoff.get('implementation_plan') or ensure_implementation_plan(name,cfg,blueprint)
+        validate_implementation_plan(implementation_plan,release_spec,blueprint)
     except Exception as exc:
         stage='機能設計待ち'
         detail=stage+': '+type(exc).__name__+': '+str(exc)[:700]
@@ -5652,7 +6007,8 @@ def cycle(cfg):
         refresh_product_quality(job,cfg)
         # Re-evaluate viability before spending this cycle on product code.
         review_value_portfolio(cfg)
-        quality_development_cycle(job,cfg)
+        if cfg.get('department_pipeline',True):department_quality_development_cycle(job,cfg)
+        else:quality_development_cycle(job,cfg)
         media_editorial_cycle(job,cfg)
         sync_external_metrics(job,cfg)
         portfolio_review(job)
@@ -7618,6 +7974,7 @@ def render_simple_development_board(cfg):
                 if item['group'] not in ('確認待ち','運用中'):st.caption('制作途中の画面です。完成・判断待ちの版ではありません。')
             except (OSError,UnicodeError,ValueError) as exc:st.warning('画面を開く準備が必要です: '+str(exc)[:180])
         else:st.info('このアプリの画面はまだ保存されていません。')
+        render_department_status(name)
         issue,improvement=briefs[name]
         st.write('**問題点:** '+issue)
         st.write('**次の改善:** '+improvement)
