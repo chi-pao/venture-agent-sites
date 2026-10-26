@@ -204,7 +204,7 @@ class AutomaticQATests(ContinuationTests):
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(448,224))
   processed=app.base64.b64decode(calls[-1]['images'][-1])
   self.assertTrue(processed.startswith(bytes([255,216,255])))
-  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(224,144))
+  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(480,309))
   self.assertFalse(calls[-1]['stream'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
