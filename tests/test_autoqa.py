@@ -196,15 +196,16 @@ class AutomaticQATests(ContinuationTests):
    return io.BytesIO(json.dumps({'response':json.dumps(visual)}).encode())
   brief=design_brief(self.name)
   with patch.object(app.urllib.request,'urlopen',side_effect=response),patch.object(app,'competitive_context',return_value=dict(brief=brief)):
-   got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[]),dict(app.DEFAULT))
+   got=app.review_qa_images(self.name,dict(screenshots=[str(shot)]*4,scenarios=[],layouts=[dict(width=1280,body='授業の出欠記録 個人講師・小規模スクール向け')]),dict(app.DEFAULT))
   self.assertEqual({key:got[key] for key in visual},visual);self.assertEqual(got['review_mode'],'vision_model');self.assertEqual(got['competitor_reference_count'],2);self.assertEqual(len(calls[-1]['images']),2)
   self.assertEqual(calls[-1]['options']['num_ctx'],8192)
   self.assertIn('最初の1枚は比較シート',calls[-1]['prompt'])
+  self.assertIn('実ブラウザーの初期画面から抽出した表示文言:授業の出欠記録 個人講師・小規模スクール向け',calls[-1]['prompt'])
   reference=app.base64.b64decode(calls[-1]['images'][0])
   with Image.open(io.BytesIO(reference)) as image:self.assertEqual(image.size,(448,224))
   processed=app.base64.b64decode(calls[-1]['images'][-1])
   self.assertTrue(processed.startswith(bytes([255,216,255])))
-  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(480,309))
+  with Image.open(io.BytesIO(processed)) as image:self.assertEqual(image.size,(224,144))
   self.assertFalse(calls[-1]['stream'])
  def test_blueprint_compiles_product_specific_design_after_three_ai_repairs_fail(self):
   self.blueprint_patch.stop()
