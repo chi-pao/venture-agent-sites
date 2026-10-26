@@ -3402,6 +3402,59 @@ def compile_qa_formatted_expectation(value,formats):
     return dict(value,exact_check=dict(op='text_equals',selector=exact['selector'],value=text))
 
 
+def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
+    exact=raw.get('exact_check') if isinstance(raw,dict) else None
+    if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
+    contract=formats[exact['selector']];count=contract['slots']
+    # Isolate the disputed oracle from the much larger operation-plan JSON.
+    # Every slot has a named required field so a whole sentence cannot stand
+    # in for an array of independent numeric expectations.
+    properties={**{'n'+str(i):{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$','maxLength':30} for i in range(count)},
+        **{'l'+str(i):{'type':'string','maxLength':180} for i in range(count+1)},
+        'basis':{'type':'string','minLength':12,'maxLength':300}}
+    schema=dict(type='object',properties=properties,required=list(properties),additionalProperties=False)
+    inputs=[{k:s[k] for k in ('op','selector','value','label','nth') if k in s} for s in raw.get('steps',[])]
+    relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
+    prompt=('独立QA。既存の入力と操作は一切変更せず、主結果の正解だけを計算する。オブジェクト1件でn0,n1等の各数値文字列、l0,l1等の数値前後の文言、basis:仕様からの計算根拠を返す。'
+        'n欄は数字のみで単位や文を入れない。l欄は入力条件から業務状態も独立に判断し、観測された状態を正解としてコピーしない。'
+        '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
+        +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)[:1000]+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))[:2200]
+        +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False)+'\n再診断理由:期待値の個数・表現または計算が不適切。観測した数値は与えないので、入力と要件から計算してください。'
+        +'\n返す必須キー:'+','.join(properties))
+    def validate(answer):
+        write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
+        if not isinstance(answer,dict) or any(k not in answer for k in properties):raise AutoQAPlanError('主結果の各数値・文言・計算根拠を全て指定してください')
+        values=[answer['n'+str(i)] for i in range(count)];literals=[answer['l'+str(i)] for i in range(count+1)]
+        if not isinstance(answer['basis'],str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
+        rebuilt=dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],expected_values=values,expected_literals=literals))
+        return compile_qa_formatted_expectation(rebuilt,formats)
+    repaired=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),min(650,180+count*65),schema=schema,
+        max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(inputs,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
+    return repaired
+
+
+def repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key):
+    # This path may relocate a check for an exact literal the QA author entered
+    # (e.g. a registered person's name). It may not change that expected value,
+    # its comparison operator, or any product input/action.
+    checks=raw.get('checks',[]) if isinstance(raw,dict) else []
+    inputs=[s.get('value',s.get('label')) for s in raw.get('steps',[]) if s.get('op') in ('fill','select')]
+    if not isinstance(fault,dict) or fault not in checks or fault.get('op')!='text_contains' or fault.get('value') not in inputs:return None
+    options=[n['selector'] for n in inventory['outputs'] if n['selector']!=fault['selector'] and n['tag'] not in ('main','section','body','html','form','style','script')]
+    if not options:return None
+    schema={'type':'object','properties':{'selector':{'type':'string','enum':options},'reason':{'type':'string','minLength':12,'maxLength':200}},'required':['selector','reason'],'additionalProperties':False}
+    def validate(answer):
+        write_framework_json(folder/(key+'-selector-last-response.json'),answer)
+        if not isinstance(answer,dict) or answer.get('selector') not in options or not isinstance(answer.get('reason'),str) or len(answer['reason'])<12:raise AutoQAPlanError('入力した文字列の表示先CSSと根拠が必要です')
+        changed=[dict(c,selector=answer['selector']) if c==fault else dict(c) for c in checks]
+        return dict(raw,checks=changed,selector_repair_reason=answer['reason'])
+    return ai_json('独立QA。入力した文字列を別の表示欄で照合して失敗した。入力・操作・期待文字列・比較演算は変更しない。実際に登録内容を表示する出力先CSSを1つだけ選びJSON {selector:CSS,reason:選択根拠}を返す。説明通知と登録一覧を混同しない。'
+        +'\n問題の検査:'+json.dumps(fault,ensure_ascii=False)+'\n入力操作:'+json.dumps(raw.get('steps',[]),ensure_ascii=False,separators=(',',':'))[:1800]
+        +'\n出力先候補:'+json.dumps([n for n in inventory['outputs'] if n['selector'] in options],ensure_ascii=False,separators=(',',':'))[:2200],
+        dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),250,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -3476,8 +3529,29 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 validated=validate(compile_qa_formatted_expectation(value,formats))
                 return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
-            value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
-                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
+            repaired=None
+            if cached is None and formatted and previous and cfg.get('qa_probe_units'):
+                try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
+                except (ValueError,OSError):raw=None
+                # A concrete UI operation error needs operation repair, not a
+                # new oracle. Only expectation/format failures take this path.
+                if raw and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
+                    fault=None
+                    if observation.exists():
+                        try:fault=json.loads(observation.read_text(encoding='utf-8')).get('check')
+                        except (ValueError,OSError):pass
+                    exact=raw.get('exact_check') or {}
+                    # Primary checks run first. A later literal-selector
+                    # mismatch is not grounds for recomputing a passing oracle.
+                    if fault and fault.get('selector')!=exact.get('selector') and '期待結果と不一致' in error:
+                        repaired=compile_qa_formatted_expectation(raw,formats)
+                    else:repaired=repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error)
+                    relocated=repair_qa_literal_selector(repaired or raw,fault,inventory,cfg,folder,key)
+                    if relocated is not None:repaired=relocated
+            if repaired is not None:value=capture_and_validate(repaired)
+            else:
+                value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
+                    request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             if cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-')):
                 probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
                 if key.startswith('feature-'):

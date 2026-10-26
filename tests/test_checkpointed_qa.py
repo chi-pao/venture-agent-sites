@@ -283,3 +283,34 @@ class CheckpointedQAPlannerTests(TestCase):
                 app.checkpointed_independent_qa_plan('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
         self.assertEqual(order[-2:],['feature-0-0','feature-browser'])
         self.assertNotIn('feature-0-1',order);self.assertNotIn('audit',order)
+
+    def test_targeted_oracle_repair_preserves_operations_and_other_checks(self):
+        raw=dict(steps=[dict(op='fill',selector='#amount',value='1000'),dict(op='click',selector='#save')],checks=[dict(op='text_contains',selector='#result',value='保存しました')],acceptance=[0],exact_check=dict(selector='#summary',value='1'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='5件 / 超過4件')])
+        answer=dict(n0='1',n1='0',l0='',l1='件 / 超過',l2='件',basis='未対応1件を保存し期限は将来なので超過は0件')
+        def model(prompt,cfg,tokens,**kw):
+            self.assertLess(tokens,400);self.assertIn('返す必須キー:n0,n1,l0,l1,l2,basis',prompt)
+            self.assertNotIn('5件 / 超過4件',prompt)
+            return kw['validator'](answer)
+        with patch.object(app,'ai_json',side_effect=model):
+            fixed=app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,self.cfg,self.root,'feature-0-0','期待結果と不一致')
+        self.assertEqual(fixed['steps'],raw['steps']);self.assertEqual(fixed['checks'],raw['checks'])
+        self.assertEqual(fixed['exact_check']['value'],'1件 / 超過0件')
+        self.assertNotEqual(fixed['exact_check']['value'],'5件 / 超過4件')
+
+    def test_targeted_oracle_repair_rejects_sentences_in_numeric_slot(self):
+        raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(n0='1件',l0='',l1='件',basis='入力から数値だけを計算する根拠があります'))):
+            with self.assertRaises(app.AutoQAPlanError):app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,self.cfg,self.root,'base-workflow','expected_values')
+
+    def test_literal_check_repair_can_only_change_selector(self):
+        fault=dict(op='text_contains',selector='#notice',value='登録者A')
+        raw=dict(steps=[dict(op='fill',selector='#name',value='登録者A'),dict(op='click',selector='#save')],checks=[fault,dict(op='text_equals',selector='#rate',value='100%')])
+        inventory=dict(controls=[],outputs=[dict(tag='div',selector='#notice',text='通知'),dict(tag='tbody',selector='#rows',text='記録一覧')])
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(selector='#rows',reason='登録した内容は記録一覧に表示されるため'))):
+            repaired=app.repair_qa_literal_selector(raw,fault,inventory,self.cfg,self.root,'base-workflow')
+        self.assertEqual(repaired['steps'],raw['steps'])
+        self.assertEqual(repaired['checks'][0],dict(fault,selector='#rows'))
+        self.assertEqual(repaired['checks'][1],raw['checks'][1])
+        self.assertIsNone(app.repair_qa_literal_selector(raw,dict(fault,value='観測値を採用'),inventory,self.cfg,self.root,'base-workflow'))
