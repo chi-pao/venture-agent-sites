@@ -2310,7 +2310,7 @@ def review_qa_images(name,browser_result,cfg):
                 if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=view.get('screenshot_sha256'):continue
                 try:
                     with Image.open(path) as source:
-                        image=source.convert('RGB');image.thumbnail((320,320));buffer=BytesIO();image.save(buffer,format='JPEG',quality=45,optimize=True)
+                        image=source.convert('RGB');image.thumbnail((224,224));buffer=BytesIO();image.save(buffer,format='JPEG',quality=35,optimize=True)
                         reference_images.append(base64.b64encode(buffer.getvalue()).decode());reference_labels.append(source_url);seen_sources.add(source_url)
                 except (OSError,ValueError):continue
                 if len(reference_images)>=2:break
@@ -2330,13 +2330,13 @@ def review_qa_images(name,browser_result,cfg):
             +'\n自動操作シナリオ数（詳細な操作結果は別のブラウザー検査で判定）:'+str(len(browser_result['scenarios'])))
         images=[]
         if len(reference_images)>=2:
-            board=Image.new('RGB',(640,320),(247,248,250))
+            board=Image.new('RGB',(448,224),(247,248,250))
             from PIL import ImageDraw
             draw=ImageDraw.Draw(board)
             for index,encoded in enumerate(reference_images[:2]):
                 with Image.open(BytesIO(base64.b64decode(encoded))) as ref:
-                    image=ref.convert('RGB');image.thumbnail((300,276))
-                    x=10+index*320;y=34+(276-image.height)//2
+                    image=ref.convert('RGB');image.thumbnail((210,188))
+                    x=7+index*224;y=28+(188-image.height)//2
                     board.paste(image,(x,y));draw.text((x,8),f'Reference {index+1}',fill=(32,44,61))
             buffer=BytesIO();board.save(buffer,format='JPEG',quality=55,optimize=True)
             images.append(base64.b64encode(buffer.getvalue()).decode())
@@ -2345,15 +2345,15 @@ def review_qa_images(name,browser_result,cfg):
         for path in product_screens:
             with Image.open(path) as source:
                 image=source.convert('RGB')
-                image.thumbnail((320,320))
+                image.thumbnail((224,224))
                 buffer=BytesIO()
-                image.save(buffer,format='JPEG',quality=45,optimize=True)
+                image.save(buffer,format='JPEG',quality=35,optimize=True)
                 images.append(base64.b64encode(buffer.getvalue()).decode())
         last_error='画像判定のJSONを読み取れません'
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':12288}}
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':8192}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             try:
                 with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',240)))) as r:data=json.load(r)
