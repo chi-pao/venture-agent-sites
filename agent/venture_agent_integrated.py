@@ -2324,7 +2324,7 @@ def review_qa_images(name,browser_result,cfg):
             '基準:'+json.dumps(PRODUCT_DESIGN_STANDARD,ensure_ascii=False)+'。'
             '同業から取り入れる設計と対象者向けの改善:'+json.dumps((competitive_context(name).get('brief') or {}).get('design_patterns',[]),ensure_ascii=False)[:2400]+
             '4点は公開前の確認に回せる水準、分からない・雑な試作・入力の写しだけなら3点以下。見ていないことを推測で埋めない。'
-            'JSONだけ: 各キー {"score":整数,"reason":"画面で確認した根拠と改善点"}。'
+            'JSONだけ: 各キー {"score":整数,"reason":"画面で読めた見出しまたは配置を引用し、20文字以上で根拠を書く"}。'
             '\n制作設計:'+json.dumps(get_product_blueprint(name),ensure_ascii=False)[:2500]+
             '\n対象と完成条件:'+json.dumps(get_product_spec(name),ensure_ascii=False)[:5000]
             +'\n自動操作シナリオ数（詳細な操作結果は別のブラウザー検査で判定）:'+str(len(browser_result['scenarios'])))
@@ -2345,15 +2345,15 @@ def review_qa_images(name,browser_result,cfg):
         for path in product_screens:
             with Image.open(path) as source:
                 image=source.convert('RGB')
-                image.thumbnail((224,224))
+                image.thumbnail((480,480))
                 buffer=BytesIO()
-                image.save(buffer,format='JPEG',quality=35,optimize=True)
+                image.save(buffer,format='JPEG',quality=55,optimize=True)
                 images.append(base64.b64encode(buffer.getvalue()).decode())
         last_error='画像判定のJSONを読み取れません'
         for retry in range(2):
             retry_instruction=('' if retry==0 else '\n前回の画像判定は形式または根拠が不十分でした。画像を再確認し、全5項目それぞれscoreを0〜5の整数、reasonを画像で見えた根拠を含む15文字以上の日本語にして、指定JSONだけを返してください。推測で補わないでください。')
             payload={'model':model,'prompt':prompt+retry_instruction,'images':images,
-                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':360,'num_ctx':8192}}
+                'format':'json','stream':False,'keep_alive':0,'options':{'temperature':0,'num_predict':500,'num_ctx':8192}}
             req=urllib.request.Request(base+'/api/generate',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             try:
                 with urllib.request.urlopen(req,timeout=max(60,int(cfg.get('qa_vision_timeout',240)))) as r:data=json.load(r)
@@ -2366,7 +2366,7 @@ def review_qa_images(name,browser_result,cfg):
                 for key in keys:
                     part=review.get(key,{})
                     if type(part.get('score')) is not int or not 0<=part['score']<=5 or len(str(part.get('reason','')))<15:
-                        raise AutoQAPlanError('画像判定の根拠が不十分: '+key)
+                        raise AutoQAPlanError('画像判定の根拠が不十分: '+key+' score='+repr(part.get('score'))+' reason_chars='+str(len(str(part.get('reason',''))))+' reason='+str(part.get('reason',''))[:80])
                 review['review_mode']='vision_model'
                 review['competitor_reference_count']=len(reference_images)
                 review['competitor_reference_sources']=reference_labels
