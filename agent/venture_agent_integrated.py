@@ -3056,6 +3056,7 @@ class DepartmentManager:
         return state
 
 
+
 """Repair demonstrably contaminated model acceptance criteria from original scope."""
 
 DEPARTMENT_SPEC_POLICY='2026-10-26-source-grounded-acceptance-2'
@@ -3161,6 +3162,7 @@ def ensure_department_product_spec(name,cfg):
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,
                   acceptance_repair_reason=issue,acceptance_source_requirements=list(requirements))
     return store_product_spec(name,repaired,source='AI設計・元要件から完成条件を修復')
+
 
 
 """Independent QA planning in bounded, resumable units, not renderer-derived tests."""
@@ -3405,30 +3407,27 @@ def compile_qa_formatted_expectation(value,formats):
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
-    contract=formats[exact['selector']];count=contract['slots']
-    # Isolate the disputed oracle from the much larger operation-plan JSON.
-    # Every slot has a named required field so a whole sentence cannot stand
-    # in for an array of independent numeric expectations.
-    properties={**{'n'+str(i):{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$','maxLength':30} for i in range(count)},
-        **{'l'+str(i):{'type':'string','maxLength':180} for i in range(count+1)},
-        'basis':{'type':'string','minLength':12,'maxLength':300}}
-    schema=dict(type='object',properties=properties,required=list(properties),additionalProperties=False)
+    contract=formats[exact['selector']]
+    # Repair a single assertion without the many numeric/literal fields that
+    # confused the real model. Inputs/actions and other checks are immutable.
+    schema={'type':'object','properties':{'expected_text':{'type':'string','minLength':1,'maxLength':250},
+        'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_text','basis'],'additionalProperties':False}
     inputs=[{k:s[k] for k in ('op','selector','value','label','nth') if k in s} for s in raw.get('steps',[])]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
-    prompt=('独立QA。既存の入力と操作は一切変更せず、主結果の正解だけを計算する。オブジェクト1件でn0,n1等の各数値文字列、l0,l1等の数値前後の文言、basis:仕様からの計算根拠を返す。'
-        'n欄は数字のみで単位や文を入れない。l欄は入力条件から業務状態も独立に判断し、観測された状態を正解としてコピーしない。'
+    prompt=('独立QA。入力と操作は変更しない。主結果の完全な期待表示だけを、仕様から独立に計算して返す。'
+        'JSON {"expected_text":"単位や補足も含む完全な期待文字列","basis":"入力からの計算式・根拠"}。'
+        '数値を省略した表示書式の{n0},{n1}等を、入力から計算した数値に置き換える。必要な単位や文言を省略しない。'
+        '書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
-        +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)[:1000]+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))[:2200]
-        +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False)+'\n再診断理由:期待値の個数・表現または計算が不適切。観測した数値は与えないので、入力と要件から計算してください。'
-        +'\n返す必須キー:'+','.join(properties))
+        +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
+        +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
     def validate(answer):
         write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
-        if not isinstance(answer,dict) or any(k not in answer for k in properties):raise AutoQAPlanError('主結果の各数値・文言・計算根拠を全て指定してください')
-        values=[answer['n'+str(i)] for i in range(count)];literals=[answer['l'+str(i)] for i in range(count+1)]
-        if not isinstance(answer['basis'],str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
-        rebuilt=dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],expected_values=values,expected_literals=literals))
-        return compile_qa_formatted_expectation(rebuilt,formats)
-    repaired=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),min(650,180+count*65),schema=schema,
+        if not isinstance(answer,dict) or not isinstance(answer.get('expected_text'),str) or not 1<=len(answer['expected_text'])<=250 or re.search(r'\{n\d+\}',answer['expected_text']):
+            raise AutoQAPlanError('主結果の単位・補足まで含む完全な期待文字列が必要です')
+        if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
+        return dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['expected_text']))
+    repaired=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=schema,
         max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
     write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(inputs,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
     return repaired
@@ -3653,6 +3652,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     return plan
 
 
+
 """App-specific handlers. Embedded after department_manager by bundle_departments.py."""
 
 
@@ -3857,6 +3857,7 @@ def render_department_status(name):
             '問題・次の対応': data['feedback'].get(key,{}).get('detail') or data['departments'].get(key,{}).get('details','')}
             for key,label in DEPARTMENT_NAMES.items()], hide_index=True, width='stretch')
         st.caption('担当範囲の通過と製品全体の完成は別です。成果物を保持し、不合格の担当から再開します。')
+
 
 # END GENERATED DEPARTMENT ENGINE
 
@@ -9054,3 +9055,4 @@ if __name__ == "__main__":
     if any(arg in sys.argv[1:] for arg in ('--research','--research-status','--stop-research','--doctor')):
         raise SystemExit(research_cli())
     render_dashboard()
+
