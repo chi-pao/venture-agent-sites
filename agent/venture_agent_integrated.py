@@ -3055,8 +3055,6 @@ class DepartmentManager:
         self.persist(state)
         return state
 
-
-
 """Repair demonstrably contaminated model acceptance criteria from original scope."""
 
 DEPARTMENT_SPEC_POLICY='2026-10-26-source-grounded-acceptance-2'
@@ -3162,8 +3160,6 @@ def ensure_department_product_spec(name,cfg):
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,
                   acceptance_repair_reason=issue,acceptance_source_requirements=list(requirements))
     return store_product_spec(name,repaired,source='AI設計・元要件から完成条件を修復')
-
-
 
 """Independent QA planning in bounded, resumable units, not renderer-derived tests."""
 import hashlib
@@ -3651,8 +3647,6 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     write_framework_json(folder/'complete.json',plan)
     return plan
 
-
-
 """App-specific handlers. Embedded after department_manager by bundle_departments.py."""
 
 
@@ -3857,8 +3851,6 @@ def render_department_status(name):
             '問題・次の対応': data['feedback'].get(key,{}).get('detail') or data['departments'].get(key,{}).get('details','')}
             for key,label in DEPARTMENT_NAMES.items()], hide_index=True, width='stretch')
         st.caption('担当範囲の通過と製品全体の完成は別です。成果物を保持し、不合格の担当から再開します。')
-
-
 # END GENERATED DEPARTMENT ENGINE
 
 def quality_development_cycle(job,cfg):
