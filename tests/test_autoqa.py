@@ -231,6 +231,7 @@ class AutomaticQATests(ContinuationTests):
   self.assertFalse(app.competitive_visual_ready(cached))
   visual=design_brief(self.name)['visual_observations']
   context=dict(brief=cached,official_comparison_candidates=urls)
+  self.research_patch.stop()
   with patch.object(app,'competitive_context',return_value=context),patch.object(app,'read_research_reference',side_effect=refs),patch.object(app,'capture_competitor_visual_references',return_value=visual) as capture:
    refreshed=app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
   capture.assert_called_once()
