@@ -985,7 +985,128 @@ def resolve_comparison_references(item,lookup):
     return item
 
 
-def deterministic_competitive_brief(name, valid):
+def capture_competitor_visual_references(name,references,cfg):
+    """Capture isolated public competitor pages and measurable desktop/mobile UI evidence."""
+    refs=[];seen=set()
+    candidates=set(competitive_reference_candidates(name))
+    for ref in references:
+        url=ref.get('url')
+        if url not in candidates or url in seen or ref.get('status')!='本文取得':continue
+        parsed=urllib.parse.urlsplit(url)
+        if parsed.scheme!='https' or not parsed.hostname:continue
+        seen.add(url);refs.append(ref)
+        if len(refs)>=2:break
+    if len(refs)<2:return []
+    ensure_autoqa_environment(0,cfg,vision=False)
+    from playwright.sync_api import sync_playwright
+    observations=[]
+    output_root=OUT/'knowledge'/'competitor-ui'
+    output_root.mkdir(parents=True,exist_ok=True)
+    with sync_playwright() as playwright:
+        browser=playwright.chromium.launch(headless=True)
+        try:
+            for ref in refs:
+                url=ref['url'];origin=urllib.parse.urlsplit(url).hostname
+                key=hashlib.sha256((url+'|'+str(ref.get('content_sha',''))).encode()).hexdigest()[:16]
+                folder=output_root/key
+                folder.mkdir(parents=True,exist_ok=True)
+                viewports=(('desktop',1280,900),('mobile',390,844))
+                captures={};page_errors=[]
+                for label,width,height in viewports:
+                    context=browser.new_context(viewport={'width':width,'height':height},
+                        device_scale_factor=1,service_workers='block',accept_downloads=False)
+                    page=context.new_page()
+                    def guard(route):
+                        request=route.request;target=urllib.parse.urlsplit(request.url);host=(target.hostname or '').lower()
+                        if target.scheme not in ('https','http') or not host:
+                            route.abort();return
+                        try:
+                            address=ipaddress.ip_address(host)
+                            if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
+                                route.abort();return
+                        except ValueError:pass
+                        if request.is_navigation_request() and host!=origin and host.removeprefix('www.')!=origin.removeprefix('www.'):
+                            route.abort();return
+                        if request.resource_type in ('websocket','xhr','fetch'):
+                            route.abort();return
+                        route.continue_()
+                    page.route('**/*',guard)
+                    try:
+                        page.goto(url,wait_until='domcontentloaded',timeout=15000)
+                        page.wait_for_timeout(700)
+                        metrics=page.evaluate("""() => {
+                          const text = (el) => (el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\\s+/g,' ').slice(0,90);
+                          const main = document.querySelector('main') || document.body;
+                          const palette = [];
+                          for (const el of [...document.querySelectorAll('header,nav,main,h1,h2,button,a,section,article')].slice(0,80)) {
+                            const cs=getComputedStyle(el);
+                            for (const value of [cs.color,cs.backgroundColor,cs.borderColor]) {
+                              if (value && value!=='rgba(0, 0, 0, 0)' && value!=='transparent') palette.push(value);
+                            }
+                          }
+                          const counts={};
+                          for (const color of palette) counts[color]=(counts[color]||0)+1;
+                          const ranked=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([color,count])=>({color,count}));
+                          const h1=document.querySelector('h1');
+                          const buttons=[...document.querySelectorAll('button,[role=button],a[href]')].map(text).filter(Boolean).slice(0,12);
+                          const rect=main.getBoundingClientRect();
+                          const hStyle=h1?getComputedStyle(h1):null;
+                          return {
+                            title:document.title||'',
+                            heading:h1?text(h1):'',
+                            headingCount:document.querySelectorAll('h1,h2,h3').length,
+                            navigationItems:document.querySelectorAll('nav a,header a').length,
+                            contentRegions:document.querySelectorAll('main,section,article').length,
+                            cardLikeRegions:document.querySelectorAll('article,[class*=card i],[class*=tile i]').length,
+                            actions:buttons,
+                            palette:ranked,
+                            headingTypography:hStyle?{fontFamily:hStyle.fontFamily,fontSize:hStyle.fontSize,fontWeight:hStyle.fontWeight}:null,
+                            contentWidth:Math.round(rect.width),
+                            pageWidth:document.documentElement.scrollWidth,
+                            viewportWidth:window.innerWidth,
+                            bodyTextLength:(document.body.innerText||'').length
+                          };
+                        }""")
+                        if metrics.get('bodyTextLength',0)<80 or not metrics.get('heading'):
+                            raise ValueError('画面本文または見出しを取得できません')
+                        image_path=folder/(label+'.png')
+                        page.screenshot(path=str(image_path),full_page=False,animations='disabled')
+                        captures[label]=dict(width=width,height=height,metrics=metrics,
+                            screenshot_path=str(image_path),
+                            screenshot_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest())
+                    except Exception as exc:
+                        page_errors.append(label+': '+type(exc).__name__+': '+str(exc)[:180])
+                    finally:context.close()
+                observations.append(dict(source_url=url,reference_sha=ref.get('content_sha',''),
+                    checked_at=now(),capture_status='ok' if len(captures)==2 else 'partial',
+                    views=captures,error=' / '.join(page_errors)[:500]))
+        finally:browser.close()
+    return observations
+
+
+def competitive_visual_ready(brief):
+    """A visual research pass needs two genuine, hashed desktop/mobile page captures."""
+    observations=brief.get('visual_observations',[]) if isinstance(brief,dict) else []
+    ready=[]
+    for item in observations:
+        if not isinstance(item,dict) or item.get('capture_status')!='ok':continue
+        views=item.get('views',{})
+        if not isinstance(views,dict):continue
+        valid=True
+        for label,width in (('desktop',1280),('mobile',390)):
+            view=views.get(label,{})
+            metrics=view.get('metrics',{}) if isinstance(view,dict) else {}
+            image_path=Path(str(view.get('screenshot_path','')))
+            try:
+                valid=valid and int(view.get('width',0))==width and int(metrics.get('viewportWidth',0))==width
+                valid=valid and int(metrics.get('bodyTextLength',0))>=80 and bool(metrics.get('heading'))
+                valid=valid and image_path.is_file() and hashlib.sha256(image_path.read_bytes()).hexdigest()==view.get('screenshot_sha256')
+            except (OSError,ValueError,TypeError):valid=False
+        if valid:ready.append(item)
+    return len({x.get('source_url') for x in ready})>=2
+
+
+def deterministic_competitive_brief(name, valid, visual_observations=None):
     """Build traceable comparisons from fetched official text without waiting on an LLM summary."""
     spec=get_product_spec(name) or {}
     refs=[];seen=set()
@@ -1018,6 +1139,7 @@ def deterministic_competitive_brief(name, valid):
             return q[:180]
         return max(windows,key=lambda x:(x[0],len(x[1])))[1]
     comparisons=[];patterns=[];comparison_sources=[]
+    visual_by_url={x.get('source_url'):x for x in (visual_observations or []) if isinstance(x,dict)}
     task_urls={url for group in COMPETITIVE_TASK_REFERENCES.values() for url in group['urls']}
     for ref in refs[:5]:
         url=ref['url'];quote=quote_for(ref);lower=url.lower()
@@ -1027,12 +1149,27 @@ def deterministic_competitive_brief(name, valid):
         comparison_sources.append({k:ref.get(k) for k in ('url','checked_at','content_sha')})
         relevance=f'{audience}が「{workflow[0]}」を行う場面で、近い機能または現在の代替として確認する資料。'
         comparison=f'取得した公式本文には「{quote}」と記載されている。これは掲載本文で確認した機能・説明の根拠であり、実画面の操作性や優位性を確認したものではない。'
-        comparisons.append(dict(source_url=url,source_quote=quote,reference_type=kind,relevance=relevance,comparison=comparison))
+        visual=visual_by_url.get(url)
+        visual_summary=''
+        if visual and visual.get('capture_status')=='ok':
+            desktop=visual['views']['desktop']['metrics'];mobile=visual['views']['mobile']['metrics']
+            colors='、'.join(x.get('color','') for x in desktop.get('palette',[])[:3] if x.get('color'))
+            visual_summary=(f'実画面をPC1280px・スマホ390pxで取得。PC見出し{desktop.get("headingCount",0)}件、'
+                f'ナビ項目{desktop.get("navigationItems",0)}件、カード状領域{desktop.get("cardLikeRegions",0)}件、'
+                f'主要ボタン例「{(" / ".join(desktop.get("actions",[])[:3]))[:120]}」、色の計測例{colors}。'
+                f'スマホ画面幅{mobile.get("pageWidth",0)}px / 表示幅390px。')
+        comparisons.append(dict(source_url=url,source_quote=quote,reference_type=kind,relevance=relevance,
+            comparison=comparison,rendered_screen_observed=bool(visual_summary),visual_summary=visual_summary))
+        base_pattern=f'公式本文で確認できる記載: 「{quote}」。掲載された機能説明を根拠にする。'
+        if visual_summary:base_pattern+=' '+visual_summary
         patterns.append(dict(source_url=url,source_quote=quote,evidence_type='official_text',
-            pattern=f'公式本文で確認できる記載: 「{quote}」。ページ上の機能説明を根拠にし、画面を操作したとは扱わない。',
-            adapt=f'{audience}の「{workflow[0]}」に関係する設計観点として参照し、対象者が最初に選ぶ項目と結果の対応が見える構成にする。',
+            pattern=base_pattern,
+            adapt=f'{audience}の「{workflow[0]}」に関係する設計観点として参照し、'+
+                (f'実画面で観察した見出し・ナビゲーション・カード・配色の構成を参考にしつつ、' if visual_summary else '')+
+                '対象者が最初に選ぶ項目と結果の対応が見える構成にする。',
             improvement=f'本アプリでは「{workflow[0]}」から「{workflow[-1]}」までを一つの流れにし、{outcome}の結果と保存状態を同じ画面で確かめられるようにする。',
-            acceptance=f'利用者が「{workflow[0]}」を入力し、{acceptance[0]}を確認した後、保存・再読込で結果が保たれることを試す。'))
+            acceptance=f'利用者が「{workflow[0]}」を入力し、{acceptance[0]}を確認した後、保存・再読込で結果が保たれることを試す。',
+            visual_observation=visual))
     item=dict(comparisons=comparisons,target_task=f'{audience}が{workflow[0]}から始め、{outcome}を行う作業。',
         proposed_advantage=f'選ぶ理由の仮説: {audience}が{workflow[0]}から結果・保存まで進められ、{acceptance[0]}を一続きで確認できること。',
         own_acceptance_index=0,
@@ -1040,8 +1177,8 @@ def deterministic_competitive_brief(name, valid):
             measure='完了可否、所要時間、入力ミス、迷った箇所、再利用意向を記録し、未測定値は推測で補わない。',
             continue_if='中心操作を完了でき、役立ち・時短・再利用の具体的な反応が取れた場合に改善を続ける。',
             reconsider_if='中心操作が完了しない、対象者の困りごととずれる、または反応を確かめる方法がない場合に対象や機能を見直す。'),
-        design_patterns=patterns[:5],
-        research_gaps=['公式ページの記載は取得したが、競合サービスの全画面・実操作・利用者評価は未確認。',
+        design_patterns=patterns[:5],visual_observations=list(visual_observations or []),
+        research_gaps=['公式ページの記載は取得したが、競合サービスの実操作・利用者評価は未確認。',
             '差別化、支払意思、利用頻度、収益性は実測していない.'])
     validate_competitive_design(item,{r['url']:r for r in refs})
     if len({p['source_url'] for p in comparisons})<2:raise AutoQAPlanError('異なる参考資料2件以上が必要です')
@@ -1061,7 +1198,14 @@ def ensure_competitive_brief(name,cfg):
         except (ValueError,KeyError,TypeError):pass
     references=[read_research_reference(url) for url in context['official_comparison_candidates']]
     valid=[r for r in references if r.get('status')=='本文取得']
-    item=deterministic_competitive_brief(name,valid)
+    visual_observations=[]
+    if cfg.get('competitive_visual_research',True):
+        try:visual_observations=capture_competitor_visual_references(name,valid,cfg)
+        except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,OSError,TimeoutError,urllib.error.URLError) as exc:
+            visual_observations=[dict(capture_status='unavailable',error=type(exc).__name__+': '+str(exc)[:300])]
+    item=deterministic_competitive_brief(name,valid,visual_observations)
+    if not competitive_visual_ready(item):
+        item.setdefault('research_gaps',[]).append('類似サービスの実画面をPC・スマホで2件取得できていない。画面の比較完了までは確認待ちにしない。')
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('competitive_brief:'+name+':'+product_scope_sha(name),json.dumps(item,ensure_ascii=False)))
     return item
 
@@ -2213,6 +2357,9 @@ def automated_product_qa(job,name,page,cfg):
         try:
             brief=ensure_competitive_brief(name,cfg)
             if not competitive_design_ready(brief):raise AutoQAPlanError('関連サービス・設計参考2件以上から機能・画面の学びと改善案をまとめてください')
+            if not competitive_visual_ready(brief):
+                research_gap='類似サービスの実画面をPC・スマホで2件確認できていません'
+                event(job,name+': 公式機能説明の比較は完了。実画面の取得・計測が不足しているため確認待ちは保留し、画面調査を再試行します')
         except (AutoQAEnvironmentError,AutoQAPlanError,ValueError,TypeError,OSError,TimeoutError,urllib.error.URLError) as exc:
             research_gap=str(exc)
             brief=development_design_reference_bundle(name,research_gap)
@@ -2310,6 +2457,7 @@ def valid_automatic_qa_record(item):
         feature_actual={(r.get('width'),r.get('kind'),r.get('acceptance_index'),r.get('case_index')) for r in browser_scenarios if r.get('kind')=='feature'}
         return (report.get('policy')==AUTO_QA_POLICY and report.get('passed') is True
             and competitive_design_ready(report.get('competitive_brief'))
+            and competitive_visual_ready(report.get('competitive_brief'))
             and report['competitive_brief'].get('scope_sha')==item['scope_sha']
             and report.get('blueprint',{}).get('policy')==PRODUCT_BLUEPRINT_POLICY
             and report['blueprint'].get('scope_sha')==item['scope_sha']
