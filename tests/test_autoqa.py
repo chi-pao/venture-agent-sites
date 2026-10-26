@@ -289,4 +289,17 @@ class AutomaticQATests(ContinuationTests):
   with patch.object(app,'read_research_reference',return_value=dict(status='取得不足',text='')):
    with self.assertRaises(app.AutoQAEnvironmentError):app.ensure_competitive_brief(self.name,dict(app.DEFAULT))
 
+class VisualReviewEvidenceTests(__import__('unittest').TestCase):
+ def test_short_low_score_is_retained_as_actionable_failure(self):
+  review={'design':{'score':2,'reason':'情報階層が弱い'}}
+  result=app.validate_visual_review_evidence(review,['design'])
+  self.assertEqual(result['design']['score'],2)
+  self.assertIn('具体的に改善',result['design']['reason'])
+ def test_short_high_score_still_fails_closed(self):
+  review={'design':{'score':4,'reason':'良い'}}
+  with self.assertRaises(app.AutoQAPlanError):app.validate_visual_review_evidence(review,['design'])
+ def test_empty_low_score_reason_fails_closed(self):
+  review={'design':{'score':1,'reason':''}}
+  with self.assertRaises(app.AutoQAPlanError):app.validate_visual_review_evidence(review,['design'])
+
 if __name__=='__main__':import unittest;unittest.main()
