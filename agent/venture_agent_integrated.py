@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.2'
+APP_VERSION='2026.10.26.3'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -5070,6 +5070,59 @@ def preserve_checkpoint_features(checkpoint,candidate):
     return errors
 
 
+
+def apply_visual_product_edits(source,proposal):
+    """Append presentation rules and edit visible copy without rewriting application logic."""
+    if not isinstance(proposal,dict):raise ValueError('画面修正はJSONオブジェクトで指定してください')
+    css=proposal.get('css','');copies=proposal.get('copy',[])
+    if not isinstance(css,str) or len(css)>6000 or not isinstance(copies,list) or len(copies)>3:
+        raise ValueError('画面修正のCSS・文言の形式が不正です')
+    if re.search(r'</|@import|url\s*\(\s*["\']?\s*(?:https?:|//)',css,re.I):
+        raise ValueError('画面修正のCSSにHTML・外部接続を追加できません')
+    page=source
+    if copies:
+        for edit in copies:
+            if not isinstance(edit,dict) or any(not isinstance(edit.get(k),str) or '<' in edit[k] or '>' in edit[k] for k in ('old','new')):
+                raise ValueError('文言修正には表示テキストだけを指定してください')
+            visible_source=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>','',source,flags=re.I|re.S)
+            if edit['old'] not in visible_source:raise ValueError('修正元は実画面の文言から選んでください')
+        page=apply_product_edits(page,dict(edits=copies))
+    if css.strip():
+        matches=list(re.finditer(r'</style\s*>',page,re.I))
+        if matches:
+            index=matches[-1].start();page=page[:index]+'\n'+css+'\n'+page[index:]
+        elif re.search(r'</head\s*>',page,re.I):
+            page=re.sub(r'</head\s*>',lambda m:'<style>'+css+'</style>'+m.group(),page,count=1,flags=re.I)
+        else:raise ValueError('CSSを適用するhead要素がありません')
+    if page==source:raise ValueError('画面の修正内容がありません')
+    return page
+
+
+def visual_product_repair(name,source,problem,cfg):
+    """Keep JS intact; ask the model only for small CSS overrides and visible copy."""
+    spec=get_product_spec(name) or {}
+    styles='\n'.join(re.findall(r'<style\b[^>]*>.*?</style\s*>',source,re.I|re.S))
+    markup=re.sub(r'<(?:script|style)\b[^>]*>.*?</(?:script|style)\s*>','',source,flags=re.I|re.S)
+    body=re.search(r'<body\b[^>]*>(.*)',markup,re.I|re.S)
+    markup=body.group(1) if body else markup
+    compact={key:spec.get(key) for key in ('audience','requested_outcome','must_have')}
+    prompt=('既存アプリの画面デザイン担当。JavaScript・保存・計算・IDは変更しない。'
+        '現在の実画面のCSS・HTMLを読み、指摘の原因に対応する小さな上書きCSSと必要な説明文の修正だけを返す。'
+        'JSONだけ: {"reason":"具体的な修正理由","css":"末尾へ追加するCSS","copy":[{"old":"実画面に一意に存在する8文字以上の表示文言","new":"改善文言"}]}。'
+        '既存のclass・id・要素を使う。cssは最大3000文字、copyは最大3件。HTMLタグやJavaScript、外部URLを追加しない。'
+        '全体のCSSを複写せず、対象箇所に必要なルールだけ追加する。スマホの縦積みと主要操作、対象者と価値、結果までの導線を具体化する。'
+        '\n実測の改善課題:'+str(problem)[:1400]
+        +'\n対象・利用価値:'+json.dumps(compact,ensure_ascii=False)[:1400]
+        +'\n現在のCSS（実在するセレクター）:\n'+styles[:5500]
+        +'\n現在の表示HTML（スクリプト除外）:\n'+markup[:4000])
+    def validate(proposal):
+        apply_visual_product_edits(source,proposal)
+        return proposal
+    proposal=ai_json(prompt,cfg,1600,validator=validate,max_attempts=1,
+        request_timeout=max(180,int(cfg.get('visual_repair_timeout',300))))
+    return apply_visual_product_edits(source,proposal),str(proposal.get('reason','画面のCSS・説明を改善'))[:600]
+
+
 def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
     cfg=coding_config(cfg,task='repair')
     spec=get_product_spec(name) or {}
@@ -5081,6 +5134,8 @@ def incremental_product_repair(job,name,source,problem,cfg,diagnose=False):
     diagnosis=''
     context=product_repair_context(source,problem)
     visual_problem=any(token in str(problem) for token in ('画像判定','画像デザイン審査','画面検査','audience','design','readability','mobile','usefulness'))
+    if visual_problem:
+        return visual_product_repair(name,source,problem,cfg)
     if diagnose and not visual_problem:
         event(job,name+': 同じ失敗を繰り返さないよう原因と修正箇所を再診断')
         diagnosis=ai('次のHTMLの不具合を診断し、変更が必要な要素ID・処理・原因・直し方を短く具体化。コード全文や新しい機能案は不要。情報不足は明示。競合比較は運営側の内部資料で、アプリ内に比較ボタンを新設する必要はない。\n問題:'+problem[:1800]+'\n完成条件:'+json.dumps(compact,ensure_ascii=False)[:4500]+'\n対象コード:'+context,cfg,1200)

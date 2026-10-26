@@ -17,10 +17,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  vision-preflight:
-    uses: ./.github/workflows/venture-vision-probe.yml
+  repair-preflight:
+    uses: ./.github/workflows/venture-repair-replay.yml
   live-model-and-browser:
-    needs: vision-preflight
+    needs: repair-preflight
     strategy:
       fail-fast: false
       matrix:

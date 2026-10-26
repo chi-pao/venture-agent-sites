@@ -109,6 +109,7 @@ def main():
     app.OUT = root / "outputs"
     app.OUT.mkdir(parents=True)
     app.init()
+    app.execute("INSERT OR REPLACE INTO agent_jobs(id,started,state,details) VALUES(?,?,?,?)",(0,app.now(),"実行中","実生成・修正・品質検証"))
     app.execute("UPDATE autonomous_control SET enabled=1")
     cfg = dict(app.DEFAULT, model=model, qa_vision_model=vision_model,
                url=os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"),
