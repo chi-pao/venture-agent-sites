@@ -33,7 +33,17 @@ def department_failure_target(report, stage):
 
 def run_product_departments(job, name, cfg):
     manager = product_departments()
-    spec = ensure_department_product_spec(name, department_configuration(cfg, 'proposal'))
+    try:spec = ensure_department_product_spec(name, department_configuration(cfg, 'proposal'))
+    except Exception as exc:
+        detail=type(exc).__name__+': '+str(exc)[:1600]
+        scope=product_scope_sha(name) or 'requirements-pending'
+        pending=manager.load(name,scope)
+        pending['departments']['proposal']=dict(status='blocked',details=detail)
+        pending.update(stage='企画・完成条件の修正待ち',details=detail)
+        manager.note(pending,'proposal','blocked',detail)
+        product_development_state(name,pending['stage'],detail)
+        event(job,name+': '+pending['stage']+' / '+detail)
+        return pending
     scope = product_scope_sha(name)
     initial = manager.load(name, scope)
     context_cfg = dict(cfg)

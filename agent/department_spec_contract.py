@@ -33,8 +33,10 @@ def ensure_department_product_spec(name,cfg):
     for index,requirement in enumerate(requirements):
         path=folder/(str(index)+'.json')
         def validate(value):
+            write_framework_json(folder/(str(index)+'-last-response.json'),value)
             if not isinstance(value,dict) or any(not isinstance(value.get(k),str) or len(value[k].strip())<8 for k in ('input','action','expected')):
-                raise AutoQAPlanError('完成条件に具体的な入力・操作・正解が必要です')
+                missing=[k for k in ('input','action','expected') if not isinstance(value,dict) or not isinstance(value.get(k),str) or len(value[k].strip())<8]
+                raise AutoQAPlanError('完成条件に具体的な入力・操作・正解が必要です。不足: '+','.join(missing))
             if any(term in value['expected'] for term in ('使いやすい','期待通り','正しく動作','効果的','実装予定','要検証')):
                 raise AutoQAPlanError('抽象評価ではなく照合する具体値・保存状態を指定してください')
             original=str(requirement)
@@ -46,14 +48,23 @@ def ensure_department_product_spec(name,cfg):
             try:value=validate(json.loads(path.read_text(encoding='utf-8')))
             except (ValueError,TypeError,KeyError):pass
         if value is None:
+            error_path=folder/(str(index)+'-error.json');error=''
+            if error_path.exists():
+                try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
+                except (ValueError,OSError):pass
             prompt=('製品要件担当。壊れた完成条件を元の事業範囲から修復します。今回の必須機能1件だけについて、'
-                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。'
+                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜120字で短く具体的に書く。'
                 '画面の見やすさ等は別の画像審査で評価する。一般論や機能名の言い換えは不可。依頼されていない検索・共同編集・AI機能を追加しない。'
                 '元の要件がAPI機能を含む場合だけ、サンプル操作と外部接続後の検証を分け、実取得したと偽らない。'
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
-                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000])
-            value=ai_json(prompt,cfg,650,max_attempts=1,request_timeout=180,validator=validate)
+                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n前回の不備:'+error[:500])
+            schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':120} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
+            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),650,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
+            except Exception as exc:
+                write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],checked=now()))
+                raise
             write_framework_json(path,value)
+            error_path.unlink(missing_ok=True)
         conditions.append('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected'])
     if len(conditions)<3:raise AutoQAPlanError('元の必須機能が3件未満のため完成条件を再設計する必要があります')
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,

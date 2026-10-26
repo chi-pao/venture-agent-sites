@@ -1693,7 +1693,7 @@ def qa_json(text):
 def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None,max_attempts=None,request_timeout=None):
     """Feed validation errors back; fall back from rejected JSON Schema to JSON mode."""
     structured_cfg=dict(cfg,_json_response=schema if schema is not None else True)
-    base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None else '')
+    base_prompt=prompt+('\n必須の出力形式(JSON Schema): '+json.dumps(schema,ensure_ascii=False) if schema is not None and cfg.get('_schema_in_prompt',True) else '')
     request=base_prompt;limit=(max(1,int(max_attempts)) if max_attempts is not None else (3 if validator else 2));schema_fallback=False
     request_cfg=dict(structured_cfg)
     request_cfg.setdefault('_request_timeout',max(30,int(cfg.get('ai_json_request_timeout',180))))
@@ -1704,7 +1704,7 @@ def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None,max_attempts=None,
     for attempt in range(total_attempts):
         value=None
         try:
-            value=qa_json(ai(request,request_cfg,tokens if not attempt else min(9000,tokens+max(800,tokens//2))))
+            value=qa_json(ai(request,request_cfg,tokens if not attempt or cfg.get('_bounded_json_retry') else min(9000,tokens+max(800,tokens//2))))
             return validator(value) if validator else value
         except urllib.error.HTTPError as exc:
             try:body=exc.read(2000).decode('utf-8','replace').strip()
@@ -1718,8 +1718,10 @@ def ai_json(prompt,cfg,tokens=2200,schema=None,validator=None,max_attempts=None,
             detail=(' / '+body[:700]) if body else ''
             raise AutoQAPlanError('AI設計API HTTP '+str(exc.code)+detail) from exc
         except ValueError as exc:
-            if attempt+1==total_attempts:
-                raise AutoQAPlanError('AI設計・回答の修正を'+str(total_attempts)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
+            stop=(attempt+1>=limit+(1 if schema_fallback else 0)) if cfg.get('_bounded_json_retry') else attempt+1==total_attempts
+            if stop:
+                actual_attempts=attempt+1 if cfg.get('_bounded_json_retry') else total_attempts
+                raise AutoQAPlanError('AI設計・回答の修正を'+str(actual_attempts)+'回試しましたが条件を満たしません。合格にはせず次回再試行: '+str(exc)) from exc
             request=(base_prompt+'\n前回の検査で次の不足が見つかりました。要件を減らさず具体的に修正してください。\n検査結果: '+str(exc)[:2000]
                 +'\n前回のJSON: '+(json.dumps(value,ensure_ascii=False)[:10000] if value is not None else '回答形式が不正で読み取り不可')
                 +'\n説明・思考過程・Markdown・2つ目の候補は出さず、必要なキーを全て含む完成したJSONオブジェクト1件だけを返してください。')
@@ -3074,8 +3076,10 @@ def ensure_department_product_spec(name,cfg):
     for index,requirement in enumerate(requirements):
         path=folder/(str(index)+'.json')
         def validate(value):
+            write_framework_json(folder/(str(index)+'-last-response.json'),value)
             if not isinstance(value,dict) or any(not isinstance(value.get(k),str) or len(value[k].strip())<8 for k in ('input','action','expected')):
-                raise AutoQAPlanError('完成条件に具体的な入力・操作・正解が必要です')
+                missing=[k for k in ('input','action','expected') if not isinstance(value,dict) or not isinstance(value.get(k),str) or len(value[k].strip())<8]
+                raise AutoQAPlanError('完成条件に具体的な入力・操作・正解が必要です。不足: '+','.join(missing))
             if any(term in value['expected'] for term in ('使いやすい','期待通り','正しく動作','効果的','実装予定','要検証')):
                 raise AutoQAPlanError('抽象評価ではなく照合する具体値・保存状態を指定してください')
             original=str(requirement)
@@ -3087,14 +3091,23 @@ def ensure_department_product_spec(name,cfg):
             try:value=validate(json.loads(path.read_text(encoding='utf-8')))
             except (ValueError,TypeError,KeyError):pass
         if value is None:
+            error_path=folder/(str(index)+'-error.json');error=''
+            if error_path.exists():
+                try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
+                except (ValueError,OSError):pass
             prompt=('製品要件担当。壊れた完成条件を元の事業範囲から修復します。今回の必須機能1件だけについて、'
-                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。'
+                'JSON {input:具体的な入力例,action:最後までの操作,expected:画面や保存値で照合できる正解}を返す。各項目8〜120字で短く具体的に書く。'
                 '画面の見やすさ等は別の画像審査で評価する。一般論や機能名の言い換えは不可。依頼されていない検索・共同編集・AI機能を追加しない。'
                 '元の要件がAPI機能を含む場合だけ、サンプル操作と外部接続後の検証を分け、実取得したと偽らない。'
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
-                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000])
-            value=ai_json(prompt,cfg,650,max_attempts=1,request_timeout=180,validator=validate)
+                +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n前回の不備:'+error[:500])
+            schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':120} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
+            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),650,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
+            except Exception as exc:
+                write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],checked=now()))
+                raise
             write_framework_json(path,value)
+            error_path.unlink(missing_ok=True)
         conditions.append('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected'])
     if len(conditions)<3:raise AutoQAPlanError('元の必須機能が3件未満のため完成条件を再設計する必要があります')
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,
@@ -3109,7 +3122,28 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-1'
+CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-2'
+
+
+def qa_unit_schema(count,kind):
+    step={'type':'object','properties':{
+        'op':{'type':'string','enum':['fill','click','select','check','reload','wait','download_csv','download_json','restore_file','restore_invalid','cancel_restore']},
+        'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
+        'label':{'type':'string','maxLength':100},'nth':{'type':'integer','minimum':0,'maximum':30},
+        'contains':{'type':'array','minItems':2,'maxItems':8,'items':{'type':'string','maxLength':100}}},
+        'required':['op'],'additionalProperties':False}
+    check={'type':'object','properties':{
+        'op':{'type':'string','enum':['text_equals','text_contains','value_equals','count','invalid','visible']},
+        'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
+        'nth':{'type':'integer','minimum':0,'maximum':30}},'required':['op','selector'],'additionalProperties':False}
+    required=['steps','checks','acceptance','rationale']+(['result_selector'] if kind=='workflow' else [])
+    return {'type':'object','properties':{
+        'steps':{'type':'array','minItems':1,'maxItems':24,'items':step},
+        'checks':{'type':'array','minItems':2,'maxItems':8,'items':check},
+        'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}},
+        'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
+        'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
+        'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
 
 
 class _QAInventory(HTMLParser):
@@ -3223,7 +3257,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
         '具体的な処理結果をtext_equalsで照合。bodyやhtml禁止。説明やMarkdown不要。')
 
-    def part(key,prompt,validate,tokens=1000,include_context=True):
+    def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
         input_sha=hashlib.sha256((prompt+context if include_context else prompt).encode()).hexdigest()
         if path.exists():
@@ -3237,8 +3271,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         started=qa_time.monotonic()
         request=(prompt+('\n'+operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
         try:
-            value=ai_json(request,cfg,tokens,max_attempts=1,
-                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+            def capture_and_validate(value):
+                write_framework_json(folder/(key+'-last-response.json'),value)
+                return validate(value)
+            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),tokens,schema=schema,max_attempts=1,
+                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
             error_path.unlink(missing_ok=True)
@@ -3259,7 +3296,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
         prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[期待結果2件以上],acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
-        value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900)
+        value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))
     feature_cases=[]
     for index,condition in enumerate(acceptance):
@@ -3275,7 +3312,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     values=lambda v:[(s.get('op'),s.get('selector'),s.get('value',s.get('label'))) for s in v['steps'] if s.get('op') in ('fill','select')]
                     if values(value)==values(previous):raise AutoQAPlanError('ケース0と異なる入力が必要です')
                 return value
-            value=part('feature-'+str(index)+'-'+str(case),prompt,validate)
+            value=part('feature-'+str(index)+'-'+str(case),prompt,validate,schema=qa_unit_schema(count,'feature'))
             pair.append(value);feature_cases.append(dict(value,acceptance_index=index,case_index=case))
         rejected=[None]
         def validate_audit(value):
@@ -3284,7 +3321,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             return value
         audit_prompt=('独立QA監査。条件そのものを試さない、入力の写しだけ、固定結果、正解の根拠がない場合valid:false。JSON {valid:true/false,reasons:[理由]}。'
             '\n対象者:'+str(spec['audience'])+'\n要求する完成条件:'+condition+'\n異なる入力の2検査:'+json.dumps(pair,sort_keys=True,ensure_ascii=False,separators=(',',':')))
-        try:part('audit-feature-'+str(index),audit_prompt,validate_audit,tokens=250,include_context=False)
+        audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reasons':{'type':'array','maxItems':3,'items':{'type':'string','maxLength':160}}},'required':['valid','reasons'],'additionalProperties':False}
+        try:part('audit-feature-'+str(index),audit_prompt,validate_audit,tokens=250,include_context=False,schema=audit_schema)
         except Exception:
             if rejected[0]:
                 for case in (0,1):
@@ -3340,7 +3378,17 @@ def department_failure_target(report, stage):
 
 def run_product_departments(job, name, cfg):
     manager = product_departments()
-    spec = ensure_department_product_spec(name, department_configuration(cfg, 'proposal'))
+    try:spec = ensure_department_product_spec(name, department_configuration(cfg, 'proposal'))
+    except Exception as exc:
+        detail=type(exc).__name__+': '+str(exc)[:1600]
+        scope=product_scope_sha(name) or 'requirements-pending'
+        pending=manager.load(name,scope)
+        pending['departments']['proposal']=dict(status='blocked',details=detail)
+        pending.update(stage='企画・完成条件の修正待ち',details=detail)
+        manager.note(pending,'proposal','blocked',detail)
+        product_development_state(name,pending['stage'],detail)
+        event(job,name+': '+pending['stage']+' / '+detail)
+        return pending
     scope = product_scope_sha(name)
     initial = manager.load(name, scope)
     context_cfg = dict(cfg)

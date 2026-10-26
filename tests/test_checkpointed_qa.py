@@ -2,6 +2,8 @@
 import copy
 import re
 import tempfile
+import io
+from urllib.error import HTTPError
 from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
@@ -32,7 +34,7 @@ class CheckpointedQAPlannerTests(TestCase):
             i,j=map(int,re.search(r'完成条件(\d+)のケース(\d+)',prompt).groups());key=f'feature-{i}-{j}'
             value=copy.deepcopy(next(x for x in self.full['feature_cases'] if x['acceptance_index']==i and x['case_index']==j))
             value['acceptance']=[i]
-        self.calls.append(dict(key=key,prompt=prompt,tokens=tokens,timeout=kw['request_timeout']))
+        self.calls.append(dict(key=key,prompt=prompt,tokens=tokens,timeout=kw['request_timeout'],schema=kw.get('schema')))
         if self.timeout_once and key=='variant':
             self.timeout_once=False;raise TimeoutError('unit-test timeout')
         return kw['validator'](value)
@@ -62,6 +64,7 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertTrue(all(c['timeout']==180 for c in self.calls))
         self.assertNotIn('do-not-send',''.join(c['prompt'] for c in self.calls))
         self.assertLess(max(len(c['prompt']) for c in self.calls),12000)
+        self.assertTrue(all(isinstance(c['schema'],dict) for c in self.calls))
 
     def test_model_or_source_change_cannot_reuse_an_old_plan(self):
         self.plan();count=len(self.calls)
@@ -95,3 +98,21 @@ class CheckpointedQAPlannerTests(TestCase):
         self.plan()
         self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
         self.assertEqual(sum(c['key']=='feature-0-0' for c in self.calls),2)
+
+    def test_bounded_schema_request_does_not_silently_add_a_larger_retry(self):
+        with patch.object(app,'ai',return_value='{"wrong":true}') as model:
+            with self.assertRaises(app.AutoQAPlanError):
+                app.ai_json('unit fixture',dict(self.cfg,_bounded_json_retry=True,_schema_in_prompt=False),650,
+                    schema={'type':'object'},max_attempts=1,
+                    validator=lambda value:(_ for _ in ()).throw(ValueError('required key missing')))
+            self.assertEqual(model.call_count,1)
+            self.assertEqual(model.call_args.args[2],650)
+
+    def test_schema_transport_fallback_preserves_small_output_budget(self):
+        failure=HTTPError('http://fixture',400,'schema rejected',{},io.BytesIO(b'schema rejected'))
+        with patch.object(app,'ai',side_effect=[failure,'{"ready":true}']) as model:
+            result=app.ai_json('unit fixture',dict(self.cfg,_bounded_json_retry=True,_schema_in_prompt=False),650,
+                schema={'type':'object'},max_attempts=1,validator=lambda value:value)
+        self.assertEqual(result,{'ready':True})
+        self.assertEqual([call.args[2] for call in model.call_args_list],[650,650])
+        self.assertEqual(model.call_args_list[1].args[1]['_json_response'],'json')

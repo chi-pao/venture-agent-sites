@@ -69,6 +69,15 @@ class DepartmentAdapterTests(TestCase):
         result=app.run_product_departments(0,self.name,dict(app.DEFAULT))
         self.assertEqual(result['stage'],'停止中');self.assertEqual(self.calls,[])
 
+    def test_proposal_failure_is_recorded_and_resumable_instead_of_crashing(self):
+        with patch.object(app,'ensure_department_product_spec',side_effect=app.AutoQAPlanError('完成条件の形式が不正')):
+            result=app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        self.assertEqual(result['stage'],'企画・完成条件の修正待ち')
+        self.assertEqual(result['departments']['proposal']['status'],'blocked')
+        self.assertEqual(self.calls,[])
+        app.run_product_departments(0,self.name,dict(app.DEFAULT))
+        self.assertEqual(self.calls,['research','design','build','qa'])
+
     def test_independent_qa_does_not_reuse_renderer_expected_results(self):
         # Independent mode must go through the scenario planner even when a
         # structured template exists. It must not certify its own renderer.

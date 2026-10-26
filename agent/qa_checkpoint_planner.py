@@ -5,7 +5,28 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-1'
+CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-2'
+
+
+def qa_unit_schema(count,kind):
+    step={'type':'object','properties':{
+        'op':{'type':'string','enum':['fill','click','select','check','reload','wait','download_csv','download_json','restore_file','restore_invalid','cancel_restore']},
+        'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
+        'label':{'type':'string','maxLength':100},'nth':{'type':'integer','minimum':0,'maximum':30},
+        'contains':{'type':'array','minItems':2,'maxItems':8,'items':{'type':'string','maxLength':100}}},
+        'required':['op'],'additionalProperties':False}
+    check={'type':'object','properties':{
+        'op':{'type':'string','enum':['text_equals','text_contains','value_equals','count','invalid','visible']},
+        'selector':{'type':'string','maxLength':180},'value':{'type':['string','integer','boolean']},
+        'nth':{'type':'integer','minimum':0,'maximum':30}},'required':['op','selector'],'additionalProperties':False}
+    required=['steps','checks','acceptance','rationale']+(['result_selector'] if kind=='workflow' else [])
+    return {'type':'object','properties':{
+        'steps':{'type':'array','minItems':1,'maxItems':24,'items':step},
+        'checks':{'type':'array','minItems':2,'maxItems':8,'items':check},
+        'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}},
+        'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
+        'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
+        'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
 
 
 class _QAInventory(HTMLParser):
@@ -119,7 +140,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
         '具体的な処理結果をtext_equalsで照合。bodyやhtml禁止。説明やMarkdown不要。')
 
-    def part(key,prompt,validate,tokens=1000,include_context=True):
+    def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error=''
         input_sha=hashlib.sha256((prompt+context if include_context else prompt).encode()).hexdigest()
         if path.exists():
@@ -133,8 +154,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         started=qa_time.monotonic()
         request=(prompt+('\n'+operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
         try:
-            value=ai_json(request,cfg,tokens,max_attempts=1,
-                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+            def capture_and_validate(value):
+                write_framework_json(folder/(key+'-last-response.json'),value)
+                return validate(value)
+            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),tokens,schema=schema,max_attempts=1,
+                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
             error_path.unlink(missing_ok=True)
@@ -155,7 +179,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
         prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[期待結果2件以上],acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
-        value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900)
+        value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind in ('workflow','roundtrip') else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))
     feature_cases=[]
     for index,condition in enumerate(acceptance):
@@ -171,7 +195,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     values=lambda v:[(s.get('op'),s.get('selector'),s.get('value',s.get('label'))) for s in v['steps'] if s.get('op') in ('fill','select')]
                     if values(value)==values(previous):raise AutoQAPlanError('ケース0と異なる入力が必要です')
                 return value
-            value=part('feature-'+str(index)+'-'+str(case),prompt,validate)
+            value=part('feature-'+str(index)+'-'+str(case),prompt,validate,schema=qa_unit_schema(count,'feature'))
             pair.append(value);feature_cases.append(dict(value,acceptance_index=index,case_index=case))
         rejected=[None]
         def validate_audit(value):
@@ -180,7 +204,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             return value
         audit_prompt=('独立QA監査。条件そのものを試さない、入力の写しだけ、固定結果、正解の根拠がない場合valid:false。JSON {valid:true/false,reasons:[理由]}。'
             '\n対象者:'+str(spec['audience'])+'\n要求する完成条件:'+condition+'\n異なる入力の2検査:'+json.dumps(pair,sort_keys=True,ensure_ascii=False,separators=(',',':')))
-        try:part('audit-feature-'+str(index),audit_prompt,validate_audit,tokens=250,include_context=False)
+        audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reasons':{'type':'array','maxItems':3,'items':{'type':'string','maxLength':160}}},'required':['valid','reasons'],'additionalProperties':False}
+        try:part('audit-feature-'+str(index),audit_prompt,validate_audit,tokens=250,include_context=False,schema=audit_schema)
         except Exception:
             if rejected[0]:
                 for case in (0,1):
