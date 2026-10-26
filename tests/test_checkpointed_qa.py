@@ -146,7 +146,7 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(checked['checks'][0],value['exact_check'])
         self.assertNotIn('exact_check',checked)
         schema=app.qa_unit_schema(5,'workflow')
-        self.assertIn('exact_check',schema['anyOf'][0]['required'])
+        self.assertIn('exact_check',schema['required'])
 
     def test_select_cannot_be_filled_as_a_text_input(self):
         page=self.page+'<select id="work_status"><option value="done">完了</option></select>'
@@ -166,3 +166,18 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual([x['op'] for x in plan['steps']],['download_csv','download_json','fill','click','cancel_restore','restore_file','restore_file'])
         self.assertEqual(plan['checks'],value['checks'])
         with self.assertRaises(app.AutoQAPlanError):app.compile_qa_roundtrip(dict(value,mutation_steps=[dict(op='click',selector='#clear')]),5)
+
+    def test_backup_binding_prompt_does_not_conflict_with_legacy_steps_envelope(self):
+        self.plan()
+        prompt=next(x['prompt'] for x in self.calls if x['key']=='roundtrip')
+        self.assertIn('"csv_selector"',prompt)
+        self.assertIn('steps/kindは出力しない',prompt)
+        self.assertNotIn('stepsは{op,selector',prompt)
+        self.assertNotIn('"steps":',prompt)
+        self.assertIn('復元後の期待値:',prompt)
+
+    def test_ollama_contract_uses_direct_required_keys_not_required_only_union(self):
+        for schema in (app.qa_unit_schema(5,'workflow'),app.qa_roundtrip_schema(5)):
+            self.assertNotIn('anyOf',schema)
+            self.assertTrue(schema['required'])
+            self.assertTrue(set(schema['required'])<=set(schema['properties']))

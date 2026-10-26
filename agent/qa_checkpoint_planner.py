@@ -27,7 +27,7 @@ def qa_unit_schema(count,kind):
         'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}},
         'exact_check':exact_check,'rationale':{'type':'string','maxLength':180},'result_selector':{'type':'string','maxLength':180},
         'blocked_features':{'type':'array','minItems':1,'maxItems':5,'items':{'type':'string','maxLength':160}}},
-        'anyOf':[{'required':required},{'required':['blocked_features']}],'additionalProperties':False}
+        'required':required,'additionalProperties':False}
 
 
 def qa_roundtrip_schema(count):
@@ -41,7 +41,7 @@ def qa_roundtrip_schema(count):
         'mutation_steps':props['steps'],'confirmation_steps':{'type':'array','maxItems':3,'items':props['steps']['items']},
         'checks':props['checks'],'acceptance':props['acceptance'],'rationale':props['rationale'],
         'blocked_features':props['blocked_features']},
-        'anyOf':[{'required':['csv_selector','csv_contains','json_selector','restore_selector','mutation_steps','checks','acceptance','rationale']},{'required':['blocked_features']}],
+        'required':['csv_selector','csv_contains','json_selector','restore_selector','mutation_steps','checks','acceptance','rationale'],
         'additionalProperties':False}
 
 
@@ -201,7 +201,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
             except (ValueError,OSError):pass
         started=qa_time.monotonic()
-        request=(prompt+('\n'+operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
+        unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else operations)
+        request=(prompt+('\n'+unit_operations+'\n'+context if include_context else '')+'\nこの1件だけ返す。前回の問題:'+error[:500])
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
@@ -211,7 +212,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if target and ((target['tag']=='select' and step['op']=='fill') or (step['op']=='check' and target.get('type') not in ('checkbox','radio'))):
                         raise AutoQAPlanError('実画面の要素に合わない操作: '+step['op']+' '+step.get('selector','')+'。select要素はselect、checkはチェック欄だけです')
                 return validated
-            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),tokens,schema=schema,max_attempts=1,
+            value=ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
@@ -239,7 +240,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 'mutation_steps:別の記録Cをfill/selectしてclick保存する操作2〜14件,confirmation_steps:ファイル選択後に画面内の確定ボタンがある場合だけclick（通常は空配列）,'
                 'checks:復元後に直前のreloadと同じ保存値・集計を照合する期待値2件以上,acceptance:条件番号配列,rationale:根拠。'
                 'ダウンロード→C保存→復元キャンセル→実復元の順序は検査プログラムが組み立てる。サンプル読込やフォーム消去だけを変更としない。'
-                '\n先行検査:'+json.dumps([dict(kind=x['kind'],steps=x['steps'],checks=x['checks']) for x in scenarios],sort_keys=True,ensure_ascii=False,separators=(',',':'))[-4000:])
+                '\n出力オブジェクトの形:{"csv_selector":"CSS","csv_contains":["保存値A","保存値B"],"json_selector":"CSS","restore_selector":"CSS","mutation_steps":[{"op":"fill","selector":"CSS","value":"別の値C"},{"op":"click","selector":"保存ボタンCSS"}],"confirmation_steps":[],"checks":[{"op":"text_equals","selector":"CSS","value":"元の正解"},{"op":"text_equals","selector":"CSS","value":"元の正解2"}],"acceptance":[0],"rationale":"根拠"}'
+                '\n先行入力値:'+json.dumps([{x.get('selector'):x.get('value',x.get('label')) for x in row['steps'] if x.get('op') in ('fill','select')} for row in scenarios[:2]],ensure_ascii=False,separators=(',',':'))[:1600]
+                +'\n復元後の期待値:'+json.dumps(scenarios[-1]['checks'],ensure_ascii=False,separators=(',',':'))[:1400])
             value=part('base-roundtrip',prompt,lambda v:compile_qa_roundtrip(v,count),tokens=1200,schema=qa_roundtrip_schema(count))
         else:
             value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind=='workflow' else 900,schema=qa_unit_schema(count,kind))
