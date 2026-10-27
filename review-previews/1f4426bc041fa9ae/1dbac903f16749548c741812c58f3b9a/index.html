@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_3df276748a863f69d2844ba8:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>授業スケジュール管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; }
+        form { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>授業スケジュール管理アプリ</h1>
+        <p>学生向け授業スケジュール管理アプリです。授業名、授業時間、授業日を登録し、スケジュールを視覚化して管理できます。</p>
+        <form id="schedule-form">
+            <label for="class-name">授業名:</label>
+            <input type="text" id="class-name" required>
+            <label for="class-time">授業時間:</label>
+            <input type="text" id="class-time" required>
+            <label for="class-day">授業日:</label>
+            <input type="date" id="class-day" required>
+            <button type="button" onclick="addSchedule()">追加</button>
+        </form>
+        <div id="result" class="result"></div>
+        <button onclick="saveSchedules()">保存</button>
+        <button onclick="loadSchedules()">復元</button>
+        <button onclick="exportSchedules()">CSV出力</button>
+    </div>
+    <script>
+        const schedules = JSON.parse(localStorage.getItem('schedules')) || [];
+
+        function addSchedule() {
+            const className = document.getElementById('class-name').value;
+            const classTime = document.getElementById('class-time').value;
+            const classDay = document.getElementById('class-day').value;
+            const schedule = { name: className, time: classTime, day: classDay };
+            schedules.push(schedule);
+            document.getElementById('result').innerHTML = JSON.stringify(schedules, null, 2);
+            localStorage.setItem('schedules', JSON.stringify(schedules));
+        }
+
+        function saveSchedules() {
+            localStorage.setItem('schedules', JSON.stringify(schedules));
+            alert('スケジュールが保存されました。');
+        }
+
+        function loadSchedules() {
+            if (schedules.length > 0) {
+                schedules = JSON.parse(localStorage.getItem('schedules'));
+                document.getElementById('result').innerHTML = JSON.stringify(schedules, null, 2);
+            } else {
+                alert('保存されたスケジュールがありません。');
+            }
+        }
+
+        function exportSchedules() {
+            const csvContent = "data:text/csv;charset=utf-8," + schedules.map(s => `${s.name},${s.time},${s.day}`).join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'schedules.csv');
+            document.body.appendChild(link);
+            link.click();
+        }
+    </script>
+</body>
+</html>
