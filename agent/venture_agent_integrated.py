@@ -3451,6 +3451,8 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     schema={'type':'object','properties':{'expected_text':{'type':'string','minLength':1,'maxLength':250},
         'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_text','basis'],'additionalProperties':False}
     inputs=[{k:s[k] for k in ('op','selector','value','label','nth') if k in s} for s in raw.get('steps',[])]
+    prior=cfg.get('_qa_prior_scenarios',[]) if key=='base-variant' else []
+    prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
     prompt=('独立QA。入力と操作は変更しない。主結果の完全な期待表示だけを、仕様から独立に計算して返す。'
         'JSON {"expected_text":"単位や補足も含む完全な期待文字列","basis":"入力からの計算式・根拠"}。'
@@ -3458,7 +3460,8 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         '指定selectorの要素だけの表示を返し、周囲の見出しや一覧を含めない。書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
         +'\n検査基準日（ブラウザの現地日付。期限判定はこの日と比較）:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
-        +'\n日付の独立計算（前後の事実のみ。業務上の期限超過は仕様と状態から判断）:'+json.dumps(qa_independent_date_facts(raw.get('steps',[]),cfg.get('_qa_reference_clock',{})),ensure_ascii=False)
+        +'\n日付の独立計算（前後の事実のみ。業務上の期限超過は仕様と状態から判断）:'+json.dumps(qa_independent_date_facts([step for row in prior for step in row['steps']]+raw.get('steps',[]),cfg.get('_qa_reference_clock',{})),ensure_ascii=False)
+        +'\n先行操作（保存内容は引き継がれる。初期状態と誤認しない）:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
     def validate(answer):
@@ -3470,7 +3473,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
     repaired=ai_json(prompt,oracle_cfg,450,schema=schema,
         max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
-    write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(inputs,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
+    write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(dict(prior=prior,current=inputs),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
     return repaired
 
 
@@ -3597,7 +3600,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                         # preserved while repeatedly repairing the primary.
                         repaired=repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key)
                     else:
-                        repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,error)
+                        repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
             if repaired is not None:value=capture_and_validate(repaired)
             else:
                 value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,

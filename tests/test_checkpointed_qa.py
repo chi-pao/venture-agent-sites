@@ -339,6 +339,21 @@ class CheckpointedQAPlannerTests(TestCase):
             fixed=app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,dict(self.cfg,qa_oracle_model='experiment-oracle',qa_oracle_timeout=300,_qa_reference_clock={'date':'2026-10-27','timezone':'Asia/Tokyo','source':'browser local clock'}),self.root,'base-workflow','期待結果と不一致')
         self.assertEqual(fixed['exact_check']['value'],'1件 / 超過1件')
 
+    def test_variant_oracle_receives_prior_operations_but_feature_starts_clean(self):
+        prior=[dict(kind='workflow',steps=[dict(op='fill',selector='#order',value='FIRST-123'),dict(op='click',selector='#save')])]
+        raw=dict(steps=[dict(op='fill',selector='#order',value='SECOND-456'),dict(op='click',selector='#save')],acceptance=[0],exact_check=dict(op='text_equals',selector='#count',value='1件'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='2件')])
+        prompts=[]
+        def model(prompt,cfg,tokens,**kw):
+            prompts.append(prompt)
+            return kw['validator'](dict(expected_text='2件',basis='2回の登録操作から件数を計算する'))
+        with patch.object(app,'ai_json',side_effect=model):
+            cfg=dict(self.cfg,_qa_prior_scenarios=prior)
+            app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,cfg,self.root,'base-variant','期待結果と不一致')
+            app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,cfg,self.root,'feature-0-0','期待結果と不一致')
+        self.assertIn('FIRST-123',prompts[0]);self.assertIn('SECOND-456',prompts[0])
+        self.assertNotIn('FIRST-123',prompts[1]);self.assertIn('SECOND-456',prompts[1])
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
