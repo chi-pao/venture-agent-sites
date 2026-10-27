@@ -2186,10 +2186,11 @@ def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
                             else:loc.select_option(str(step.get('value','')))
                         elif op=='check':loc.set_checked(bool(step.get('value',True)))
                         elif op=='click':
-                            loc.click()
+                            invalid_fields=[]
                             if scenario['kind'] in ('workflow','variant','feature'):
                                 invalid_fields=loc.evaluate("""e => { const f=e.form; if(!f || !['submit','image'].includes(e.type) || e.formNoValidate || f.noValidate)return []; return [...f.elements].filter(x=>x.willValidate && !x.validity.valid).map(x=>({selector:x.id?'#'+x.id:null,name:x.name||'',message:x.validationMessage})); }""")
-                                if invalid_fields:
+                            loc.click()
+                            if invalid_fields:
                                     failure=dict(width=width,scenario=scenario['kind'],operation=step,invalid_fields=invalid_fields,steps=scenario['steps'],javascript_errors=errors[:3])
                                     shot=directory/('failed-'+str(width)+'.png');page.screenshot(path=str(shot));failure['screenshot']=str(shot)
                                     write_framework_json(directory/'browser-observation-failure.json',failure)
