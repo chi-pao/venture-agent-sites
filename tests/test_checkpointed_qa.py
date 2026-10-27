@@ -354,6 +354,12 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertIn('FIRST-123',prompts[0]);self.assertIn('SECOND-456',prompts[0])
         self.assertNotIn('FIRST-123',prompts[1]);self.assertIn('SECOND-456',prompts[1])
 
+    def test_action_timeline_counts_attempts_without_assuming_saves(self):
+        prior=[dict(steps=[dict(op='click',selector='#submit'),dict(op='fill',selector='#name',value='A'),dict(op='click',selector='#cancel')])]
+        current=[dict(op='click',selector='#submit'),dict(op='click',selector='#submit')]
+        self.assertEqual(app.qa_action_timeline(prior,current),[
+            dict(selector='#cancel',prior=1,current=0),dict(selector='#submit',prior=1,current=2)])
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])

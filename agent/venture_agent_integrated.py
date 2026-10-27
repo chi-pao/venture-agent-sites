@@ -3442,6 +3442,22 @@ def qa_independent_date_facts(steps, reference_clock):
     return facts[:12]
 
 
+def qa_action_timeline(prior, current):
+    # Count attempted actions only. A click can edit, fail validation, or be
+    # cancelled, so its count is never treated as a count of saved records.
+    counts = {}
+    for phase, steps in [('prior', [s for row in prior for s in row.get('steps', [])]), ('current', current)]:
+        for step in steps:
+            if not isinstance(step, dict) or step.get('op') != 'click':
+                continue
+            selector = step.get('selector')
+            if not isinstance(selector, str) or not selector:
+                continue
+            item = counts.setdefault(selector, {'prior': 0, 'current': 0})
+            item[phase] += 1
+    return [{'selector': selector, **count} for selector, count in sorted(counts.items())][:24]
+
+
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
@@ -3462,6 +3478,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         +'\n検査基準日（ブラウザの現地日付。期限判定はこの日と比較）:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
         +'\n日付の独立計算（前後の事実のみ。業務上の期限超過は仕様と状態から判断）:'+json.dumps(qa_independent_date_facts([step for row in prior for step in row['steps']]+raw.get('steps',[]),cfg.get('_qa_reference_clock',{})),ensure_ascii=False)
         +'\n先行操作（保存内容は引き継がれる。初期状態と誤認しない）:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
+        +'\nクリックの時系列集計（操作回数のみ。登録成功・件数を保証しない。編集、削除、入力エラーも仕様に基づいて判断）:'+json.dumps(qa_action_timeline(prior,inputs),ensure_ascii=False,separators=(',',':'))
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
     def validate(answer):
