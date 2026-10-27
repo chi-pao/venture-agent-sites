@@ -58,6 +58,16 @@ class CheckpointedQAPlannerTests(TestCase):
         value['steps'].append({'op':'click','selector':'#saveRecord'})
         app.validate_qa_inventory_actions(value,inventory,'workflow')
 
+    def test_independent_feature_planner_receives_matching_design_examples(self):
+        plan={'features':[{'acceptance_index':0,'test_cases':[{'input':'条件A','action':'操作A','expected':'設計時の期待A'},{'input':'条件B','action':'操作B','expected':'設計時の期待B'}]}]}
+        self.plan(cfg=dict(self.cfg,_department_documents={'implementation_plan':plan}))
+        first=next(c['prompt'] for c in self.calls if c['key']=='feature-0-0')
+        second=next(c['prompt'] for c in self.calls if c['key']=='feature-0-1')
+        other=next(c['prompt'] for c in self.calls if c['key']=='feature-1-0')
+        self.assertIn('条件A',first);self.assertIn('独立検証',first)
+        self.assertIn('条件B',second);self.assertNotIn('条件A',other)
+        self.assertTrue(any(c['key']=='audit' for c in self.calls))
+
     def test_timeout_resumes_after_last_completed_scenario(self):
         self.timeout_once=True
         with self.assertRaises(TimeoutError):self.plan()

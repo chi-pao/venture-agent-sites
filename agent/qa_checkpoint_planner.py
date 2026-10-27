@@ -329,6 +329,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
     acceptance=spec['acceptance'];count=len(acceptance)
+    handoff=cfg.get('_department_documents') or {}
+    design_plan=handoff.get('implementation_plan') or {}
+    features=design_plan.get('features',[]) if isinstance(design_plan,dict) else []
+    feature_contracts={f['acceptance_index']:f for f in features if isinstance(f,dict) and type(f.get('acceptance_index')) is int and 0<=f['acceptance_index']<count}
     minimal_spec=dict(audience=spec['audience'],outcome=str(spec['requested_outcome'])[:500],
         acceptance_by_index={str(i):c for i,c in enumerate(acceptance)})
     # Never cut a JSON structure halfway, or let a long control list hide all
@@ -486,9 +490,13 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         pair=[]
         for case in (0,1):
             previous=pair[0] if pair else None
+            feature=feature_contracts.get(index,{})
+            design_cases=feature.get('test_cases',[]) if isinstance(feature.get('test_cases',[]),list) else []
+            sample=design_cases[case] if case<len(design_cases) and isinstance(design_cases[case],dict) else {}
+            case_hint=json.dumps({k:str(sample.get(k,''))[:300] for k in ('input','action','expected')},ensure_ascii=False) if sample else ''
             prompt=('独立した検証担当。完成条件'+str(index)+'のケース'+str(case)+'を1件だけJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:['+str(index)+'],rationale:正解の根拠}で設計。'
                 '各ケースは空の保存状態から開始。条件そのものを操作し、入力の写しや汎用の件数確認だけで済ませない。実装不足なら{blocked_features:[不足機能]}。'
-                '\n今回の条件:'+condition+'\nケース0（ケース1は違う入力値にする）:'+json.dumps(previous,sort_keys=True,ensure_ascii=False,separators=(',',':'))[:2000])
+                '\n今回の条件:'+condition+('\n設計時の参考例（正解と決めつけず仕様から独立検証）:'+case_hint if case_hint else '')+'\nケース0（ケース1は違う入力値にする）:'+json.dumps(previous,sort_keys=True,ensure_ascii=False,separators=(',',':'))[:2000])
             def validate(value,previous=previous):
                 value=validate_qa_unit(value,'feature',count)
                 if previous:
