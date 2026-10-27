@@ -108,6 +108,18 @@ class CheckpointedQAPlannerTests(TestCase):
         self.plan(cfg=dict(self.cfg,model='different-model'));self.assertEqual(len(self.calls),2*count)
         self.plan(page=self.page+'<!--new source-->');self.assertEqual(len(self.calls),3*count)
 
+    def test_required_fields_survive_bounded_control_list(self):
+        optional=''.join('<input id="optional%d" placeholder="%s">'%(i,'説明'*25) for i in range(20))
+        page='<h1>在宅勤務</h1><form id="form">'+optional+'<input id="work_date" type="date" required><select id="task_status" required><option value="open">未着手</option></select><button id="saveRecord">保存</button></form><strong id="planned">0分</strong>'
+        class Stop(Exception):pass
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('#work_date',prompt)
+            self.assertIn('#task_status',prompt)
+            self.assertIn('#saveRecord',prompt)
+            raise Stop()
+        with patch.object(app,'ai_json',side_effect=model):
+            with self.assertRaises(Stop):app.checkpointed_independent_qa_plan('在宅ワーク',page,self.cfg,self.spec,['対象者の説明','最初の操作の説明'])
+
     def test_inventory_preserves_target_labels_result_ids_and_button_copy(self):
         inventory=app.compact_qa_inventory(self.page)
         title=next(x for x in inventory['controls'] if x['selector']=='#title')

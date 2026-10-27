@@ -555,7 +555,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             if len(json.dumps(result+[node],sort_keys=True,ensure_ascii=False,separators=(',',':')))>limit:break
             result.append(node)
         return result
-    inventory=dict(controls=fit(inventory['controls'],2600),outputs=fit(inventory['outputs'],1300))
+    # Required controls must not disappear behind optional controls when the
+    # bounded prompt is packed. Keep submit controls alongside them. This is
+    # guidance for the model; the browser remains the authority on validity.
+    nodes=inventory['controls']
+    nodes=sorted(nodes,key=lambda n: (0 if n.get('required') else 1 if n.get('tag')=='button' else 2))
+    inventory=dict(controls=fit(nodes,2600),outputs=fit(inventory['outputs'],1300))
     context='同じformに属する必須項目を入力し、そのformの送信ボタンを押してください。別の保存ボタンは別操作です。画面の実際の出力要素とその表示形式だけを期待値に使ってください。\n仕様:'+json.dumps(minimal_spec,sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n実画面:'+json.dumps(inventory,sort_keys=True,ensure_ascii=False,separators=(',',':'))
     operations=('stepsは{op,selector,value?,label?,nth?,contains?}。opはfill,click,select,check,reload,wait,download_csv,download_json,restore_file,restore_invalid,cancel_restoreのみ。'
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
