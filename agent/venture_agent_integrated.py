@@ -662,10 +662,89 @@ $('restoreFile').addEventListener('change',async e=>{{const file=e.target.files[
 </script></body></html>'''
 
 
+def competitor_design_tokens(brief):
+    """Use measured UI properties only when both reference captures are verified.
+
+    Hue and semantic UI content are not copied from another product. The
+    returned numbers are bounded guidance, not a claim of design quality.
+    """
+    import colorsys, statistics
+    if not competitive_visual_ready(brief):return None
+    saturation=[];lightness=[];radii=[];gaps=[]
+    observations=brief.get('visual_observations',[])
+    for obs in observations:
+        if not isinstance(obs,dict) or obs.get('capture_status')!='ok':continue
+        # A successful pair must also validate this particular observation.
+        if not any(other is not obs and competitive_visual_ready({'visual_observations':[obs,other]}) for other in observations):continue
+        for view in obs.get('views',{}).values():
+            metrics=view.get('metrics',{}) if isinstance(view,dict) else {}
+            for color in metrics.get('palette',[]):
+                value=str(color.get('color','')) if isinstance(color,dict) else ''
+                match=re.fullmatch(r'rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9.]+))?\s*\)',value)
+                if not match:continue
+                rgb=[int(match.group(i)) for i in (1,2,3)]
+                if max(rgb)>255 or (match.group(4) is not None and float(match.group(4))<.9):continue
+                _,l,sat=colorsys.rgb_to_hls(*(n/255 for n in rgb))
+                if sat>=.20 and .10<=l<=.85:saturation.append(sat);lightness.append(l)
+            for field,dest,lower,upper in [('cardRadiusPx',radii,0,48),('contentGapPx',gaps,4,48)]:
+                value=metrics.get(field)
+                if type(value) in (int,float) and math.isfinite(value) and lower<=value<=upper:dest.append(value)
+    if not saturation and not radii and not gaps:return None
+    tokens={}
+    if saturation:tokens['saturation']=round(min(.9,max(.25,statistics.median(saturation))),3)
+    if lightness:tokens['lightness']=round(min(.44,max(.20,statistics.median(lightness))),3)
+    if radii:tokens['radius_px']=round(min(24,max(4,statistics.median(radii))))
+    if gaps:tokens['gap_px']=round(min(24,max(8,statistics.median(gaps))))
+    return tokens
+
+
+def design_tokens_prompt(tokens):
+    if not tokens:return ''
+    return ('\n比較画面の計測から得た設計値（画像やロゴ、色相を複製しない。利用者の作業に応じ独自構成）:'
+            +json.dumps(tokens,ensure_ascii=False,separators=(',',':'))
+            +'。白文字を使う強調色はコントラスト比4.5以上にし、確認できない値は推測しない。')
+
+
+def apply_competitor_design_tokens(page,tokens):
+    """Add scoped CSS to the known structured renderer; leave the DOM/JS intact."""
+    import colorsys
+    if not tokens or not isinstance(page,str) or 'id="venture-reference-tokens"' in page:return page
+    css=[]
+    match=re.search(r'--accent:\s*#([0-9a-fA-F]{6})',page)
+    if match and 'saturation' in tokens and 'lightness' in tokens:
+        old=match.group(1);rgb=[int(old[i:i+2],16)/255 for i in (0,2,4)]
+        hue,_,_=colorsys.rgb_to_hls(*rgb);l=float(tokens['lightness']);sat=float(tokens['saturation'])
+        def calc(l):
+            vals=colorsys.hls_to_rgb(hue,l,sat)
+            def linear(x):return x/12.92 if x<=.04045 else ((x+.055)/1.055)**2.4
+            lum=sum(w*linear(c) for w,c in zip((.2126,.7152,.0722),vals))
+            return vals,1.05/(lum+.05)
+        vals,ratio=calc(l)
+        while ratio<4.5 and l>.02:
+            l-=.01;vals,ratio=calc(l)
+        color='#'+''.join(f'{round(v*255):02x}' for v in vals)
+        # Verify contrast once more after quantization to 8-bit RGB.
+        def channel(n):
+            n=n/255
+            return n/12.92 if n<=.04045 else ((n+.055)/1.055)**2.4
+        while 1.05/(sum(w*channel(int(color[i:i+2],16)) for w,i in zip((.2126,.7152,.0722),(1,3,5)))+.05)<4.5 and l>.02:
+            l-=.01;vals,_=calc(l);color='#'+''.join(f'{round(v*255):02x}' for v in vals)
+        css.append(':root{--accent:'+color+'}')
+    if 'radius_px' in tokens:css.append('.card,.step{border-radius:'+str(int(tokens['radius_px']))+'px}')
+    if 'gap_px' in tokens:css.append('.layout,.fields{gap:'+str(int(tokens['gap_px']))+'px}')
+    if not css:return page
+    end=re.search(r'</head\s*>',page,re.I)
+    if not end:return page
+    style='<style id="venture-reference-tokens">'+''.join(css)+'</style>'
+    return page[:end.start()]+style+page[end.start():]
+
+
 def structured_product_fallback(job,name,cfg,plan,asset_kind,partial):
     """Start from a verified task-specific interface; the caller runs full product QA."""
     definition=ensure_product_interface(name,cfg)
     page=apply_generated_layout_safety(render_product_interface(name,definition,get_product_spec(name) or {}))
+    brief=(cfg.get('_department_documents') or {}).get('brief',{})
+    page=apply_competitor_design_tokens(page,competitor_design_tokens(brief))
     errors=validate_html(page,name)
     if errors:raise ValueError('構造化部品のコード検査: '+' / '.join(errors))
     try:
@@ -999,6 +1078,33 @@ def resolve_comparison_references(item,lookup):
     return item
 
 
+def competitor_same_host(left,right):
+    return bool(left and right and left.lower().removeprefix('www.')==right.lower().removeprefix('www.'))
+
+
+def competitor_request_allowed(url, origin, resource_type, navigation=False):
+    target=urllib.parse.urlsplit(url);host=(target.hostname or '').lower()
+    if target.scheme not in ('https','http') or not host:return False
+    try:
+        address=ipaddress.ip_address(host)
+        if not address.is_global:return False
+    except ValueError:pass
+    if navigation and not competitor_same_host(host,origin):return False
+    if resource_type=='websocket':return False
+    if resource_type in ('xhr','fetch') and not competitor_same_host(host,origin):return False
+    return True
+
+
+def competitor_capture_error(metrics,width,final_url,origin):
+    if not competitor_same_host(urllib.parse.urlsplit(final_url).hostname,origin):return '別サイトへ移動しました'
+    if metrics.get('viewportWidth')!=width:return '指定した画面幅と一致しません'
+    if metrics.get('bodyTextLength',0)<80 or not metrics.get('heading'):return '画面本文または見出しを取得できません'
+    text=' '.join(str(metrics.get(k,'') or '') for k in ('title','heading','bodyTextSample')).lower()
+    if re.search(r'checking your browser|verify you are human|verify you are a human|just a moment|security check|unusual traffic|access denied|captcha|人間であることを確認|ロボットではないことを確認|アクセスが拒否',text):
+        return 'ボット確認またはアクセス拒否画面です'
+    return ''
+
+
 def capture_competitor_visual_references(name,references,cfg):
     """Capture isolated public competitor pages and measurable desktop/mobile UI evidence."""
     refs=[];seen=set()
@@ -1009,8 +1115,7 @@ def capture_competitor_visual_references(name,references,cfg):
         parsed=urllib.parse.urlsplit(url)
         if parsed.scheme!='https' or not parsed.hostname:continue
         seen.add(url);refs.append(ref)
-        if len(refs)>=2:break
-    if len(refs)<2:return []
+    if not refs:return []
     ensure_autoqa_environment(0,cfg,vision=False)
     from playwright.sync_api import sync_playwright
     observations=[]
@@ -1031,23 +1136,21 @@ def capture_competitor_visual_references(name,references,cfg):
                         device_scale_factor=1,service_workers='block',accept_downloads=False)
                     page=context.new_page()
                     def guard(route):
-                        request=route.request;target=urllib.parse.urlsplit(request.url);host=(target.hostname or '').lower()
-                        if target.scheme not in ('https','http') or not host:
-                            route.abort();return
-                        try:
-                            address=ipaddress.ip_address(host)
-                            if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
-                                route.abort();return
-                        except ValueError:pass
-                        if request.is_navigation_request() and host!=origin and host.removeprefix('www.')!=origin.removeprefix('www.'):
-                            route.abort();return
-                        if request.resource_type in ('websocket','xhr','fetch'):
+                        request=route.request
+                        if not competitor_request_allowed(request.url,origin,request.resource_type,request.is_navigation_request()):
                             route.abort();return
                         route.continue_()
                     page.route('**/*',guard)
                     try:
                         page.goto(url,wait_until='domcontentloaded',timeout=15000)
-                        page.wait_for_timeout(700)
+                        page.wait_for_timeout(1000)
+                        # Restrict dismissal to explicit consent controls; never submit
+                        # forms or activate product/account actions.
+                        for selector in ('button','[role=button]'):
+                            try:
+                                button=page.locator(selector).filter(has_text=re.compile(r'^(?:Accept all|Accept cookies|Agree|同意する|すべて許可|全て許可)$',re.I)).first
+                                if button.is_visible(timeout=300):button.click(timeout=1000);break
+                            except Exception:pass
                         metrics=page.evaluate("""() => {
                           const text = (el) => (el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\\s+/g,' ').slice(0,90);
                           const main = document.querySelector('main') || document.body;
@@ -1065,6 +1168,11 @@ def capture_competitor_visual_references(name,references,cfg):
                           const buttons=[...document.querySelectorAll('button,[role=button],a[href]')].map(text).filter(Boolean).slice(0,12);
                           const rect=main.getBoundingClientRect();
                           const hStyle=h1?getComputedStyle(h1):null;
+                          const median = (values) => { const a=values.filter(v=>Number.isFinite(v) && v>=0 && v<=100).sort((a,b)=>a-b); return a.length?a[Math.floor(a.length/2)]:null; };
+                          const cards=[...document.querySelectorAll('article,[class*=card i],[class*=tile i]')].slice(0,40);
+                          const radius=median(cards.map(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius)));
+                          const regions=[...document.querySelectorAll('main,section,article')].slice(0,40);
+                          const gap=median(regions.map(el=>parseFloat(getComputedStyle(el).rowGap)));
                           return {
                             title:document.title||'',
                             heading:h1?text(h1):'',
@@ -1072,17 +1180,22 @@ def capture_competitor_visual_references(name,references,cfg):
                             navigationItems:document.querySelectorAll('nav a,header a').length,
                             contentRegions:document.querySelectorAll('main,section,article').length,
                             cardLikeRegions:document.querySelectorAll('article,[class*=card i],[class*=tile i]').length,
+                            cardRadiusPx:radius, contentGapPx:gap,
                             actions:buttons,
                             palette:ranked,
                             headingTypography:hStyle?{fontFamily:hStyle.fontFamily,fontSize:hStyle.fontSize,fontWeight:hStyle.fontWeight}:null,
                             contentWidth:Math.round(rect.width),
                             pageWidth:document.documentElement.scrollWidth,
                             viewportWidth:window.innerWidth,
-                            bodyTextLength:(document.body.innerText||'').length
+                            bodyTextLength:(document.body.innerText||'').length,
+                            bodyTextSample:(document.body.innerText||'').slice(0,1200)
                           };
                         }""")
-                        if metrics.get('bodyTextLength',0)<80 or not metrics.get('heading'):
-                            raise ValueError('画面本文または見出しを取得できません')
+                        failure=competitor_capture_error(metrics,width,page.url,origin)
+                        if failure:raise ValueError(failure)
+                        # The text sample is used only for challenge detection,
+                        # not retained as competitor-provided copy.
+                        metrics.pop('bodyTextSample',None)
                         image_path=folder/(label+'.png')
                         page.screenshot(path=str(image_path),full_page=False,animations='disabled')
                         captures[label]=dict(width=width,height=height,metrics=metrics,
@@ -1094,6 +1207,7 @@ def capture_competitor_visual_references(name,references,cfg):
                 observations.append(dict(source_url=url,reference_sha=ref.get('content_sha',''),
                     checked_at=now(),capture_status='ok' if len(captures)==2 else 'partial',
                     views=captures,error=' / '.join(page_errors)[:500]))
+                if sum(item['capture_status']=='ok' for item in observations)>=2:break
         finally:browser.close()
     return observations
 
@@ -6627,6 +6741,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             + '\n必ず実装する具体的な範囲:' + str(specification.get('mvp_scope',''))[:800]
             + '\n無料の代替と比較して実装で確かめる違い:' + str(specification.get('differentiation',''))[:800]
         )
+        requirements += design_tokens_prompt(competitor_design_tokens(handoff.get('brief',{})))
         if legacy_reason:
             requirements += '\n作り直しの理由:'+legacy_reason+'。入力値・計算・結果だけの汎用サンプルを再生成しない。対象者の実際の作業を具体的な項目と処理にする。'
         if partial:
