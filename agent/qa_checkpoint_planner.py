@@ -144,6 +144,23 @@ def compact_qa_inventory(page):
     return dict(controls=controls[:32],outputs=outputs[:20])
 
 
+def qa_resolve_unique_date_selector(value, inventory):
+    """Repair a missing selector only when one unused date input is unambiguous."""
+    if not isinstance(value, dict) or not isinstance(value.get('steps'), list):
+        return value
+    steps = [dict(step) if isinstance(step, dict) else step for step in value['steps']]
+    used = {step.get('selector') for step in steps if isinstance(step, dict) and step.get('selector')}
+    missing = [step for step in steps if isinstance(step, dict) and step.get('op') == 'fill'
+               and not step.get('selector') and isinstance(step.get('value'), str)
+               and re.fullmatch(r'\d{4}-\d{2}-\d{2}', step['value'])]
+    candidates = [node['selector'] for node in inventory['controls']
+                  if node.get('tag') == 'input' and node.get('type') == 'date'
+                  and node.get('selector') and node['selector'] not in used]
+    if len(missing) == 1 and len(candidates) == 1:
+        missing[0]['selector'] = candidates[0]
+    return dict(value, steps=steps)
+
+
 def validate_qa_unit(value,kind,acceptance_count):
     if not isinstance(value,dict):raise AutoQAPlanError('検査1件のJSONオブジェクトが必要です')
     if value.get('blocked_features'):raise AutoQAPlanError('実装不足: '+' / '.join(map(str,value['blocked_features'])))
@@ -173,6 +190,16 @@ def validate_qa_unit(value,kind,acceptance_count):
             raise AutoQAPlanError('期待結果の形式が不正です')
         if check['op'] in ('text_equals','text_contains','value_equals') and (not isinstance(check.get('value'),str) or not 1<=len(check['value'])<=250):raise AutoQAPlanError('具体的な期待値が必要です')
         if check['op']=='count' and type(check.get('value'))is not int:raise AutoQAPlanError('件数の正解は整数が必要です')
+    # Assertions on the very same element must not contradict each other.
+    for i, left in enumerate(checks):
+        for right in checks[i+1:]:
+            if left.get('selector') != right.get('selector') or left.get('nth', 0) != right.get('nth', 0):continue
+            if left['op'] == 'text_equals' and right['op'] == 'text_equals' and left['value'] != right['value']:
+                raise AutoQAPlanError('同じ要素の完全一致の期待値が矛盾しています: '+left['selector'])
+            if left['op'] == 'text_equals' and right['op'] == 'text_contains' and right['value'] not in left['value']:
+                raise AutoQAPlanError('同じ要素の完全一致と部分一致の期待値が矛盾しています: '+left['selector'])
+            if right['op'] == 'text_equals' and left['op'] == 'text_contains' and left['value'] not in right['value']:
+                raise AutoQAPlanError('同じ要素の完全一致と部分一致の期待値が矛盾しています: '+left['selector'])
     ops={s['op'] for s in steps}
     if kind in ('workflow','variant','feature') and (not {'fill','click'}<=ops or not any(c['op']=='text_equals' for c in checks)):
         raise AutoQAPlanError('入力・実行・正解の完全一致が必要です')
@@ -436,6 +463,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
+                value=qa_resolve_unique_date_selector(value,inventory)
                 validated=validate(compile_qa_formatted_expectation(value,formats))
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))

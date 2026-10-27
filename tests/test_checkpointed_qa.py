@@ -368,6 +368,22 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertFalse(app.qa_variant_repeats_workflow(dict(steps=changed),prior))
         self.assertFalse(app.qa_variant_repeats_workflow(dict(steps=steps),[]))
 
+    def test_missing_date_selector_only_repaired_when_unique(self):
+        value={'steps':[{'op':'fill','value':'2026-10-27'}]}
+        one={'controls':[{'tag':'input','type':'date','selector':'#class_date'}]}
+        self.assertEqual(app.qa_resolve_unique_date_selector(value,one)['steps'][0]['selector'],'#class_date')
+        self.assertNotIn('selector',value['steps'][0])
+        ambiguous={'controls':one['controls']+[{'tag':'input','type':'date','selector':'#other'}]}
+        self.assertNotIn('selector',app.qa_resolve_unique_date_selector(value,ambiguous)['steps'][0])
+
+    def test_contradictory_expectations_are_not_accepted(self):
+        value={'steps':[{'op':'fill','selector':'#item','value':'A'},{'op':'click','selector':'#save'}],
+               'checks':[{'op':'text_contains','selector':'#summary','value':'2件'}, {'op':'visible','selector':'#item'}],
+               'exact_check':{'op':'text_equals','selector':'#summary','value':'1件'},'acceptance':[0], 'result_selector':'#summary'}
+        with self.assertRaisesRegex(app.AutoQAPlanError,'矛盾'):app.validate_qa_unit(value,'workflow',1)
+        value['exact_check']['value']='2件'
+        app.validate_qa_unit(value,'workflow',1)
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
