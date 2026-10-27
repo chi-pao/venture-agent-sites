@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_d0e737ae07aa67cd79bceb33:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンライン授業参加管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        h1, h2 { color: #333; }
+        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>オンライン授業参加管理アプリ</h1>
+        <h2>1. 受講者名簿と授業の追加</h2>
+        <form id="form">
+            <label for="studentName">受講者名:</label>
+            <input type="text" id="studentName" required>
+            <br>
+            <label for="courseName">授業名:</label>
+            <input type="text" id="courseName" required>
+            <br>
+            <button type="button" onclick="addStudent()">追加</button>
+        </form>
+        <h2>2. 授業ごとの出欠記録</h2>
+        <table id="attendanceTable">
+            <thead>
+                <tr>
+                    <th>授業名</th>
+                    <th>出席</th>
+                    <th>遅刻</th>
+                    <th>欠席</th>
+                    <th>対象外</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- ここに授業ごとのデータが追加される -->
+            </tbody>
+        </table>
+        <h2>3. 集計と保存</h2>
+        <button type="button" onclick="saveAttendance()">保存</button>
+        <button type="button" onclick="loadAttendance()">再読み込み</button>
+        <button type="button" onclick="exportCSV()">CSV出力</button>
+        <button type="button" onclick="importJSON()">JSONバックアップ</button>
+    </div>
+
+    <script>
+        const students = [];
+        const attendances = [];
+
+        function addStudent() {
+            const studentName = document.getElementById('studentName').value;
+            const courseName = document.getElementById('courseName').value;
+            if (!students.find(s => s.name === studentName)) {
+                students.push({ name: studentName });
+                const attendance = { course: courseName, present: 0, late: 0, absent: 0, excluded: 0 };
+                attendances.push(attendance);
+                updateTable();
+            }
+        }
+
+        function updateTable() {
+            const tableBody = document.getElementById('attendanceTable').getElementsByTagName('tbody')[0];
+            tableBody.innerHTML = '';
+            for (let i = 0; i < attendances.length; i++) {
+                const row = tableBody.insertRow();
+                const cell1 = row.insertCell(0);
+                const cell2 = row.insertCell(1);
+                const cell3 = row.insertCell(2);
+                const cell4 = row.insertCell(3);
+                const cell5 = row.insertCell(4);
+                cell1.textContent = attendances[i].course;
+                cell2.textContent = attendances[i].present;
+                cell3.textContent = attendances[i].late;
+                cell4.textContent = attendances[i].absent;
+                cell5.textContent = attendances[i].excluded;
+            }
+        }
+
+        function saveAttendance() {
+            localStorage.setItem('students', JSON.stringify(students));
+            localStorage.setItem('attendances', JSON.stringify(attendances));
+        }
+
+        function loadAttendance() {
+            const studentsStr = localStorage.getItem('students');
+            const attendancesStr = localStorage.getItem('attendances');
+            if (studentsStr) students = JSON.parse(studentsStr);
+            if (attendancesStr) attendances = JSON.parse(attendancesStr);
+            updateTable();
+        }
+
+        function exportCSV() {
+            const csvContent = 'data:text/csv;charset=utf-8,';
+            const csvRows = [];
+            csvRows.push('授業名,出席,遅刻,欠席,対象外');
+            for (let i = 0; i < attendances.length; i++) {
+                csvRows.push(`${attendances[i].course},${attendances[i].present},${attendances[i].late},${attendances[i].absent},${attendances[i].excluded}`);
+            }
+            const encodedUri = encodeURI(csvContent + csvRows.join('\n'));
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', 'attendance.csv');
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        function importJSON() {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.onchange = function (event) {
+                const file = event.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        students = data.students;
+                        attendances = data.attendances;
+                        updateTable();
+                    } catch (error) {
+                        alert('JSONファイルが正しくありません。');
+                    }
+                };
+                reader.readAsText(file);
+            };
+            fileInput.click();
+        }
+    </script>
+</body>
+</html>
