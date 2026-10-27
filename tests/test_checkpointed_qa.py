@@ -426,6 +426,51 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(result['steps'],raw['steps'])
         app.validate_qa_unit(result,'variant',len(self.spec['acceptance']))
 
+    def test_oracle_census_reports_inputs_without_assuming_population_or_success(self):
+        prior=[dict(kind='workflow',steps=[dict(op='select',selector='#status',value='出席'),dict(op='click',selector='#save')])]
+        current=[dict(op='select',selector='#status',value='欠席'),dict(op='click',selector='#delete')]
+        self.assertEqual(app.qa_independent_input_history(prior,current),[
+            dict(phase='prior',op='select',selector='#status',value='出席'),
+            dict(phase='current',op='select',selector='#status',value='欠席')])
+        raw=dict(steps=current,acceptance=[0],exact_check=dict(selector='#count',value='1'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='2件')])
+        prompts=[]
+        def model(prompt,cfg,tokens,**kw):
+            prompts.append(prompt)
+            return kw['validator'](dict(expected_text='1件',basis='入力状態から独立に検査内容を判断します'))
+        with patch.object(app,'ai_json',side_effect=model):
+            app.repair_qa_exact_oracle('授業',raw,formats,self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','期待結果と不一致')
+            app.repair_qa_exact_oracle('授業',raw,formats,self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-workflow','期待結果と不一致')
+        self.assertIn('保存成功・存在人数は意味しない',prompts[0])
+        self.assertIn('出席',prompts[0]);self.assertIn('欠席',prompts[0])
+        self.assertIn('空のブラウザ保存から開始',prompts[1]);self.assertNotIn('出席',prompts[1])
+
+    def test_independent_clock_arithmetic_does_not_assume_overnight_or_breaks(self):
+        steps=[dict(op='fill',selector='#start',value='09:00'),dict(op='fill',selector='#end',value='17:30'),
+               dict(op='fill',selector='#next',value='01:00'),dict(op='fill',selector='#invalid',value='25:30')]
+        facts=app.qa_independent_clock_differences(steps)
+        self.assertEqual(facts[0],dict(start_selector='#start',start='09:00',end_selector='#end',end='17:30',signed_minutes=510))
+        self.assertEqual(facts[1]['signed_minutes'],-480)
+        self.assertEqual(len(facts),3)
+
+    def test_declared_calculation_is_independent_of_product_output(self):
+        spec=dict(independent_calculations=[dict(scenario_kind='workflow', bindings={'start':'#start','end':'#end','breaks':'#break'}, expression='end-start-breaks', output_selector='#total', expected_template='{value}分')])
+        value=dict(steps=[dict(op='fill',selector='#start',value='540'),dict(op='fill',selector='#end',value='1020'),dict(op='fill',selector='#break',value='60')], checks=[dict(op='text_equals',selector='#total',value='420分')])
+        self.assertEqual(app.qa_validate_declared_calculations(value,spec,'workflow'),value)
+        bad=copy.deepcopy(value);bad['checks'][0]['value']='480分'
+        with self.assertRaisesRegex(app.AutoQAPlanError,'独立計算'):app.qa_validate_declared_calculations(bad,spec,'workflow')
+        self.assertEqual(app.qa_validate_declared_calculations(bad,spec,'variant'),bad)
+        missing=copy.deepcopy(value);missing['steps'].pop()
+        with self.assertRaises(app.AutoQAPlanError):app.qa_validate_declared_calculations(missing,spec,'workflow')
+        duplicate=copy.deepcopy(value);duplicate['steps'].append(dict(op='fill',selector='#end',value='1000'))
+        with self.assertRaises(app.AutoQAPlanError):app.qa_validate_declared_calculations(duplicate,spec,'workflow')
+        unsafe=copy.deepcopy(spec);unsafe['independent_calculations'][0]['expression']='__import__(1)'
+        with self.assertRaises(app.AutoQAPlanError):app.qa_validate_declared_calculations(value,unsafe,'workflow')
+        ratio=copy.deepcopy(spec);ratio['independent_calculations'][0]['expression']='start/end'
+        with self.assertRaisesRegex(app.AutoQAPlanError,'丸め'):app.qa_validate_declared_calculations(value,ratio,'workflow')
+        zero=copy.deepcopy(spec);zero['independent_calculations'][0]['expression']='end/(start-start)'
+        with self.assertRaises(app.AutoQAPlanError):app.qa_validate_declared_calculations(value,zero,'workflow')
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])

@@ -3286,6 +3286,8 @@ def ensure_department_product_spec(name,cfg):
     return store_product_spec(name,repaired,source='AI設計・元要件から完成条件を修復')
 
 """Independent QA planning in bounded, resumable units, not renderer-derived tests."""
+import ast
+import decimal
 import hashlib
 import json
 import re
@@ -3599,6 +3601,100 @@ def qa_action_timeline(prior, current):
     return [{'selector': selector, **count} for selector, count in sorted(counts.items())][:24]
 
 
+def qa_independent_input_history(prior, current):
+    """Summarize specified field inputs, without claiming any were saved.
+
+    This deliberately records operations rather than product results; a repeated
+    click may edit, fail validation or delete a record. No business conclusion is
+    derived from the number of inputs alone.
+    """
+    items=[]
+    phases=[('prior', [s for row in prior for s in row.get('steps', [])]), ('current', current)]
+    for phase, steps in phases:
+        for step in steps:
+            if not isinstance(step,dict) or step.get('op') not in ('fill','select','check'):continue
+            selector=step.get('selector')
+            if not isinstance(selector,str) or not selector:continue
+            item={'phase':phase,'op':step['op'],'selector':selector}
+            for k in ('value','label'):
+                if k in step and isinstance(step[k],(str,int,bool)):item[k]=step[k]
+            items.append(item)
+    return items[:48]
+
+
+def qa_validate_declared_calculations(value, spec, scenario_kind):
+    """Verify explicit requirement-side formulas using supplied test inputs.
+
+    The input values and formula come from the test and requirement contract,
+    never from browser output. Missing/invalid data is an error rather than a
+    pass. Products without explicit formula contracts receive no such claim.
+    """
+    contracts=spec.get('independent_calculations',[])
+    if not isinstance(contracts,list):raise AutoQAPlanError('独立計算の仕様形式が不正です')
+    steps=value.get('steps',[]) if isinstance(value,dict) else []
+    checks=value.get('checks',[]) if isinstance(value,dict) else []
+    for contract in contracts:
+        if not isinstance(contract,dict):raise AutoQAPlanError('独立計算の仕様が不正です')
+        kind=contract.get('scenario_kind')
+        if not isinstance(kind,str) or not kind:raise AutoQAPlanError('独立計算の対象シナリオが未定義です')
+        if kind!=scenario_kind:continue
+        bindings=contract.get('bindings');expression=contract.get('expression');output=contract.get('output_selector');template=contract.get('expected_template')
+        if not isinstance(bindings,dict) or not bindings or not isinstance(expression,str) or not expression or not isinstance(output,str) or not output or not isinstance(template,str) or template.count('{value}')!=1 or template.replace('{value}','').find('{')>=0 or '}' in template.replace('{value}',''):
+            raise AutoQAPlanError('独立計算の入力・式・出力・表示形式が不足しています')
+        if len(bindings)>12 or len(expression)>180:raise AutoQAPlanError('独立計算の定義が大きすぎます')
+        values={}
+        for variable, selector in bindings.items():
+            if not isinstance(variable,str) or not variable.isidentifier() or not isinstance(selector,str) or not selector:raise AutoQAPlanError('独立計算の入力定義が不正です')
+            matches=[step.get('value') for step in steps if isinstance(step,dict) and step.get('op')=='fill' and step.get('selector')==selector]
+            if len(matches)!=1 or isinstance(matches[0],bool) or not re.fullmatch(r'-?\d{1,12}(?:\.\d{1,6})?',str(matches[0])):raise AutoQAPlanError('独立計算に一意な数値入力がありません: '+selector)
+            values[variable]=decimal.Decimal(str(matches[0]))
+        try:node=ast.parse(expression,mode='eval')
+        except (ValueError,SyntaxError):raise AutoQAPlanError('独立計算式を解釈できません')
+        if sum(1 for _ in ast.walk(node))>40:raise AutoQAPlanError('独立計算式が複雑すぎます')
+        def evaluate(n):
+            if isinstance(n,ast.Expression):return evaluate(n.body)
+            if isinstance(n,ast.Name) and n.id in values:return values[n.id]
+            if isinstance(n,ast.Constant) and type(n.value) is int and abs(n.value)<=1000000:return decimal.Decimal(n.value)
+            if isinstance(n,ast.UnaryOp) and isinstance(n.op,(ast.USub,ast.UAdd)):
+                v=evaluate(n.operand);return -v if isinstance(n.op,ast.USub) else v
+            if isinstance(n,ast.BinOp) and isinstance(n.op,(ast.Add,ast.Sub,ast.Mult,ast.Div)):
+                a,b=evaluate(n.left),evaluate(n.right)
+                if isinstance(n.op,ast.Add):return a+b
+                if isinstance(n.op,ast.Sub):return a-b
+                if isinstance(n.op,ast.Mult):return a*b
+                return a/b
+            raise AutoQAPlanError('独立計算式は数値・入力名と四則演算だけを使用できます')
+        try:
+            with decimal.localcontext() as ctx:
+                ctx.prec=28
+                result=evaluate(node)
+        except (decimal.DecimalException,OverflowError,ZeroDivisionError):raise AutoQAPlanError('独立計算を実行できません')
+        if not result.is_finite() or abs(result)>decimal.Decimal('1e15'):raise AutoQAPlanError('独立計算の結果が範囲外です')
+        if result!=result.to_integral_value():raise AutoQAPlanError('小数の丸め規則が未定義です')
+        expected=template.replace('{value}',format(result.quantize(decimal.Decimal(1)),'f'))
+        actual=[c.get('value') for c in checks if isinstance(c,dict) and c.get('op')=='text_equals' and c.get('selector')==output]
+        if len(actual)!=1 or actual[0]!=expected:raise AutoQAPlanError('独立計算と検査期待値が一致しません: '+output+'（仕様に基づく計算: '+expected+'）')
+    return value
+
+
+def qa_independent_clock_differences(steps):
+    """Arithmetic on entered local HH:MM values, not business duration.
+
+    This does not assume overnight shifts, breaks, successful submissions or
+    which pair represents work; the specification must determine those rules.
+    """
+    clocks=[]
+    for step in steps:
+        if not isinstance(step,dict) or step.get('op') != 'fill':continue
+        value=step.get('value')
+        if not isinstance(value,str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',value):continue
+        hours,minutes=map(int,value.split(':'))
+        clocks.append((step.get('selector',''),value,hours*60+minutes))
+        if len(clocks)>=6:break
+    return [dict(start_selector=a[0],start=a[1],end_selector=b[0],end=b[1],signed_minutes=b[2]-a[2])
+            for i,a in enumerate(clocks) for b in clocks[i+1:]]
+
+
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
@@ -3618,7 +3714,10 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
         +'\n検査基準日（ブラウザの現地日付。期限判定はこの日と比較）:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
         +'\n日付の独立計算（前後の事実のみ。業務上の期限超過は仕様と状態から判断）:'+json.dumps(qa_independent_date_facts([step for row in prior for step in row['steps']]+raw.get('steps',[]),cfg.get('_qa_reference_clock',{})),ensure_ascii=False)
+        +'\n入力時刻の差分（当日内の符号付き分差のみ。夜間・休憩・業務時間は要件で判断）:'+json.dumps(qa_independent_clock_differences([step for row in prior for step in row['steps']]+raw.get('steps',[])),ensure_ascii=False)
         +'\n先行操作（保存内容は引き継がれる。初期状態と誤認しない）:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
+        +'\n開始状態:'+('workflowは空のブラウザ保存から開始。操作で指定されていない人数や記録を作らない。' if key=='base-workflow' else ('先行のworkflowが成功した状態を引き継ぐ。操作回数から成功した記録数を決めない。' if key=='base-variant' else '独立ケースは空のブラウザ保存から開始。操作で指定されていない人数や記録を作らない。'))
+        +'\n独立した入力履歴（入力操作のみ。保存成功・存在人数は意味しない）:'+json.dumps(qa_independent_input_history(prior,inputs),ensure_ascii=False,separators=(',',':'))
         +'\nクリックの時系列集計（操作回数のみ。登録成功・件数を保証しない。編集、削除、入力エラーも仕様に基づいて判断）:'+json.dumps(qa_action_timeline(prior,inputs),ensure_ascii=False,separators=(',',':'))
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
@@ -3658,6 +3757,9 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats
               '\n要求結果:'+str(spec.get('requested_outcome',''))[:400]+'\n対象要件:'+json.dumps(relevant,ensure_ascii=False)
               +'\n先行操作:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
               +'\n今回の操作:'+json.dumps(raw.get('steps',[]),ensure_ascii=False,separators=(',',':'))
+              +'\n開始状態:'+('先行検査の保存状態を引き継ぐ。未指定のデータを仮定しない。' if key=='base-variant' else '空のブラウザ保存から開始。未指定の人数やデータを仮定しない。')
+              +'\n独立した入力履歴（入力操作のみ。保存成功や人数を意味しない）:'+json.dumps(qa_independent_input_history(prior,raw.get('steps',[])),ensure_ascii=False,separators=(',',':'))
+              +'\n入力時刻の差分（当日内の符号付き分差。夜間・休憩・業務時間は要件で判断）:'+json.dumps(qa_independent_clock_differences([step for row in prior for step in row['steps']]+raw.get('steps',[])),ensure_ascii=False)
               +'\n基準日時:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
               +'\n数値を除去した表示形式（値は仕様から計算）:'+json.dumps((formats or {}).get(exact.get('selector'),{}),ensure_ascii=False)
               +'\n部分一致の検証対象:'+json.dumps(prompts,ensure_ascii=False))
@@ -3782,6 +3884,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 if receipt.get('input_sha')==input_sha:
                     cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
                     cached=validate_qa_inventory_actions(cached,inventory,key.removeprefix('base-'))
+                    qa_validate_declared_calculations(cached,spec,key.removeprefix('base-'))
                     if key=='base-variant' and qa_variant_repeats_workflow(cached,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                     if not (cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-'))):return cached
             except (ValueError,TypeError,KeyError):cached=None
@@ -3807,6 +3910,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 value=qa_resolve_unique_date_selector(value,inventory)
                 validated=validate(compile_qa_formatted_expectation(value,formats))
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
+                qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
                 return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
             repaired=None
             if cached is None and formatted and previous and cfg.get('qa_probe_units'):
