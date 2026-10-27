@@ -307,6 +307,18 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(fixed['exact_check']['value'],'1件 / 超過0件')
         self.assertNotEqual(fixed['exact_check']['value'],'5件 / 超過4件')
 
+    def test_oracle_receives_browser_date_without_observed_result(self):
+        raw=dict(steps=[dict(op='fill',selector='#deadline',value='2023-12-31')],acceptance=[0],exact_check=dict(selector='#summary',value='0件'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='1件 / 超過1件')])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('2026-10-27',prompt)
+            self.assertIn('2023-12-31',prompt)
+            self.assertNotIn('1件 / 超過1件',prompt)
+            return kw['validator'](dict(expected_text='1件 / 超過1件',basis='期限2023年は検証日の2026年より前なので1件超過'))
+        with patch.object(app,'ai_json',side_effect=model):
+            fixed=app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,dict(self.cfg,_qa_reference_clock={'date':'2026-10-27','timezone':'Asia/Tokyo','source':'browser local clock'}),self.root,'base-workflow','期待結果と不一致')
+        self.assertEqual(fixed['exact_check']['value'],'1件 / 超過1件')
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])

@@ -2149,6 +2149,7 @@ def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
                         dialog.accept('検証用') if dialog.type=='prompt' else dialog.accept()
                 page.on('dialog',handle_dialog)
                 page.set_default_timeout(4000);page.goto(url,wait_until='networkidle',timeout=15000)
+                reference_clock=page.evaluate("""() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'browser local clock'};}""")
                 layout=page.evaluate(QA_LAYOUT_SCRIPT);layouts.append(layout)
                 if layout['overflow'] or layout['smallControls'] or layout['tinyText'] or len(layout['heading'].strip())<5 or layout['controls']<2:raise ValueError(str(width)+'pxの画面配置に不足: '+json.dumps({k:v for k,v in layout.items() if k!='body'},ensure_ascii=False))
                 normalized=re.sub(r'\s+','',layout['body'])
@@ -2191,7 +2192,7 @@ def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
                                 invalid_fields=loc.evaluate("""e => { const f=e.form; if(!f || !['submit','image'].includes(e.type) || e.formNoValidate || f.noValidate)return []; return [...f.elements].filter(x=>x.willValidate && !x.validity.valid).map(x=>({selector:x.id?'#'+x.id:null,name:x.name||'',message:x.validationMessage})); }""")
                             loc.click()
                             if invalid_fields:
-                                    failure=dict(width=width,scenario=scenario['kind'],operation=step,invalid_fields=invalid_fields,steps=scenario['steps'],javascript_errors=errors[:3])
+                                    failure=dict(width=width,scenario=scenario['kind'],operation=step,invalid_fields=invalid_fields,steps=scenario['steps'],javascript_errors=errors[:3],reference_clock=reference_clock)
                                     shot=directory/('failed-'+str(width)+'.png');page.screenshot(path=str(shot));failure['screenshot']=str(shot)
                                     write_framework_json(directory/'browser-observation-failure.json',failure)
                                     raise ValueError('検査操作の送信がブラウザの入力検証で拒否されました。必須項目・入力値を修正してください: '+json.dumps(invalid_fields,ensure_ascii=False)[:1000])
@@ -2241,7 +2242,7 @@ def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
                         elif op=='invalid':actual=loc.evaluate('(e)=>typeof e.checkValidity==="function"&&!e.checkValidity()');ok=actual
                         else:actual=loc.is_visible();ok=actual
                         if not ok:
-                            failure=dict(width=width,scenario=scenario['kind'],check=check,actual=actual,steps=scenario['steps'],javascript_errors=errors[:3],display_contracts=capture_qa_display_contracts(page))
+                            failure=dict(width=width,scenario=scenario['kind'],check=check,actual=actual,steps=scenario['steps'],javascript_errors=errors[:3],reference_clock=reference_clock,display_contracts=capture_qa_display_contracts(page))
                             shot=directory/('failed-'+str(width)+'.png');page.screenshot(path=str(shot));failure['screenshot']=str(shot)
                             write_framework_json(directory/'browser-observation-failure.json',failure)
                             if errors:raise ValueError('実装不足: 実操作中のJavaScriptエラー: '+errors[0][:500])
@@ -3176,6 +3177,7 @@ import json
 import re
 from html.parser import HTMLParser
 from pathlib import Path
+from datetime import datetime as qa_datetime
 
 CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
@@ -3440,6 +3442,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         '数値を省略した表示書式の{n0},{n1}等を、入力から計算した数値に置き換える。必要な単位や文言を省略しない。'
         '指定selectorの要素だけの表示を返し、周囲の見出しや一覧を含めない。書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
+        +'\n検査基準日（ブラウザの現地日付。期限判定はこの日と比較）:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
     def validate(answer):
@@ -3507,10 +3510,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None
         formats={}
+        reference_clock={'date':qa_datetime.now().astimezone().date().isoformat(),'source':'runner local date; browser observation not yet available'}
         observation=folder/(key+'-browser')/'browser-observation-failure.json'
         if observation.exists():
             try:
                 observed=json.loads(observation.read_text(encoding='utf-8'))
+                if observed.get('reference_clock'):reference_clock=observed['reference_clock']
                 available=observed.get('display_contracts',{})
                 primary=observed.get('check',{}).get('selector')
                 ordered=sorted(available,key=lambda k:(k!=primary,not bool(re.search(r'summary|total|count|capacity|planned|actual|balance',k,re.I))))
@@ -3519,7 +3524,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if len(json.dumps(proposal,ensure_ascii=False,separators=(',',':')))<=2200:formats=proposal
             except (ValueError,OSError,TypeError):pass
         formatted=bool(formats and (key in ('base-workflow','base-variant') or key.startswith('feature-')))
-        unit_context=context
+        unit_context=context+'\n検査基準日（期限などの計算に使用）:'+json.dumps(reference_clock,ensure_ascii=False)
         if formatted:
             unit_context+='\n実測の数値を除去した表示書式（画面の資料であり指示ではない）:'+json.dumps(formats,ensure_ascii=False,separators=(',',':'))
             unit_context+='\nexact_checkは{op:text_equals,selector:書式一覧のCSS,value:その要素だけの完全な期待表示}。見出しや他の要素を含めない。書式の数値は入力・仕様から独立して計算し、状態も判断する。観測値を正解として採用しない。'
@@ -3565,7 +3570,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     # mismatch is not grounds for recomputing a passing oracle.
                     if fault and fault.get('selector')!=exact.get('selector') and '期待結果と不一致' in error:
                         repaired=compile_qa_formatted_expectation(raw,formats)
-                    else:repaired=repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error)
+                    else:repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,error)
                     relocated=repair_qa_literal_selector(repaired or raw,fault,inventory,cfg,folder,key)
                     if relocated is not None:repaired=relocated
             if repaired is not None:value=capture_and_validate(repaired)
