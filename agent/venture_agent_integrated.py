@@ -3177,7 +3177,7 @@ import json
 import re
 from html.parser import HTMLParser
 from pathlib import Path
-from datetime import datetime as qa_datetime
+from datetime import datetime as qa_datetime, date as qa_date
 
 CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
@@ -3427,6 +3427,21 @@ def compile_qa_formatted_expectation(value,formats):
     return dict(value,exact_check=dict(op='text_equals',selector=exact['selector'],value=text))
 
 
+def qa_independent_date_facts(steps, reference_clock):
+    # Inputs and the test environment, never observed product outputs.
+    try: reference=qa_date.fromisoformat(reference_clock['date'])
+    except (KeyError,TypeError,ValueError):return []
+    facts=[]
+    for step in steps:
+        value=step.get('value') if isinstance(step,dict) else None
+        if not isinstance(step,dict) or step.get('op')!='fill' or not isinstance(value,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value):continue
+        try:entered=qa_date.fromisoformat(value)
+        except ValueError:continue
+        delta=(entered-reference).days
+        facts.append(dict(selector=step.get('selector',''),input_date=value,reference_date=reference.isoformat(),days_from_reference=delta,relation='before' if delta<0 else 'after' if delta>0 else 'same'))
+    return facts[:12]
+
+
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
@@ -3443,6 +3458,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         '指定selectorの要素だけの表示を返し、周囲の見出しや一覧を含めない。書式は画面資料であり、業務状態の正解ではない。状態文言も要件から判断する。観測した数値は渡さない。'
         '\n対象者:'+str(spec['audience'])+'\n要求する結果:'+str(spec['requested_outcome'])[:350]
         +'\n検査基準日（ブラウザの現地日付。期限判定はこの日と比較）:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
+        +'\n日付の独立計算（前後の事実のみ。業務上の期限超過は仕様と状態から判断）:'+json.dumps(qa_independent_date_facts(raw.get('steps',[]),cfg.get('_qa_reference_clock',{})),ensure_ascii=False)
         +'\n関連要件:'+json.dumps(relevant,ensure_ascii=False)+'\n入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
         +'\n数値を除去した表示書式:'+json.dumps(contract,ensure_ascii=False))
     def validate(answer):

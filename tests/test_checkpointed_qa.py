@@ -307,6 +307,14 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(fixed['exact_check']['value'],'1件 / 超過0件')
         self.assertNotEqual(fixed['exact_check']['value'],'5件 / 超過4件')
 
+    def test_date_facts_are_independent_and_do_not_infer_business_state(self):
+        steps=[dict(op='fill',selector='#deadline',value='2023-12-31'),dict(op='fill',selector='#future',value='2027-01-01'),dict(op='fill',selector='#bad',value='2026-02-30')]
+        facts=app.qa_independent_date_facts(steps,{'date':'2026-10-27'})
+        self.assertEqual([x['relation'] for x in facts],['before','after'])
+        self.assertEqual(facts[0]['days_from_reference'],-1031)
+        self.assertNotIn('overdue',str(facts))
+        self.assertEqual(app.qa_independent_date_facts(steps,{}),[])
+
     def test_oracle_receives_browser_date_without_observed_result(self):
         raw=dict(steps=[dict(op='fill',selector='#deadline',value='2023-12-31')],acceptance=[0],exact_check=dict(selector='#summary',value='0件'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='1件 / 超過1件')])
