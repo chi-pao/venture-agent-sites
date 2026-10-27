@@ -94,7 +94,7 @@ class CheckpointedQAPlannerTests(TestCase):
         with self.assertRaises(TimeoutError):self.plan()
         error=next(self.root.rglob('base-variant-error.json'))
         (error.parent/'base-variant-last-response.json').write_text(json.dumps({'stale':'OLD_RESPONSE_MARKER'}),encoding='utf-8')
-        self.plan()
+        plan=self.plan()
         prompt=[c['prompt'] for c in self.calls if c['key']=='variant'][-1]
         self.assertNotIn('OLD_RESPONSE_MARKER',prompt)
         self.assertIn('TimeoutError',prompt)
@@ -240,13 +240,16 @@ class CheckpointedQAPlannerTests(TestCase):
         with self.assertRaises(app.AutoQAPlanError):app.compile_qa_roundtrip(dict(value,mutation_steps=[dict(op='click',selector='#clear')]),5)
 
     def test_backup_binding_prompt_does_not_conflict_with_legacy_steps_envelope(self):
-        self.plan()
+        plan=self.plan()
         prompt=next(x['prompt'] for x in self.calls if x['key']=='roundtrip')
         self.assertIn('"csv_selector"',prompt)
         self.assertIn('steps/kindは出力しない',prompt)
         self.assertNotIn('stepsは{op,selector',prompt)
         self.assertNotIn('"steps":',prompt)
-        self.assertIn('復元後の期待値:',prompt)
+        self.assertIn('checksは出力しない',prompt)
+        reload=next(s for s in plan['scenarios'] if s['kind']=='reload')
+        restored=next(s for s in plan['scenarios'] if s['kind']=='roundtrip')
+        self.assertEqual(restored['checks'],reload['checks'])
 
     def test_ollama_contract_uses_direct_required_keys_not_required_only_union(self):
         for schema in (app.qa_unit_schema(5,'workflow'),app.qa_roundtrip_schema(5)):
