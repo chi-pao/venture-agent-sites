@@ -3511,6 +3511,41 @@ def qa_unsubmitted_forms(value, inventory):
     return missing
 
 
+def repair_qa_invalid_submission(raw, observation, inventory, cfg):
+    """Repair only controls rejected by Chromium, preserving the oracle."""
+    steps=raw.get('steps',[]) if isinstance(raw,dict) else []
+    failed=observation.get('invalid_fields',[]) if isinstance(observation,dict) else []
+    operation=observation.get('operation',{}) if isinstance(observation,dict) else {}
+    if not failed or len(failed)>8 or operation.get('op')!='click' or steps!=observation.get('steps'):return None
+    targets=[f.get('selector') for f in failed if isinstance(f,dict)]
+    if len(targets)!=len(failed) or len(set(targets))!=len(targets):return None
+    nodes={n['selector']:n for n in inventory['controls']}
+    if any(t not in nodes or nodes[t].get('tag') not in ('input','select','textarea') for t in targets):return None
+    clicks=[i for i,s in enumerate(steps) if s==operation]
+    if len(clicks)!=1 or len(steps)+len(targets)>24:return None
+    schema={'type':'object','properties':{'inputs':{'type':'array','minItems':len(targets),'maxItems':len(targets),'items':{'type':'object','properties':{'selector':{'type':'string','enum':targets},'value':{'type':'string','minLength':1,'maxLength':100}},'required':['selector','value'],'additionalProperties':False}}},'required':['inputs'],'additionalProperties':False}
+    prompt=('独立QA。ブラウザが送信を拒否した必須項目だけを埋める。既存の操作・期待値は変更しない。'
+        '入力済みの値と整合する具体値を決め、selectは提示されたoptionのvalueを使う。JSON {"inputs":[{"selector":"CSS","value":"値"}]}のみ返す。'
+        '\n拒否された項目:'+json.dumps([nodes[t] for t in targets],ensure_ascii=False)
+        +'\n既存操作:'+json.dumps(steps,ensure_ascii=False,separators=(',',':')))
+    def validate(answer):
+        items=answer.get('inputs') if isinstance(answer,dict) else None
+        if not isinstance(items,list) or len(items)!=len(targets) or any(not isinstance(i,dict) for i in items) or {i.get('selector') for i in items}!=set(targets):raise AutoQAPlanError('拒否された項目それぞれに値が必要です')
+        additions=[]
+        for item in items:
+            node=nodes[item['selector']];v=item.get('value')
+            if not isinstance(v,str) or not v or len(v)>100:raise AutoQAPlanError('必須項目に有効な値が必要です')
+            if node['tag']=='select':
+                if v not in [o.get('value') for o in node.get('options',[]) if o.get('value')]:raise AutoQAPlanError('選択値は該当要素のoptionから指定してください')
+                op='select'
+            elif node.get('type') in ('file','checkbox','radio','button','submit'):raise AutoQAPlanError('自動で補えない必須項目です')
+            else:op='fill'
+            additions.append(dict(op=op,selector=item['selector'],value=v))
+        i=clicks[0]
+        return dict(raw,steps=steps[:i]+additions+steps[i:])
+    return ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+
+
 def validate_qa_inventory_actions(value,inventory,kind):
     nodes=inventory['controls']+inventory['outputs']
     for step in value.get('steps',[]):
@@ -3830,6 +3865,7 @@ def qa_variant_repeats_workflow(value, scenarios):
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
+    full_inventory=inventory
     signature=hashlib.sha256(json.dumps(dict(policy=CHECKPOINT_QA_POLICY,name=name,spec=spec,
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
@@ -3948,6 +3984,15 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                         repaired=repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key)
                     else:
                         repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
+            # The browser can identify exact required controls even when a
+            # bounded prompt omitted them. Fix only those inputs, then rerun
+            # the unchanged independent assertions on the real browser.
+            if repaired is None and cached is None and previous and cfg.get('qa_probe_units') and '入力検証で拒否' in error and observation.exists():
+                try:
+                    observed=json.loads(observation.read_text(encoding='utf-8'))
+                    raw=qa_resolve_unique_date_selector(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),full_inventory)
+                    repaired=repair_qa_invalid_submission(raw,observed,full_inventory,cfg)
+                except (ValueError,OSError,TypeError):pass
             if repaired is not None:value=capture_and_validate(repaired)
             else:
                 value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,

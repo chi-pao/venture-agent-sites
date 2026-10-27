@@ -489,6 +489,22 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(expected_text='{n0}件',basis='入力から数値だけを計算する根拠があります'))):
             with self.assertRaises(app.AutoQAPlanError):app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,self.cfg,self.root,'base-workflow','expected_values')
 
+    def test_invalid_submission_repair_is_bound_to_browser_evidence(self):
+        steps=[dict(op='fill',selector='#title',value='開発'),dict(op='click',selector='#save')]
+        raw=dict(steps=steps,checks=[dict(op='text_equals',selector='#total',value='420')],acceptance=[0])
+        observation=dict(steps=steps,operation=steps[-1],invalid_fields=[dict(selector='#date'),dict(selector='#status')])
+        inventory=dict(controls=[dict(tag='input',type='date',selector='#date'),dict(tag='select',selector='#status',options=[dict(value='done',label='完了')])],outputs=[])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('#date',prompt);self.assertIn('done',prompt)
+            return kw['validator'](dict(inputs=[dict(selector='#date',value='2026-10-27'),dict(selector='#status',value='done')]))
+        with patch.object(app,'ai_json',side_effect=model):
+            fixed=app.repair_qa_invalid_submission(raw,observation,inventory,self.cfg)
+        self.assertEqual(fixed['checks'],raw['checks']);self.assertEqual(fixed['steps'][-1],steps[-1])
+        self.assertEqual(fixed['steps'][1:3],[dict(op='fill',selector='#date',value='2026-10-27'),dict(op='select',selector='#status',value='done')])
+        self.assertIsNone(app.repair_qa_invalid_submission(raw,dict(observation,steps=[]),inventory,self.cfg))
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(inputs=[dict(selector='#date',value='2026-10-27'),dict(selector='#status',value='invented')]))):
+            with self.assertRaises(app.AutoQAPlanError):app.repair_qa_invalid_submission(raw,observation,inventory,self.cfg)
+
     def test_oracle_rejects_missing_percentage_without_inventing_value(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
