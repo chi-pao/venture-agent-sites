@@ -2185,7 +2185,15 @@ def execute_browser_qa(name,page_source,plan,directory,*,prefix_only=False):
                             if 'label' in step:loc.select_option(label=str(step['label']))
                             else:loc.select_option(str(step.get('value','')))
                         elif op=='check':loc.set_checked(bool(step.get('value',True)))
-                        elif op=='click':loc.click()
+                        elif op=='click':
+                            loc.click()
+                            if scenario['kind'] in ('workflow','variant','feature'):
+                                invalid_fields=loc.evaluate("""e => { const f=e.form; if(!f || !['submit','image'].includes(e.type) || e.formNoValidate || f.noValidate)return []; return [...f.elements].filter(x=>x.willValidate && !x.validity.valid).map(x=>({selector:x.id?'#'+x.id:null,name:x.name||'',message:x.validationMessage})); }""")
+                                if invalid_fields:
+                                    failure=dict(width=width,scenario=scenario['kind'],operation=step,invalid_fields=invalid_fields,steps=scenario['steps'],javascript_errors=errors[:3])
+                                    shot=directory/('failed-'+str(width)+'.png');page.screenshot(path=str(shot));failure['screenshot']=str(shot)
+                                    write_framework_json(directory/'browser-observation-failure.json',failure)
+                                    raise ValueError('検査操作の送信がブラウザの入力検証で拒否されました。必須項目・入力値を修正してください: '+json.dumps(invalid_fields,ensure_ascii=False)[:1000])
                         elif op=='cancel_restore':
                             if step.get('inline'):
                                 # A separate in-page confirmation must be dismissed by

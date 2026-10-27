@@ -90,6 +90,17 @@ class AutomaticQATests(ContinuationTests):
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)
+ def test_real_submit_rejection_returns_invalid_field_not_new_oracle(self):
+  page=self.install(1);plan=work_plan();plan['scenarios']=plan['scenarios'][:1];plan['feature_cases']=[]
+  plan['scenarios'][0]['steps']=[s for s in plan['scenarios'][0]['steps'] if s.get('selector')!='#title']
+  directory=self.root/'invalid-submit';directory.mkdir()
+  with self.assertRaisesRegex(ValueError,'送信がブラウザの入力検証で拒否'):
+   app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  observed=json.loads((directory/'browser-observation-failure.json').read_text())
+  self.assertEqual(observed['operation']['selector'],'#taskForm button')
+  self.assertIn('#title',[x['selector'] for x in observed['invalid_fields']])
+  self.assertNotIn('check',observed)
+  self.assertTrue(Path(observed['screenshot']).is_file())
  def test_real_browser_prefix_never_grants_final_acceptance_and_records_observed_mismatch(self):
   page=self.install(1);plan=work_plan();plan['scenarios']=plan['scenarios'][:1];plan['feature_cases']=[]
   directory=self.root/'prefix';directory.mkdir()
@@ -359,4 +370,5 @@ class VisualReviewEvidenceTests(__import__('unittest').TestCase):
   with self.assertRaises(app.AutoQAPlanError):app.validate_visual_review_evidence(review,['design'])
 
 if __name__=='__main__':import unittest;unittest.main()
+
 
