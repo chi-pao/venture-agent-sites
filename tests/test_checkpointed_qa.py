@@ -511,6 +511,9 @@ class CheckpointedQAPlannerTests(TestCase):
         bad=dict(expected_text='出欠記録一覧（出席扱い1/1、欠席0）',basis='一人が出席し欠席者はいないため')
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](bad)):
             with self.assertRaisesRegex(app.AutoQAPlanError,'割合'):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
+        wrapped=dict(expected_text='出欠記録一覧（出席扱い100%（出席扱い1/1、欠席0））',basis='一人が出席し欠席者はいないため')
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](wrapped)):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'見出しや一覧'):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
         good=dict(expected_text='50%（出席扱い1/2、欠席1）',basis='一人が出席しもう一人が欠席のため')
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](good)):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')

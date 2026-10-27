@@ -479,6 +479,11 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         # malformed oracle against Chromium indefinitely.
         if re.search(r'\{n\d+\}\s*[%％]',contract.get('template','')) and not re.search(r'\d\s*[%％]',answer['expected_text']):
             raise AutoQAPlanError('expected_values: 表示書式には割合の数値と%があります。入力と要件から割合を計算して完全な期待文字列に含めてください')
+        # The observation describes this selector's display boundaries only.
+        # Do not copy its values or state into the oracle. A percentage-first
+        # element cannot be checked using a surrounding heading or a list.
+        if re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')) and not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',answer['expected_text']):
+            raise AutoQAPlanError('expected_values: 対象要素は割合から始まります。見出しや一覧を混ぜず、割合から始まる完全な期待値を仕様から計算してください')
         if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
         return dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['expected_text']))
     oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
