@@ -271,6 +271,12 @@ def validate_qa_inventory_actions(value,inventory,kind):
             raise AutoQAPlanError('checkはcheckbox/radioだけです: '+selector+' は '+tag+'/'+typ+'。表示の照合はchecksへ記述してください')
         if op=='fill' and (tag not in ('input','textarea') or typ in ('file','checkbox','radio','button','submit')):
             raise AutoQAPlanError('実画面の要素に合わない操作: fill '+selector+' は '+tag+'/'+typ+'。選択欄にはselectを使ってください')
+        if op=='fill' and typ=='number':
+            raw=step.get('value')
+            try:
+                if isinstance(raw,bool) or raw is None or not decimal.Decimal(str(raw)).is_finite():raise ValueError()
+            except (decimal.InvalidOperation,ValueError):
+                raise AutoQAPlanError('数値入力欄 '+selector+' に時刻や文字列は入力できません。画面ラベルと要件の単位を確認し数値で入力してください: '+str(raw)[:80])
         if op=='select' and tag!='select':raise AutoQAPlanError('selectは選択欄だけです: '+selector)
         if op=='click' and typ=='file':raise AutoQAPlanError('ファイル入力へclickはできません。復元専用の検査を使用: '+selector)
         if kind in ('workflow','variant') and op in ('download_csv','download_json','restore_file','restore_invalid','cancel_restore'):
@@ -649,7 +655,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==input_sha:
                     cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
-                    cached=validate_qa_inventory_actions(cached,inventory,key.removeprefix('base-'))
+                    cached=validate_qa_inventory_actions(cached,full_inventory,key.removeprefix('base-'))
                     qa_validate_declared_calculations(cached,spec,key.removeprefix('base-'))
                     if key=='base-variant' and qa_variant_repeats_workflow(cached,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                     if not (cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-'))):return cached
@@ -682,7 +688,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 validated=validate(compile_qa_formatted_expectation(value,formats))
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
-                return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
+                return validate_qa_inventory_actions(validated,full_inventory,key.removeprefix('base-'))
             repaired=None
             if cached is None and formatted and previous and cfg.get('qa_probe_units'):
                 try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))

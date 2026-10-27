@@ -511,6 +511,14 @@ class CheckpointedQAPlannerTests(TestCase):
         with self.assertRaisesRegex(app.AutoQAPlanError,r'steps\[1\].*selector'):
             app.validate_qa_unit(value,'workflow',1)
 
+    def test_number_control_rejects_time_text_without_guessing_conversion(self):
+        inventory=dict(controls=[dict(tag='input',type='number',selector='#planned_minutes')],outputs=[])
+        value=dict(steps=[dict(op='fill',selector='#planned_minutes',value='08:00')])
+        with self.assertRaisesRegex(app.AutoQAPlanError,'単位'):
+            app.validate_qa_inventory_actions(value,inventory,'workflow')
+        value['steps'][0]['value']='480'
+        self.assertEqual(app.validate_qa_inventory_actions(value,inventory,'workflow'),value)
+
     def test_oracle_rejects_missing_percentage_without_inventing_value(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
