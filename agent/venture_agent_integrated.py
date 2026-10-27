@@ -3515,6 +3515,21 @@ def repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key):
         dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),250,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
 
 
+def qa_variant_repeats_workflow(value, scenarios):
+    # A repeat of every input and action is not an input-difference test.
+    # Compare the actions themselves, not the displayed or expected result.
+    if not isinstance(value, dict) or not scenarios:
+        return False
+    prior = next((s for s in scenarios if s.get('kind') == 'workflow'), None)
+    if not prior:
+        return False
+    def relevant(steps):
+        return [{k: step[k] for k in ('op', 'selector', 'value', 'label', 'nth') if k in step}
+                for step in steps if isinstance(step, dict) and step.get('op') in ('fill', 'select', 'check', 'click')]
+    current = relevant(value.get('steps', []))
+    return bool(current) and current == relevant(prior.get('steps', []))
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -3578,6 +3593,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 if receipt.get('input_sha')==input_sha:
                     cached=validate_qa_unit(receipt['value'],'roundtrip',count) if key=='base-roundtrip' else (validate_qa_unit(receipt['value'],'invalid',count) if key=='base-invalid' else validate(receipt['value']))
                     cached=validate_qa_inventory_actions(cached,inventory,key.removeprefix('base-'))
+                    if key=='base-variant' and qa_variant_repeats_workflow(cached,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                     if not (cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-'))):return cached
             except (ValueError,TypeError,KeyError):cached=None
         if error_path.exists():
@@ -3594,6 +3610,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 validated=validate(compile_qa_formatted_expectation(value,formats))
+                if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 return validate_qa_inventory_actions(validated,inventory,key.removeprefix('base-'))
             repaired=None
             if cached is None and formatted and previous and cfg.get('qa_probe_units'):
@@ -3601,7 +3618,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 except (ValueError,OSError):raw=None
                 # A concrete UI operation error needs operation repair, not a
                 # new oracle. Only expectation/format failures take this path.
-                if raw and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
+                if raw and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)) and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
                     fault=None
                     if observation.exists():
                         try:fault=json.loads(observation.read_text(encoding='utf-8')).get('check')

@@ -360,6 +360,14 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(app.qa_action_timeline(prior,current),[
             dict(selector='#cancel',prior=1,current=0),dict(selector='#submit',prior=1,current=2)])
 
+    def test_variant_must_not_repeat_identical_inputs_and_actions(self):
+        steps=[dict(op='fill',selector='#order',value='123456'),dict(op='click',selector='#save')]
+        prior=[dict(kind='workflow',steps=steps)]
+        self.assertTrue(app.qa_variant_repeats_workflow(dict(steps=copy.deepcopy(steps)),prior))
+        changed=copy.deepcopy(steps);changed[0]['value']='654321'
+        self.assertFalse(app.qa_variant_repeats_workflow(dict(steps=changed),prior))
+        self.assertFalse(app.qa_variant_repeats_workflow(dict(steps=steps),[]))
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
