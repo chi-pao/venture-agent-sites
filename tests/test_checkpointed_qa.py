@@ -396,6 +396,22 @@ class CheckpointedQAPlannerTests(TestCase):
         value['exact_check']['value']='2件'
         app.validate_qa_unit(value,'workflow',1)
 
+    def test_conflicting_oracle_repair_preserves_actions_and_independent_checks(self):
+        raw=dict(steps=[dict(op='fill',selector='#item',value='A'),dict(op='click',selector='#save')],
+                 checks=[dict(op='text_contains',selector='#summary',value='1件'),dict(op='visible',selector='#item')],
+                 exact_check=dict(op='text_equals',selector='#summary',value='2件'),acceptance=[0])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertNotIn('実測値:2件',prompt)
+            return kw['validator'](dict(expected_text='2件',replacement_values=['2件'],basis='先行入力と今回入力を照合し2件と計算'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_conflicting_checks(raw,self.spec,self.cfg,self.root,'base-variant',[])
+        self.assertEqual(result['steps'],raw['steps'])
+        self.assertEqual(result['checks'][1],raw['checks'][1])
+        self.assertEqual(result['checks'][0]['value'],'2件')
+        app.validate_qa_unit(result,'variant',len(self.spec['acceptance']))
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(expected_text='2件',replacement_values=['1件'],basis='入力から独立に計算した結果です'))):
+            with self.assertRaises(app.AutoQAPlanError):app.repair_qa_conflicting_checks(raw,self.spec,self.cfg,self.root,'base-variant',[])
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
