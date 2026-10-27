@@ -3451,8 +3451,9 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
             raise AutoQAPlanError('主結果の単位・補足まで含む完全な期待文字列が必要です')
         if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
         return dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['expected_text']))
-    repaired=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=schema,
-        max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
+    repaired=ai_json(prompt,oracle_cfg,450,schema=schema,
+        max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
     write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(inputs,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
     return repaired
 

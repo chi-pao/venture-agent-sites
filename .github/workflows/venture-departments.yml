@@ -100,12 +100,14 @@ jobs:
           ollama pull qwen2.5-coder:7b
           ollama pull qwen2.5vl:3b
           ollama pull qwen2.5:7b
+          ollama pull qwen2.5:14b
       - name: Compile production code and live test
         env:
           PYTHONPATH: tests
           VENTURE_LIVE_MODEL: qwen2.5-coder:7b
           VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
           VENTURE_LIVE_QA_MODEL: qwen2.5:7b
+          VENTURE_LIVE_ORACLE_MODEL: qwen2.5:14b
           VENTURE_LIVE_PROPOSAL_MODEL: ${{ matrix.product == 'workday' && 'qwen2.5:7b' || '' }}
           VENTURE_LIVE_DATA_HOME: department-live-artifacts/${{ matrix.product }}
           VENTURE_LIVE_PRODUCT: ${{ matrix.product }}

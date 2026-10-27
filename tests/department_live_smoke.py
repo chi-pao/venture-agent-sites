@@ -32,6 +32,8 @@ def main():
     proposal_model=os.environ.get('VENTURE_LIVE_PROPOSAL_MODEL','').strip()
     qa_model=os.environ.get('VENTURE_LIVE_QA_MODEL','').strip()
     cfg['department_models']={role:model for role,model in (('proposal',proposal_model),('verification',qa_model)) if model}
+    oracle_model=os.environ.get('VENTURE_LIVE_ORACLE_MODEL','').strip()
+    if oracle_model:cfg.update(qa_oracle_model=oracle_model,qa_oracle_timeout=300)
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):
@@ -46,9 +48,10 @@ def main():
                 return
         raise RuntimeError('部署制御の実生成は3周内に品質基準へ到達していません。未完成のまま保持します。')
     finally:
-        (root/'department-proof.json').write_text(json.dumps(dict(product=name,models=dict(coding=cfg['model'],proposal=proposal_model or cfg['model'],verification=qa_model or cfg['model'],vision=cfg['qa_vision_model']),rounds=results,
+        (root/'department-proof.json').write_text(json.dumps(dict(product=name,models=dict(coding=cfg['model'],proposal=proposal_model or cfg['model'],verification=qa_model or cfg['model'],vision=cfg['qa_vision_model'],oracle=oracle_model or qa_model or cfg['model']),rounds=results,
             seconds=round(time.monotonic()-started,2),release_ready=bool(results and results[-1]['stage']=='のぼるさん確認待ち')),
             ensure_ascii=False,indent=2),encoding='utf-8')
 
 
 if __name__=='__main__':main()
+
