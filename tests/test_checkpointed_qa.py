@@ -33,7 +33,9 @@ class CheckpointedQAPlannerTests(TestCase):
     def tearDown(self):app.OUT=self.previous_out;self.tmp.cleanup()
 
     def model(self,prompt,cfg,tokens,**kw):
-        if '独立QA監査。' in prompt:
+        if '再読込の完成条件番号' in prompt:
+            key='reload-binding';value=dict(acceptance=next(x['acceptance'] for x in self.full['scenarios'] if x['kind']=='reload'))
+        elif '独立QA監査。' in prompt:
             key='audit';value=dict(valid=True,reasons=[])
         elif '共通検査のうち' in prompt:
             kind=re.search(r'共通検査のうち([a-z]+)の1件',prompt).group(1);key=kind
@@ -109,7 +111,16 @@ class CheckpointedQAPlannerTests(TestCase):
     def test_complete_plan_reuses_every_validated_unit_without_inference(self):
         first=self.plan();count=len(self.calls);second=self.plan()
         self.assertEqual(first,second);self.assertEqual(len(self.calls),count)
-        self.assertEqual(count,20)  # 5 base + 10 feature cases + 5 independent audits.
+        self.assertEqual(count,20)  # 4 base + reload mapping + 10 feature cases + 5 audits.
+
+    def test_reload_rechecks_the_prior_independent_expected_values(self):
+        plan=self.plan()
+        variant=next(s for s in plan['scenarios'] if s['kind']=='variant')
+        reload=next(s for s in plan['scenarios'] if s['kind']=='reload')
+        self.assertEqual(reload['steps'],[dict(op='reload')])
+        self.assertEqual(reload['checks'],variant['checks'])
+        self.assertEqual(reload['acceptance'],next(s['acceptance'] for s in self.full['scenarios'] if s['kind']=='reload'))
+        self.assertEqual(sum(c['key']=='reload-binding' for c in self.calls),1)
 
     def test_each_request_is_small_and_scripts_never_enter_context(self):
         self.plan()

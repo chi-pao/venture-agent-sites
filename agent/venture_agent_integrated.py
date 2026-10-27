@@ -3954,7 +3954,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'fillはinput/textareaだけ、select要素はselectとvalueまたはlabelで選択。checkはcheckbox/radioのみに使い、結果表示には使わない。'
         'bodyやhtml禁止。説明やMarkdown不要。')
 
-    def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
+    def part(key,prompt,validate,tokens=1000,include_context=True,schema=None,supplied=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None;failure={}
         formats={}
         reference_clock={'date':qa_datetime.now().astimezone().date().isoformat(),'source':'runner local date; browser observation not yet available'}
@@ -4055,7 +4055,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     raw=qa_resolve_unique_date_selector(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),full_inventory)
                     repaired=repair_qa_invalid_submission(raw,observed,full_inventory,attempt_cfg)
                 except (ValueError,OSError,TypeError):pass
-            if repaired is not None:value=capture_and_validate(repaired)
+            if supplied is not None:
+                # Reload must reproduce the preceding independently specified
+                # checks, not ask another model to invent a new oracle.
+                value=capture_and_validate(supplied)
+            elif repaired is not None:value=capture_and_validate(repaired)
             else:
                 value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                     request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
@@ -4095,7 +4099,23 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
         prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
-        if kind=='roundtrip':
+        if kind=='reload':
+            last=scenarios[-1]
+            # Only the requirement mapping needs a model. The actual checks
+            # remain the previous independent oracle and are executed again.
+            def validate_reload_binding(value):
+                indexes=value.get('acceptance') if isinstance(value,dict) else None
+                if not isinstance(indexes,list) or any(type(i)is not int or not 0<=i<count for i in indexes):raise AutoQAPlanError('再読込で確認する完成条件番号が不正です')
+                return dict(acceptance=indexes)
+            binding_schema={'type':'object','properties':{'acceptance':{'type':'array','items':{'type':'integer','minimum':0,'maximum':max(0,count-1)}}},'required':['acceptance'],'additionalProperties':False}
+            binding_prompt=('再読込の完成条件番号だけをJSON {"acceptance":[0]}で返す。直前の期待値が再読込後にも同じことを確かめる。該当しない条件は含めない。'
+                '\n完成条件:'+json.dumps(acceptance,ensure_ascii=False)+'\n直前の独立検査:'+json.dumps(last['checks'],ensure_ascii=False,separators=(',',':')))
+            binding=part('reload-binding',binding_prompt,validate_reload_binding,tokens=250,include_context=False,schema=binding_schema)
+            same_state=dict(steps=[dict(op='reload')],checks=last['checks'],acceptance=binding['acceptance'],
+                rationale='再読込後も直前に独立して指定した同じ結果を確認する')
+            value=part('base-reload',prompt,lambda v:validate_qa_unit(v,'reload',count),tokens=0,
+                schema=qa_unit_schema(count,'reload'),supplied=same_state)
+        elif kind=='roundtrip':
             prompt=('共通検査のうちroundtripの1件。バックアップ検査の対象と変更例だけをJSONで指定。stepsやop:download_csvは返さない。'
                 'csv_selector:CSV出力ボタンのCSS,csv_contains:直前までに保存した入力値2件以上,json_selector:JSON出力ボタンCSS,restore_selector:復元ファイル入力または選択ラベルのCSS,'
                 'confirmation_mode:ブラウザconfirmならnative、画面内に確定とキャンセルがあればinline。inlineではcancel_selectorに画面のキャンセルボタンCSSが必須。'
