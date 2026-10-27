@@ -180,9 +180,10 @@ def validate_qa_unit(value,kind,acceptance_count):
         raise AutoQAPlanError('acceptanceは0始まり整数だけの配列（例:[0,1]）。条件オブジェクト・文字列は禁止。実際の値: '+json.dumps(covers,ensure_ascii=False)[:400])
     selector=lambda s:isinstance(s,str) and 1<=len(s)<=180 and not re.search(r'^(?:html|body|\*|xpath=)|>>|javascript:',s,re.I)
     allowed={'fill','click','select','check','reload','wait','download_json','download_csv','restore_file','restore_invalid','cancel_restore'}
-    for step in steps:
+    for index,step in enumerate(steps):
         if not isinstance(step,dict) or step.get('op') not in allowed:raise AutoQAPlanError('不正な検査操作')
-        if step['op'] not in ('reload','wait') and not selector(step.get('selector')):raise AutoQAPlanError('操作対象が不正です')
+        if step['op'] not in ('reload','wait') and not selector(step.get('selector')):
+            raise AutoQAPlanError('操作対象が不正です。steps['+str(index)+']の'+str(step['op'])+'に実画面のselectorを同じオブジェクトで指定してください: '+json.dumps(step,ensure_ascii=False)[:300])
         if step['op']=='download_csv' and (not isinstance(step.get('contains'),list) or not 2<=len(step['contains'])<=8 or any(not isinstance(v,str) or not 1<=len(v)<=100 for v in step['contains'])):raise AutoQAPlanError('CSVの照合値が2件以上必要です')
         if len(str(step.get('value','')))>300:raise AutoQAPlanError('入力値が長すぎます')
         if step['op']=='wait' and (type(step.get('value'))is not int or not 100<=step['value']<=10000):raise AutoQAPlanError('待機時間が不正です')
@@ -609,7 +610,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     nodes=sorted(nodes,key=lambda n: (0 if n.get('required') else 1 if n.get('tag')=='button' else 2))
     inventory=dict(controls=fit(nodes,2600),outputs=fit(inventory['outputs'],1300))
     context='同じformに属する必須項目を入力し、そのformの送信ボタンを押してください。別の保存ボタンは別操作です。画面の実際の出力要素とその表示形式だけを期待値に使ってください。\n仕様:'+json.dumps(minimal_spec,sort_keys=True,ensure_ascii=False,separators=(',',':'))+'\n実画面:'+json.dumps(inventory,sort_keys=True,ensure_ascii=False,separators=(',',':'))
-    operations=('stepsは{op,selector,value?,label?,nth?,contains?}。opはfill,click,select,check,reload,wait,download_csv,download_json,restore_file,restore_invalid,cancel_restoreのみ。'
+    operations=('stepsは操作ごとに1オブジェクト。例: {"op":"fill","selector":"#field","value":"入力値"}、{"op":"click","selector":"#save"}。selectorとvalueを別の操作に分けない。containsはCSV出力専用でselectorの代わりには使わない。opはfill,click,select,check,reload,wait,download_csv,download_json,restore_file,restore_invalid,cancel_restoreのみ。'
         'download_csvにはcontains:[CSVに含まれる入力値2件以上]。checksは{op,selector,value}。opはtext_equals,text_contains,value_equals,count,invalid,visible。'
         'waitのvalueは整数ミリ秒（例:500）であり表示文は禁止。結果を待つためのwaitは通常不要。'
         'acceptanceは整数配列のみ、例:[0,1]。条件本文や{index,condition}は入れない。'
@@ -665,6 +666,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         # characters back repeatedly both bloats the prompt and mislabels it
         # as the timed-out response. Keep it on disk for diagnostics instead.
         if re.search(r'\b(?:TimeoutError|timed out)\b',error,re.I):
+            previous=''
+        # A malformed operation is already quoted with its index in the
+        # diagnostic. Replaying a long broken response encourages the model
+        # to copy the same split operations and inflates CPU inference time.
+        if '操作対象が不正です。steps[' in error:
             previous=''
         started=qa_time.monotonic()
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))

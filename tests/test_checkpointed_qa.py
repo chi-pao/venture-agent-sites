@@ -505,6 +505,12 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(inputs=[dict(selector='#date',value='2026-10-27'),dict(selector='#status',value='invented')]))):
             with self.assertRaises(app.AutoQAPlanError):app.repair_qa_invalid_submission(raw,observation,inventory,self.cfg)
 
+    def test_malformed_operation_reports_exact_index_for_repair(self):
+        value=dict(steps=[dict(op='fill',selector='#date',value='2026-10-27'),dict(op='fill',contains=['#start','start']),dict(op='click',selector='#save')],
+            checks=[dict(op='text_equals',selector='#result',value='ok'),dict(op='visible',selector='#result')],acceptance=[0],result_selector='#result')
+        with self.assertRaisesRegex(app.AutoQAPlanError,r'steps\[1\].*selector'):
+            app.validate_qa_unit(value,'workflow',1)
+
     def test_oracle_rejects_missing_percentage_without_inventing_value(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
