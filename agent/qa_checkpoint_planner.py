@@ -438,11 +438,17 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
         if not isinstance(answer,dict) or not isinstance(answer.get('expected_text'),str) or not 1<=len(answer['expected_text'])<=250 or re.search(r'\{n\d+\}',answer['expected_text']):
             raise AutoQAPlanError('主結果の単位・補足まで含む完全な期待文字列が必要です')
+        # A percentage marker in the observed format is presentation data,
+        # not the value or business verdict. A missing percentage cannot be a
+        # complete exact assertion; reject it instead of retrying the same
+        # malformed oracle against Chromium indefinitely.
+        if re.search(r'\{n\d+\}\s*[%％]',contract.get('template','')) and not re.search(r'\d\s*[%％]',answer['expected_text']):
+            raise AutoQAPlanError('expected_values: 表示書式には割合の数値と%があります。入力と要件から割合を計算して完全な期待文字列に含めてください')
         if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('主結果の独立した計算根拠が不足しています')
         return dict(raw,oracle_basis=answer['basis'],exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['expected_text']))
     oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
     repaired=ai_json(prompt,oracle_cfg,450,schema=schema,
-        max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
+        max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
     write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(dict(prior=prior,current=inputs),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
     return repaired
 

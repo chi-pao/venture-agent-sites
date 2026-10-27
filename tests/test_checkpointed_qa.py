@@ -489,6 +489,17 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(expected_text='{n0}件',basis='入力から数値だけを計算する根拠があります'))):
             with self.assertRaises(app.AutoQAPlanError):app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,self.cfg,self.root,'base-workflow','expected_values')
 
+    def test_oracle_rejects_missing_percentage_without_inventing_value(self):
+        raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
+        bad=dict(expected_text='出欠記録一覧（出席扱い1/1、欠席0）',basis='一人が出席し欠席者はいないため')
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](bad)):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'割合'):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
+        good=dict(expected_text='50%（出席扱い1/2、欠席1）',basis='一人が出席しもう一人が欠席のため')
+        with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](good)):
+            result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
+        self.assertEqual(result['exact_check']['value'],good['expected_text'])
+
     def test_literal_check_repair_can_only_change_selector(self):
         fault=dict(op='text_contains',selector='#notice',value='登録者A')
         raw=dict(steps=[dict(op='fill',selector='#name',value='登録者A'),dict(op='click',selector='#save')],checks=[fault,dict(op='text_equals',selector='#rate',value='100%')])
