@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {calculateTrip} from './itinerary.mjs';
+const departure=1000;
+const stops=[{name:'山口'},{name:'空港',stay:60},{name:'羽田',stay:30},{name:'東京'}];
+const legs=[{mode:'bus',duration:50},{mode:'flight',duration:100,departure:1120},{mode:'train',duration:40}];
+let p=calculateTrip({departure,deadline:1300,stops,legs});
+assert.equal(p.arrival,1290);assert.equal(p.feasible,true);
+p=calculateTrip({departure,deadline:1280,stops,legs});assert.equal(p.warnings.find(w=>w.type==='late').minutes,10);
+p=calculateTrip({departure,deadline:1400,stops,legs:legs.map((x,i)=>i===1?{...x,departure:1100}:x)});assert.equal(p.feasible,false);assert.equal(p.warnings[0].type,'missed_departure');
+p=calculateTrip({departure,deadline:1400,stops,legs:legs.map((x,i)=>i===1?{mode:'flight',duration:null}:x)});assert.equal(p.arrival,null);assert.equal(p.feasible,null);
+assert.throws(()=>calculateTrip({departure,deadline:1400,stops,legs:legs.map((x,i)=>i===0?{mode:'bus',duration:-1}:x)}));
+console.log('PASS: multimodal connection, scheduled departure, deadline, unknown travel time and invalid input');
