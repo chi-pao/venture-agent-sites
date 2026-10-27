@@ -457,6 +457,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         if error and (folder/(key+'-last-response.json')).exists():
             try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]
             except (ValueError,OSError):pass
+        # A timed-out model request has no completed response to repair. The
+        # saved last-response belongs to an earlier attempt; feeding up to 2k
+        # characters back repeatedly both bloats the prompt and mislabels it
+        # as the timed-out response. Keep it on disk for diagnostics instead.
+        if re.search(r'\b(?:TimeoutError|timed out)\b',error,re.I):
+            previous=''
         started=qa_time.monotonic()
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checksは期待結果の配列。steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
         request=(prompt+('\n'+unit_operations+'\n'+unit_context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+error[:1200])

@@ -1,5 +1,6 @@
 """Unit tests for resumption and bounded independent planning, not model-quality proof."""
 import copy
+import json
 import re
 import tempfile
 import io
@@ -77,6 +78,17 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(len(plan['scenarios']),5);self.assertEqual(len(plan['feature_cases']),10)
         self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
         self.assertEqual(sum(c['key']=='variant' for c in self.calls),2)
+
+    def test_timeout_does_not_resend_stale_prior_response(self):
+        self.timeout_once=True
+        with self.assertRaises(TimeoutError):self.plan()
+        error=next(self.root.rglob('base-variant-error.json'))
+        (error.parent/'base-variant-last-response.json').write_text(json.dumps({'stale':'OLD_RESPONSE_MARKER'}),encoding='utf-8')
+        self.plan()
+        prompt=[c['prompt'] for c in self.calls if c['key']=='variant'][-1]
+        self.assertNotIn('OLD_RESPONSE_MARKER',prompt)
+        self.assertIn('TimeoutError',prompt)
+        self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
 
     def test_complete_plan_reuses_every_validated_unit_without_inference(self):
         first=self.plan();count=len(self.calls);second=self.plan()
