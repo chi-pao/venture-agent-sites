@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_7540bc0befc574d90bbca798:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>返品対応管理アプリ</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .input-group { margin-bottom: 10px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        .result { margin-top: 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>返品対応管理アプリ</h1>
+            <p>EC運営者向け</p>
+        </div>
+        <div id="inputForm" class="input-group">
+            <label for="returnList">返品一覧</label>
+            <input type="text" id="returnList" readonly>
+            <label for="approveReturn">返品申請承認</label>
+            <input type="text" id="approveReturn" readonly>
+            <label for="updateInfo">返品情報更新</label>
+            <input type="text" id="updateInfo" readonly>
+        </div>
+        <div id="result" class="result"></div>
+        <button id="saveData">保存</button>
+        <button id="exportCsv">CSV出力</button>
+        <button id="loadBackup">バックアップ復元</button>
+    </div>
+
+    <script>
+        document.getElementById('saveData').addEventListener('click', saveData);
+        document.getElementById('exportCsv').addEventListener('click', exportCsv);
+        document.getElementById('loadBackup').addEventListener('click', loadBackup);
+
+        function saveData() {
+            const returnList = document.getElementById('returnList').value;
+            const approveReturn = document.getElementById('approveReturn').value;
+            const updateInfo = document.getElementById('updateInfo').value;
+            localStorage.setItem('returnData', JSON.stringify({ returnList, approveReturn, updateInfo }));
+            document.getElementById('result').innerText = 'データ保存しました。';
+        }
+
+        function exportCsv() {
+            const returnList = document.getElementById('returnList').value;
+            const approveReturn = document.getElementById('approveReturn').value;
+            const updateInfo = document.getElementById('updateInfo').value;
+            const csvContent = `返品一覧,返品申請承認,返品情報更新
+${returnList},${approveReturn},${updateInfo}`;
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'return_data.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function loadBackup() {
+            const backupData = localStorage.getItem('returnData');
+            if (backupData) {
+                const data = JSON.parse(backupData);
+                document.getElementById('returnList').value = data.returnList;
+                document.getElementById('approveReturn').value = data.approveReturn;
+                document.getElementById('updateInfo').value = data.updateInfo;
+                document.getElementById('result').innerText = 'バックアップ復元しました。';
+            } else {
+                document.getElementById('result').innerText = 'バックアップデータが見つかりません。';
+            }
+        }
+    </script>
+</body>
+</html>
