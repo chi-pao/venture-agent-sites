@@ -3585,11 +3585,15 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     exact=raw.get('exact_check') or {}
                     # Primary checks run first. A later literal-selector
                     # mismatch is not grounds for recomputing a passing oracle.
-                    if fault and fault.get('selector')!=exact.get('selector') and '期待結果と不一致' in error:
-                        repaired=compile_qa_formatted_expectation(raw,formats)
-                    else:repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,error)
-                    relocated=repair_qa_literal_selector(repaired or raw,fault,inventory,cfg,folder,key)
-                    if relocated is not None:repaired=relocated
+                    try:primary=compile_qa_formatted_expectation(raw,formats).get('exact_check',{})
+                    except AutoQAPlanError:primary=exact
+                    if fault and (fault.get('op')!=primary.get('op') or fault.get('selector')!=primary.get('selector')) and '期待結果と不一致' in error:
+                        # Secondary failures can share the primary selector. A
+                        # stale derived expectation must be replanned, not
+                        # preserved while repeatedly repairing the primary.
+                        repaired=repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key)
+                    else:
+                        repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,error)
             if repaired is not None:value=capture_and_validate(repaired)
             else:
                 value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
