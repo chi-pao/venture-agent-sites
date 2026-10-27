@@ -3635,22 +3635,23 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     return repaired
 
 
-def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios):
+def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats=None):
     """Replan expected values only; never infer them from product output."""
     exact = raw.get('exact_check') if isinstance(raw, dict) else None
     checks = raw.get('checks') if isinstance(raw, dict) else None
     if not isinstance(exact, dict) or not isinstance(checks, list):return None
     indexes = [i for i, c in enumerate(checks) if isinstance(c, dict)
-               and c.get('selector') == exact.get('selector') and c.get('op') in ('text_equals','text_contains')]
+               and c.get('selector') == exact.get('selector') and c.get('nth', 0) == exact.get('nth', 0) and c.get('op') in ('text_equals','text_contains')]
     if not indexes:return None
+    contains_indexes = [i for i in indexes if checks[i]['op'] == 'text_contains']
     schema = {'type':'object','properties':{'expected_text':{'type':'string','minLength':1,'maxLength':250},
-        'replacement_values':{'type':'array','minItems':len(indexes),'maxItems':len(indexes),
+        'replacement_values':{'type':'array','minItems':len(contains_indexes),'maxItems':len(contains_indexes),
                               'items':{'type':'string','minLength':1,'maxLength':250}},
         'basis':{'type':'string','minLength':12,'maxLength':300}},
         'required':['expected_text','replacement_values','basis'],'additionalProperties':False}
     prior = [{'kind': s.get('kind'), 'steps': s.get('steps',[])} for s in scenarios] if key == 'base-variant' else []
     relevant = [spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i) is int and 0 <= i < len(spec['acceptance'])]
-    prompts = [{'op':checks[i]['op'],'selector':checks[i]['selector']} for i in indexes]
+    prompts = [{'op':checks[i]['op'],'selector':checks[i]['selector']} for i in contains_indexes]
     prompt = ('独立QA。保存された操作と対象要素は変えず、矛盾した期待値すべてを仕様・入力から再計算する。'
               '実際の画面結果は正解に使わない。JSON {expected_text:完全一致の期待値,replacement_values:指定順の期待値配列,basis:根拠}。'
               '同じ要素の部分一致は完全一致に含まれる値とする。対象要素以外の見出しを含めない。'
@@ -3658,18 +3659,20 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios):
               +'\n先行操作:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
               +'\n今回の操作:'+json.dumps(raw.get('steps',[]),ensure_ascii=False,separators=(',',':'))
               +'\n基準日時:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
-              +'\n検証対象:'+json.dumps(prompts,ensure_ascii=False))
+              +'\n数値を除去した表示形式（値は仕様から計算）:'+json.dumps((formats or {}).get(exact.get('selector'),{}),ensure_ascii=False)
+              +'\n部分一致の検証対象:'+json.dumps(prompts,ensure_ascii=False))
     def validate(answer):
         write_framework_json(folder/(key+'-conflict-last-response.json'),answer)
         values=answer.get('replacement_values') if isinstance(answer,dict) else None
         expected=answer.get('expected_text') if isinstance(answer,dict) else None
-        if not isinstance(expected,str) or not expected or not isinstance(values,list) or len(values)!=len(indexes) or any(not isinstance(v,str) or not v for v in values):
+        if not isinstance(expected,str) or not expected or not isinstance(values,list) or len(values)!=len(contains_indexes) or any(not isinstance(v,str) or not v for v in values):
             raise AutoQAPlanError('期待値全体の再計算結果が不正です')
         if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('期待値の根拠が不足しています')
         replacement=[dict(c) for c in checks]
-        for i, value in zip(indexes,values):
-            if replacement[i]['op']=='text_equals' and value!=expected:raise AutoQAPlanError('完全一致の期待値が矛盾しています')
-            if replacement[i]['op']=='text_contains' and value not in expected:raise AutoQAPlanError('部分一致の期待値が矛盾しています')
+        for i in indexes:
+            if replacement[i]['op']=='text_equals':replacement[i]['value']=expected
+        for i, value in zip(contains_indexes,values):
+            if value not in expected:raise AutoQAPlanError('部分一致の期待値が矛盾しています')
             replacement[i]['value']=value
         return dict(raw, checks=replacement, oracle_basis=answer['basis'],
                     exact_check=dict(op='text_equals',selector=exact['selector'],value=expected))
@@ -3810,7 +3813,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
                 except (ValueError,OSError):raw=None
                 if raw and '期待値が矛盾' in error and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)):
-                    repaired=repair_qa_conflicting_checks(raw,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,scenarios)
+                    repaired=repair_qa_conflicting_checks(raw,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,scenarios,formats)
                 # A concrete UI operation error needs operation repair, not a
                 # new oracle. Only expectation/format failures take this path.
                 if repaired is None and raw and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)) and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):

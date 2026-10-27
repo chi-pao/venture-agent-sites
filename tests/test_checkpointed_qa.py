@@ -412,6 +412,20 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(expected_text='2件',replacement_values=['1件'],basis='入力から独立に計算した結果です'))):
             with self.assertRaises(app.AutoQAPlanError):app.repair_qa_conflicting_checks(raw,self.spec,self.cfg,self.root,'base-variant',[])
 
+    def test_conflicting_full_matches_share_one_computed_expectation(self):
+        raw=dict(steps=[dict(op='fill',selector='#item',value='A'),dict(op='click',selector='#save')],
+                 checks=[dict(op='text_equals',selector='#summary',value='1件'),dict(op='visible',selector='#item')],
+                 exact_check=dict(op='text_equals',selector='#summary',value='2件'),acceptance=[0])
+        formats={'#summary':{'template':'{n0}件','slots':1}}
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('{n0}件',prompt)
+            return kw['validator'](dict(expected_text='2件',replacement_values=[],basis='入力済みの2件から集計した結果'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_conflicting_checks(raw,self.spec,self.cfg,self.root,'base-variant',[],formats)
+        self.assertEqual(result['checks'][0]['value'],'2件')
+        self.assertEqual(result['steps'],raw['steps'])
+        app.validate_qa_unit(result,'variant',len(self.spec['acceptance']))
+
     def test_targeted_oracle_repair_requires_resolved_complete_text(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#count',value='1'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#count',text='4件')])
