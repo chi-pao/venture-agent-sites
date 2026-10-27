@@ -11,6 +11,24 @@ from datetime import datetime as qa_datetime, date as qa_date
 CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
 
+def qa_retry_models(cfg, failure):
+    """Switch only failed units to a configured alternative; retain gates."""
+    primary=str(cfg.get('model') or '')
+    oracle=str(cfg.get('qa_oracle_model') or primary)
+    alternate=str(cfg.get('qa_alternate_model') or cfg.get('code_model') or '')
+    if not isinstance(failure,dict) or not failure.get('error') or not alternate:
+        return primary,oracle
+    # An environment transport problem is not model-quality evidence. Keep
+    # its existing retry path instead of silently switching providers.
+    detail=str(failure['error'])
+    if re.search(r'HTTP\s*Error\s*(?:401|403|404)|ConnectionError',detail,re.I):return primary,oracle
+    last=str(failure.get('model') or primary)
+    last_oracle=str(failure.get('oracle_model') or oracle)
+    model=alternate if alternate!=primary and last!=alternate else primary
+    oracle_model=alternate if alternate!=oracle and last_oracle!=alternate else oracle
+    return model,oracle_model
+
+
 def qa_unit_schema(count,kind):
     step={'type':'object','properties':{
         'op':{'type':'string','enum':['fill','click','select','check','reload','wait','download_csv','download_json','restore_file','restore_invalid','cancel_restore']},
@@ -647,7 +665,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'bodyやhtml禁止。説明やMarkdown不要。')
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None):
-        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None
+        path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None;failure={}
         formats={}
         reference_clock={'date':qa_datetime.now().astimezone().date().isoformat(),'source':'runner local date; browser observation not yet available'}
         observation=folder/(key+'-browser')/'browser-observation-failure.json'
@@ -681,8 +699,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if not (cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-'))):return cached
             except (ValueError,TypeError,KeyError):cached=None
         if error_path.exists():
-            try:error=json.loads(error_path.read_text(encoding='utf-8')).get('error','')
+            try:
+                failure=json.loads(error_path.read_text(encoding='utf-8'))
+                error=failure.get('error','')
             except (ValueError,OSError):pass
+        retry_model,retry_oracle=qa_retry_models(cfg,failure)
+        attempt_cfg=dict(cfg,model=retry_model,qa_oracle_model=retry_oracle)
         previous=''
         if error and (folder/(key+'-last-response.json')).exists():
             try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]
@@ -714,7 +736,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
                 except (ValueError,OSError):raw=None
                 if raw and '期待値が矛盾' in error and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)):
-                    repaired=repair_qa_conflicting_checks(raw,spec,dict(cfg,_qa_reference_clock=reference_clock),folder,key,scenarios,formats)
+                    repaired=repair_qa_conflicting_checks(raw,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock),folder,key,scenarios,formats)
                 # A concrete UI operation error needs operation repair, not a
                 # new oracle. Only expectation/format failures take this path.
                 if repaired is None and raw and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)) and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
@@ -731,9 +753,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                         # Secondary failures can share the primary selector. A
                         # stale derived expectation must be replanned, not
                         # preserved while repeatedly repairing the primary.
-                        repaired=repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key)
+                        repaired=repair_qa_literal_selector(raw,fault,inventory,attempt_cfg,folder,key)
                     else:
-                        repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
+                        repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
             # The browser can identify exact required controls even when a
             # bounded prompt omitted them. Fix only those inputs, then rerun
             # the unchanged independent assertions on the real browser.
@@ -741,11 +763,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 try:
                     observed=json.loads(observation.read_text(encoding='utf-8'))
                     raw=qa_resolve_unique_date_selector(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),full_inventory)
-                    repaired=repair_qa_invalid_submission(raw,observed,full_inventory,cfg)
+                    repaired=repair_qa_invalid_submission(raw,observed,full_inventory,attempt_cfg)
                 except (ValueError,OSError,TypeError):pass
             if repaired is not None:value=capture_and_validate(repaired)
             else:
-                value=cached if cached is not None else ai_json(request,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
+                value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                     request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
             if cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-')):
                 probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
@@ -764,11 +786,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     path.unlink(missing_ok=True)
                     raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
             write_framework_json(path,dict(input_sha=input_sha,value=value))
-            write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=cfg['model']))
+            write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=retry_model,oracle_model=retry_oracle))
             error_path.unlink(missing_ok=True)
             return value
         except Exception as exc:
-            write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),checked=now()))
+            write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,checked=now()))
             raise
 
     scenarios=[]

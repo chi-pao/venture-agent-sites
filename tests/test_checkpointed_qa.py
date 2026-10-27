@@ -13,6 +13,14 @@ from test_autoqa import work_plan
 
 
 class CheckpointedQAPlannerTests(TestCase):
+    def test_failed_unit_switches_only_to_configured_alternative_and_back(self):
+        cfg=dict(model='planner',qa_oracle_model='oracle',code_model='coder')
+        self.assertEqual(app.qa_retry_models(cfg,{}),('planner','oracle'))
+        self.assertEqual(app.qa_retry_models(cfg,dict(error='TimeoutError: timed out')),('coder','coder'))
+        self.assertEqual(app.qa_retry_models(cfg,dict(error='invalid output',model='coder',oracle_model='coder')),('planner','oracle'))
+        self.assertEqual(app.qa_retry_models(cfg,dict(error='HTTP Error 403')),('planner','oracle'))
+        self.assertEqual(app.qa_retry_models(dict(model='planner'),dict(error='timed out')),('planner','planner'))
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.previous_out=app.OUT;app.OUT=self.root
@@ -41,7 +49,7 @@ class CheckpointedQAPlannerTests(TestCase):
             i,j=map(int,re.search(r'完成条件(\d+)のケース(\d+)',prompt).groups());key=f'feature-{i}-{j}'
             value=copy.deepcopy(next(x for x in self.full['feature_cases'] if x['acceptance_index']==i and x['case_index']==j))
             value['acceptance']=[i]
-        self.calls.append(dict(key=key,prompt=prompt,tokens=tokens,timeout=kw['request_timeout'],schema=kw.get('schema')))
+        self.calls.append(dict(key=key,prompt=prompt,tokens=tokens,timeout=kw['request_timeout'],schema=kw.get('schema'),model=cfg['model']))
         if self.timeout_once and key=='variant':
             self.timeout_once=False;raise TimeoutError('unit-test timeout')
         return kw['validator'](value)
@@ -88,6 +96,14 @@ class CheckpointedQAPlannerTests(TestCase):
         prompt=[c['prompt'] for c in self.calls if c['key']=='variant'][-1]
         self.assertNotIn('OLD_RESPONSE_MARKER',prompt)
         self.assertIn('TimeoutError',prompt)
+        self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
+
+    def test_timeout_switches_failed_unit_and_reuses_completed_units(self):
+        self.timeout_once=True
+        cfg=dict(self.cfg,code_model='alternate-model')
+        with self.assertRaises(TimeoutError):self.plan(cfg=cfg)
+        self.plan(cfg=cfg)
+        self.assertEqual([c['model'] for c in self.calls if c['key']=='variant'],['fixture-model','alternate-model'])
         self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
 
     def test_complete_plan_reuses_every_validated_unit_without_inference(self):
