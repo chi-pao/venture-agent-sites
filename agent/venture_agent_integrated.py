@@ -3765,9 +3765,10 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_text','basis'],'additionalProperties':False}
     inputs=[{k:s[k] for k in ('op','selector','value','label','nth') if k in s} for s in raw.get('steps',[])]
     prior=cfg.get('_qa_prior_scenarios',[]) if key=='base-variant' else []
-    prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)]) for row in prior if isinstance(row,dict)]
+    prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)],
+                checks=[{k:check[k] for k in ('op','selector','value','nth') if k in check} for check in row.get('checks',[]) if isinstance(check,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
-    if '対象要素は割合から始まります' in error and re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')):
+    if any(phrase in error for phrase in ('対象要素は割合から始まります','主結果は割合から始まります')) and re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')):
         # After a real-model format failure, request the independent numeric
         # answers and independent surrounding text separately. The observed
         # display supplies slot count only, never values or literal text.
@@ -3777,7 +3778,9 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         prompt=('独立QA。観測した数値・状態を正解に使わず、要件と入力から数値と文字列を計算。'
             '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_literals":["数値の前","数値の間","最後"],"basis":"根拠"}。'
             '数値は'+str(count)+'個、文字列は'+str(count+1)+'個。結果の先頭は割合の数値、続いて%を含める。'
-            '\n要件:'+json.dumps(relevant,ensure_ascii=False)+'\n操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
+            '\n要件:'+json.dumps(relevant,ensure_ascii=False)
+            +'\n先行検査の入力と独立した期待値（実測値ではない。次の操作まで状態を保持し、根拠を要件から再計算）:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
+            +'\n今回の操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
             +'\n書式の参考（数値は未記載、正解ではない）:'+str(contract.get('template','')))
         def validate_parts(answer):
             if not isinstance(answer,dict) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('独立した計算根拠が不足しています')

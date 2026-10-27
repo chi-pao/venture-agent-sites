@@ -560,6 +560,18 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
         self.assertEqual(result['steps'],raw['steps'])
 
+    def test_percentage_variant_retry_receives_prior_steps_and_expectations(self):
+        raw=dict(steps=[dict(op='fill',selector='#status',value='欠席')],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
+        prior=[dict(kind='workflow',steps=[dict(op='fill',selector='#status',value='出席')],checks=[dict(op='text_equals',selector='#summary',value='100%（出席扱い1/1、欠席0）')])]
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('先行検査の入力と独立した期待値',prompt)
+            self.assertIn('出席',prompt);self.assertIn('欠席',prompt)
+            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_literals=['','%（出席扱い','/','、欠席','）'],basis='最初の出席と今回の欠席で二人となるため'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','主結果は割合から始まります')
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+
     def test_literal_check_repair_can_only_change_selector(self):
         fault=dict(op='text_contains',selector='#notice',value='登録者A')
         raw=dict(steps=[dict(op='fill',selector='#name',value='登録者A'),dict(op='click',selector='#save')],checks=[fault,dict(op='text_equals',selector='#rate',value='100%')])
