@@ -462,6 +462,26 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     prior=cfg.get('_qa_prior_scenarios',[]) if key=='base-variant' else []
     prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
+    if '対象要素は割合から始まります' in error and re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')):
+        # After a real-model format failure, request the independent numeric
+        # answers and independent surrounding text separately. The observed
+        # display supplies slot count only, never values or literal text.
+        count=contract.get('slots')
+        if type(count) is not int or not 1<=count<=8:return None
+        schema={'type':'object','properties':{'expected_values':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','minLength':1,'maxLength':30}},'expected_literals':{'type':'array','minItems':count+1,'maxItems':count+1,'items':{'type':'string','maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_values','expected_literals','basis'],'additionalProperties':False}
+        prompt=('独立QA。観測した数値・状態を正解に使わず、要件と入力から数値と文字列を計算。'
+            '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_literals":["数値の前","数値の間","最後"],"basis":"根拠"}。'
+            '数値は'+str(count)+'個、文字列は'+str(count+1)+'個。結果の先頭は割合の数値、続いて%を含める。'
+            '\n要件:'+json.dumps(relevant,ensure_ascii=False)+'\n操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
+            +'\n書式の参考（数値は未記載、正解ではない）:'+str(contract.get('template','')))
+        def validate_parts(answer):
+            if not isinstance(answer,dict) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('独立した計算根拠が不足しています')
+            candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=answer.get('expected_values'),expected_literals=answer.get('expected_literals')))
+            result=compile_qa_formatted_expectation(candidate,formats)
+            if not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',result['exact_check']['value']):raise AutoQAPlanError('expected_values: 主結果は割合から始まります。見出しを混ぜないでください')
+            return dict(result,oracle_basis=answer['basis'])
+        oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
+        return ai_json(prompt,oracle_cfg,450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate_parts)
     prompt=('独立QA。入力と操作は変更しない。主結果の完全な期待表示だけを、仕様から独立に計算して返す。'
         'JSON {"expected_text":"単位や補足も含む完全な期待文字列","basis":"入力からの計算式・根拠"}。'
         '数値を省略した表示書式の{n0},{n1}等を、入力から計算した数値に置き換える。必要な単位や文言を省略しない。'

@@ -533,6 +533,17 @@ class CheckpointedQAPlannerTests(TestCase):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
         self.assertEqual(result['exact_check']['value'],good['expected_text'])
 
+    def test_percentage_retry_uses_only_independent_numeric_and_literal_answers(self):
+        raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertNotIn('100%（出席扱い1/1、欠席0）',prompt)
+            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_literals=['','%（出席扱い','/','、欠席','）'],basis='二人中一人が出席し一人が欠席したため'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','対象要素は割合から始まります')
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+        self.assertEqual(result['steps'],raw['steps'])
+
     def test_literal_check_repair_can_only_change_selector(self):
         fault=dict(op='text_contains',selector='#notice',value='登録者A')
         raw=dict(steps=[dict(op='fill',selector='#name',value='登録者A'),dict(op='click',selector='#save')],checks=[fault,dict(op='text_equals',selector='#rate',value='100%')])
