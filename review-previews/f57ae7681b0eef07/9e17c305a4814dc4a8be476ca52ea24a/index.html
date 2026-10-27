@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><script>(function(){const prefix="venture_review_1398fa95cf61eca49abf3990:";
+for(const kind of ['localStorage','sessionStorage']){
+ const raw=window[kind];
+ const keys=()=>{const out=[];for(let i=0;i<raw.length;i++){const k=raw.key(i);if(k&&k.startsWith(prefix))out.push(k.slice(prefix.length));}return out;};
+ const methods={getItem:k=>raw.getItem(prefix+String(k)),setItem:(k,v)=>raw.setItem(prefix+String(k),String(v)),removeItem:k=>raw.removeItem(prefix+String(k)),clear:()=>keys().forEach(k=>raw.removeItem(prefix+k)),key:i=>keys()[Number(i)]??null};
+ const proxy=new Proxy(Object.create(null),{
+  get:(target,key)=>key==='length'?keys().length:key in methods?methods[key]:typeof key==='string'?(raw.getItem(prefix+key)??undefined):undefined,
+  set:(target,key,v)=>{raw.setItem(prefix+String(key),String(v));return true;},
+  deleteProperty:(target,key)=>{raw.removeItem(prefix+String(key));return true;},
+  ownKeys:()=>keys(),getOwnPropertyDescriptor:(target,key)=>keys().includes(key)?{configurable:true,enumerable:true,writable:true,value:raw.getItem(prefix+key)}:undefined
+ });
+ Object.defineProperty(window,kind,{value:proxy,configurable:true});
+}
+if(window.indexedDB){
+ const raw=window.indexedDB;
+ const proxy=new Proxy(raw,{get:(target,key)=>{
+  if(key==='open')return (name,...args)=>target.open(prefix+String(name),...args);
+  if(key==='deleteDatabase')return name=>target.deleteDatabase(prefix+String(name));
+  if(key==='databases'&&target.databases)return async()=>((await target.databases()).filter(d=>d.name&&d.name.startsWith(prefix)).map(d=>({...d,name:d.name.slice(prefix.length)})));
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ Object.defineProperty(window,'indexedDB',{value:proxy,configurable:true});
+}
+})();</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顧客分析ツール</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .header { background-color: #f4f4f4; padding: 10px; text-align: center; }
+        .content { padding: 20px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; }
+        .input-group input { width: 100%; padding: 8px; }
+        .result { margin-top: 20px; }
+        .footer { background-color: #f4f4f4; padding: 10px; text-align: center; }
+    </style>
+<style id="venture-layout-safety">
+*,*::before,*::after{box-sizing:border-box!important}
+html,body{max-width:100vw!important}
+body{overflow-x:hidden!important}
+img,svg,video,canvas,iframe{max-width:100%!important;height:auto}
+main,section,article,form,fieldset,.card,.panel,.input-group,.form-group,.form-row,.field,.fields{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea,button{box-sizing:border-box!important;min-width:0!important;max-width:100%!important;min-height:44px!important;font-size:16px!important}
+.input-group>*,.form-group>*,.form-row>*{box-sizing:border-box!important;min-width:0!important;max-width:100%!important}
+.actions,.toolbar{display:flex;flex-wrap:wrap;gap:8px}
+</style></head>
+<body>
+    <div class="header">
+        <h1>顧客分析ツール</h1>
+    </div>
+    <div class="content">
+        <div id="usage-guide">
+            <h2>使い方</h2>
+            <ol>
+                <li>対象顧客の情報を入力します。</li>
+                <li>分析結果を表示します。</li>
+                <li>結果を保存またはCSV形式で出力します。</li>
+            </ol>
+        </div>
+        <div id="input-group" class="input-group">
+            <label for="customer-name">顧客名</label>
+            <input type="text" id="customer-name" required>
+        </div>
+        <div id="input-group" class="input-group">
+            <label for="customer-age">年齢</label>
+            <input type="number" id="customer-age" required>
+        </div>
+        <div id="input-group" class="input-group">
+            <label for="customer-activity">活動</label>
+            <input type="text" id="customer-activity" required>
+        </div>
+        <div id="result" class="result">
+            <h2>分析結果</h2>
+            <p id="analysis-result"></p>
+        </div>
+        <div id="controls" class="input-group">
+            <button id="calculate">分析</button>
+            <button id="save">保存</button>
+            <button id="export-csv">CSV出力</button>
+        </div>
+    </div>
+    <div class="footer">
+        <p>© 2023 顧客分析ツール</p>
+    </div>
+    <script>
+        document.getElementById('calculate').addEventListener('click', function() {
+            const customerName = document.getElementById('customer-name').value;
+            const customerAge = document.getElementById('customer-age').value;
+            const customerActivity = document.getElementById('customer-activity').value;
+            const analysisResult = `顧客名: ${customerName}, 年齢: ${customerAge}, 活動: ${customerActivity}`;
+            document.getElementById('analysis-result').innerText = analysisResult;
+        });
+
+        document.getElementById('save').addEventListener('click', function() {
+            localStorage.setItem('analysisResult', document.getElementById('analysis-result').innerText);
+            alert('結果が保存されました。');
+        });
+
+        document.getElementById('export-csv').addEventListener('click', function() {
+            const result = document.getElementById('analysis-result').innerText;
+            const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(result);
+            const link = document.createElement('a');
+            link.href = csvContent;
+            link.download = 'analysis_result.csv';
+            link.click();
+        });
+
+        // 初期表示
+        const savedResult = localStorage.getItem('analysisResult');
+        if (savedResult) {
+            document.getElementById('analysis-result').innerText = savedResult;
+        }
+    </script>
+</body>
+</html>
