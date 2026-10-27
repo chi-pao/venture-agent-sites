@@ -5,6 +5,7 @@ on:
     paths:
       - 'agent/**'
       - 'tests/department_live_smoke.py'
+      - 'tests/returns_oracle_probe.py'
       - 'tests/saved_repair_replay.py'
       - '.github/workflows/venture-repair-replay.yml'
       - '.github/workflows/venture-departments.yml'
@@ -84,6 +85,11 @@ jobs:
           run-id: ${{ steps.prior.outputs.run_id }}
           name: ${{ steps.prior.outputs.artifact_name }}
           path: department-live-artifacts
+      - name: Check independent record-count oracle against saved real-generated page
+        if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
+        env:
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/returns
+        run: python tests/returns_oracle_probe.py
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
       - name: Start local Ollama service
