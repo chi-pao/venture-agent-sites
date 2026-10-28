@@ -668,6 +668,12 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats
         if not isinstance(expected,str) or not expected or not isinstance(values,list) or len(values)!=len(contains_indexes) or any(not isinstance(v,str) or not v for v in values):
             raise AutoQAPlanError('期待値全体の再計算結果が不正です')
         if not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('期待値の根拠が不足しています')
+        contract=(formats or {}).get(exact.get('selector'),{})
+        if contract:
+            if re.search(r'\{n\d+\}',expected) or len(re.findall(r'-?\d+(?:\.\d+)?',expected))!=contract.get('slots'):
+                raise AutoQAPlanError('expected_values: 矛盾修復でも全数値の独立した期待値が必要です')
+            if contract.get('template','').startswith('{n0}') and not re.match(r'^\s*-?\d',expected):
+                raise AutoQAPlanError('expected_values: 矛盾修復に対象外の見出しを含めないでください')
         replacement=[dict(c) for c in checks]
         for i in indexes:
             if replacement[i]['op']=='text_equals':replacement[i]['value']=expected
