@@ -687,3 +687,9 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertNotIn('SECRET_OBSERVED_VALUE',hint)
         self.assertIn('独立',hint)
         self.assertEqual(app.qa_independent_failure_hint('required field #title'),'required field #title')
+
+    def test_numeric_oracle_literals_reject_unresolved_slots_and_hidden_numbers(self):
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#rate',text='100%')])
+        for suffix in ('%{n1}', '%0%'):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'expected_literals'):
+                app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#rate',expected_values=['50'],expected_literals=['',suffix])),formats)

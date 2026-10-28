@@ -3661,6 +3661,8 @@ def compile_qa_formatted_expectation(value,formats):
     literals=exact.get('expected_literals')
     if not isinstance(literals,list) or len(literals)!=len(values)+1 or any(not isinstance(v,str) or len(v)>180 for v in literals):
         raise AutoQAPlanError('expected_literalsに数値の前後の期待文字列を全て指定してください。業務状態の文言も観測値を自動採用しません')
+    if any(re.search(r'\{n\d+\}|\d',v) for v in literals):
+        raise AutoQAPlanError('expected_literals: 数値や未解決の書式記号を文字列に混ぜないでください。数値はexpected_valuesに分離してください')
     text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(values))
     # Both numbers and surrounding business-state text come from independent
     # QA. The observed template is guidance only, never an automatic oracle.
