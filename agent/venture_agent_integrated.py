@@ -3657,6 +3657,20 @@ def qa_independent_date_facts(steps, reference_clock):
     return facts[:12]
 
 
+def qa_current_reference_clock(observed, current=None):
+    """Recompute today's date in the browser's recorded timezone on resume."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    current=current or qa_datetime.now().astimezone()
+    old=observed if isinstance(observed,dict) else {}
+    zone=old.get('timezone')
+    try:
+        if not isinstance(zone,str) or not zone:raise ValueError('browser timezone unavailable')
+        today=current.astimezone(ZoneInfo(zone)).date().isoformat()
+        return dict(date=today,timezone=zone,source='current date in recorded browser timezone')
+    except (ValueError,ZoneInfoNotFoundError):
+        return dict(date=current.astimezone().date().isoformat(),source='current runner local date; browser timezone unavailable')
+
+
 def qa_audit_date_oracle(raw, spec, cfg, prior, answer):
     """Audit date-based expectations against requirements, never UI output."""
     steps=[s for row in prior for s in row.get('steps',[])]+raw.get('steps',[])
@@ -3993,12 +4007,12 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None,supplied=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None;failure={}
         formats={}
-        reference_clock={'date':qa_datetime.now().astimezone().date().isoformat(),'source':'runner local date; browser observation not yet available'}
+        reference_clock=qa_current_reference_clock(None)
         observation=folder/(key+'-browser')/'browser-observation-failure.json'
         if observation.exists():
             try:
                 observed=json.loads(observation.read_text(encoding='utf-8'))
-                if observed.get('reference_clock'):reference_clock=observed['reference_clock']
+                if observed.get('reference_clock'):reference_clock=qa_current_reference_clock(observed['reference_clock'])
                 available=observed.get('display_contracts',{})
                 primary=observed.get('check',{}).get('selector')
                 ordered=sorted(available,key=lambda k:(k!=primary,not bool(re.search(r'summary|total|count|capacity|planned|actual|balance',k,re.I))))

@@ -379,6 +379,17 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertNotIn('overdue',str(facts))
         self.assertEqual(app.qa_independent_date_facts(steps,{}),[])
 
+    def test_resume_refreshes_browser_local_day_without_copying_stale_date(self):
+        from datetime import datetime, timezone
+        current=datetime(2026,10,27,16,0,tzinfo=timezone.utc)
+        observed={'date':'2026-10-27','timezone':'Asia/Tokyo','source':'browser local clock'}
+        clock=app.qa_current_reference_clock(observed,current)
+        self.assertEqual(clock['date'],'2026-10-28')
+        self.assertEqual(clock['timezone'],'Asia/Tokyo')
+        fact=app.qa_independent_date_facts([dict(op='fill',selector='#deadline',value='2026-10-27')],clock)
+        self.assertEqual(fact[0]['relation'],'before')
+        self.assertEqual(fact[0]['days_from_reference'],-1)
+
     def test_oracle_receives_browser_date_without_observed_result(self):
         raw=dict(steps=[dict(op='fill',selector='#deadline',value='2023-12-31')],acceptance=[0],exact_check=dict(selector='#summary',value='0件'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='1件 / 超過1件')])
