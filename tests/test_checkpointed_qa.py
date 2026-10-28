@@ -549,6 +549,14 @@ class CheckpointedQAPlannerTests(TestCase):
         value['steps'][0]['value']='480'
         self.assertEqual(app.validate_qa_inventory_actions(value,inventory,'workflow'),value)
 
+    def test_invalid_case_requires_actual_invalid_required_field_when_known(self):
+        inventory=dict(controls=[dict(tag='input',selector='#item',form='#form',required=True),dict(tag='button',selector='#save',form='#form')],outputs=[])
+        value=dict(steps=[dict(op='fill',selector='#item',value='invalid_item'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#summary',value='unchanged')])
+        with self.assertRaisesRegex(app.AutoQAPlanError,'任意文字列'):
+            app.validate_qa_inventory_actions(value,inventory,'invalid')
+        value['steps'][0]['value']='';value['checks'].append(dict(op='invalid',selector='#item'))
+        self.assertEqual(app.validate_qa_inventory_actions(value,inventory,'invalid'),value)
+
     def test_oracle_rejects_missing_percentage_without_inventing_value(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])

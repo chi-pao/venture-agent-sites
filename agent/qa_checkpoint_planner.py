@@ -301,6 +301,18 @@ def validate_qa_inventory_actions(value,inventory,kind):
             raise AutoQAPlanError('中心作業の検査にバックアップ検査を混ぜないでください')
     missing=qa_unsubmitted_forms(value,inventory) if kind in ('workflow','variant','feature') else []
     if missing:raise AutoQAPlanError('入力したフォームが未送信です。必要な項目を入力し送信ボタンを操作してください: '+str(missing))
+    if kind=='invalid':
+        # When a submitted form has a known required field, test an actual
+        # empty required input. Arbitrary strings such as "invalid_item" can
+        # be valid and create another record instead of testing rejection.
+        clicked={s.get('selector') for s in value.get('steps',[]) if s.get('op')=='click'}
+        forms={n.get('form') for n in inventory['controls'] if n.get('tag')=='button' and n.get('selector') in clicked and n.get('form')}
+        required=[n for n in inventory['controls'] if n.get('form') in forms and 'required' in n and n.get('tag') in ('input','textarea') and n.get('type') not in ('checkbox','radio','file','hidden')]
+        if required:
+            selectors={n['selector'] for n in required}
+            emptied={s.get('selector') for s in value.get('steps',[]) if s.get('op')=='fill' and s.get('value')=='' and s.get('selector') in selectors}
+            checked={c.get('selector') for c in value.get('checks',[]) if c.get('op')=='invalid'}
+            if not emptied.intersection(checked):raise AutoQAPlanError('誤入力検査には送信フォームの必須欄を空にし、その欄のinvalidを確認してください。自由文字への任意文字列は不正値とは限りません: '+str(sorted(selectors)))
     return value
 
 
