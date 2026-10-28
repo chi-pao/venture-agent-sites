@@ -719,7 +719,7 @@ class CheckpointedQAPlannerTests(TestCase):
             self.assertEqual(tokens,180)
             self.assertIn('商品A',prompt);self.assertIn('商品B',prompt)
             return kw['validator'](dict(value='2',basis='先行の一件と今回追加した一件で合計二件'))
-        with patch.object(app,'ai_json',side_effect=model):
+        with patch.object(app,'qa_reference_count_oracle',return_value=None), patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('x',raw,{'#count':dict(template='{n0}')},self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','期待結果と不一致')
         self.assertEqual(result['exact_check']['value'],'2')
         self.assertEqual(result['steps'],raw['steps'])

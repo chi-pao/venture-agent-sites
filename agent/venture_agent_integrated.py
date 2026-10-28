@@ -3891,6 +3891,65 @@ def qa_independent_clock_differences(steps):
             for i,a in enumerate(clocks) for b in clocks[i+1:]]
 
 
+def qa_evaluate_record_events(steps,events):
+    """Reference state reducer: no rendered values and no model arithmetic."""
+    clicks=[i for i,step in enumerate(steps) if step.get('op')=='click']
+    if not isinstance(events,list) or [e.get('step_index') for e in events if isinstance(e,dict)]!=clicks:
+        raise AutoQAPlanError('参照状態: 全クリックを順番どおり過不足なく対応付けてください')
+    records=set();trace=[]
+    for event in events:
+        index=event['step_index'];effect=event.get('effect');target=event.get('target')
+        if type(index)is not int or effect not in ('create','update','delete','none'):
+            raise AutoQAPlanError('参照状態: 未対応の状態遷移です')
+        if effect in ('create','none') and target is not None:
+            raise AutoQAPlanError('参照状態: 新規操作・状態不変操作に既存対象は指定できません')
+        if effect in ('update','delete') and (type(target)is not int or target not in records):
+            raise AutoQAPlanError('参照状態: 編集・削除の対象記録が存在しません')
+        if effect=='create':records.add(index)
+        elif effect=='delete':records.remove(target)
+        trace.append(dict(step_index=index,effect=effect,count=len(records),record_origins=sorted(records)))
+    return dict(count=len(records),trace=trace)
+
+
+def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
+    """Pilot reference semantics for explicit record-count outputs only.
+
+    AI maps business actions; code alone carries state and calculates count.
+    A separate semantic audit is still required. Unmapped outputs use the
+    existing path and receive no claim of reference-model verification.
+    """
+    selector=raw['exact_check']['selector']
+    if not re.search(r'count|件数|人数',selector+' '+str(contract.get('label','')),re.I):return None
+    steps=[step for row in prior for step in row.get('steps',[])]+raw.get('steps',[])
+    if any(step.get('op') not in ('fill','select','check','click','wait') for step in steps):return None
+    source=json.dumps(dict(outcome=spec.get('requested_outcome'),must_have=spec.get('must_have'),acceptance=spec.get('acceptance')),ensure_ascii=False)
+    event_schema={'type':'object','properties':{'step_index':{'type':'integer','minimum':0},'effect':{'type':'string','enum':['create','update','delete','none']},'target':{'type':['integer','null']}},'required':['step_index','effect','target'],'additionalProperties':False}
+    schema={'type':'object','properties':{'quantity':{'type':'string','enum':['record_count','other']},'source_quote':{'type':'string','minLength':2,'maxLength':300},'events':{'type':'array','maxItems':48,'items':event_schema}},'required':['quantity','source_quote','events'],'additionalProperties':False}
+    prompt=('仕様の状態遷移を操作へ対応付ける担当。件数の計算や最終件数の回答は禁止。対象が全保存記録の件数ならquantity=record_count、それ以外や不明ならother。'
+        '状態は空から開始。すべてのclickを添字順に列挙しcreate/update/delete/noneへ分類。入力・表示切替だけはnone。編集対象や削除対象targetはその記録を作成したclickの添字、新規とnoneはnull。'
+        'フィルタ後件数・出席人数等の部分集合はother。source_quoteは元仕様のそのままの引用。JSON {quantity,source_quote,events:[{step_index,effect,target}]}。'
+        +'\n元仕様:'+source+'\n対象:'+selector+' '+str(contract.get('label',''))
+        +'\n全操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False,separators=(',',':')))
+    def validate(value):
+        write_framework_json(folder/(key+'-reference-binding-response.json'),value)
+        if not isinstance(value,dict) or value.get('quantity') not in ('record_count','other') or not isinstance(value.get('source_quote'),str) or len(value['source_quote'])<2 or value['source_quote'] not in source:
+            raise AutoQAPlanError('参照状態: 元仕様からの引用と集計対象の対応が必要です')
+        if value['quantity']=='record_count':qa_evaluate_record_events(steps,value.get('events'))
+        return value
+    binding=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),550,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    if binding['quantity']=='other':return None
+    audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':12,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
+    def audit_validate(value):
+        write_framework_json(folder/(key+'-reference-audit-response.json'),value)
+        if not isinstance(value,dict) or value.get('valid') is not True or not isinstance(value.get('reason'),str) or len(value['reason'].strip())<12:
+            raise AutoQAPlanError('参照状態: 操作と仕様の独立監査が未合格: '+str(value))
+        return value
+    audit=ai_json('独立監査。件数は計算しない。対象が全記録件数か、各クリックの新規・編集・削除・不変が元仕様と入力操作に整合し、対象記録も正しいか確認。引用があるだけで合格にしない。未確定ならvalid:false。JSON {valid,reason}。\n'+prompt+'\n対応案:'+json.dumps(binding,ensure_ascii=False),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
+    result=qa_evaluate_record_events(steps,binding['events'])
+    write_framework_json(folder/(key+'-reference-count-proof.json'),dict(binding=binding,audit=audit,reference=result,steps=steps,source=source,method='independent state reducer; browser verification still required'))
+    return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis='仕様と操作の対応を独立監査し、参照状態遷移で件数を計算',reference_count=result)
+
+
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
@@ -3905,6 +3964,8 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
                 checks=[{k:check[k] for k in ('op','selector','value','nth') if k in check} for check in row.get('checks',[]) if isinstance(check,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
     if contract.get('template')=='{n0}':
+        reference=qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior)
+        if reference is not None:return reference
         # A numeric-only counter does not need a full-page prose oracle.
         # Retain prior inputs so an added record is not mistaken for a reset.
         numeric_schema={'type':'object','properties':{'value':{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$','maxLength':30},'basis':{'type':'string','minLength':12,'maxLength':240}},'required':['value','basis'],'additionalProperties':False}
