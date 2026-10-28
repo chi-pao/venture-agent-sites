@@ -21,6 +21,12 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(app.qa_retry_models(cfg,dict(error='HTTP Error 403')),('planner','oracle'))
         self.assertEqual(app.qa_retry_models(dict(model='planner'),dict(error='timed out')),('planner','planner'))
 
+    def test_retry_timeout_grows_only_after_timeout_and_stays_bounded(self):
+        self.assertEqual(app.qa_retry_timeout({},{}),180)
+        self.assertEqual(app.qa_retry_timeout({},dict(error='TimeoutError: timed out')),270)
+        self.assertEqual(app.qa_retry_timeout({},dict(error='TimeoutError: timed out',timeout_streak=2)),360)
+        self.assertEqual(app.qa_retry_timeout({},dict(error='invalid JSON',timeout_streak=2)),180)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.previous_out=app.OUT;app.OUT=self.root
@@ -106,6 +112,7 @@ class CheckpointedQAPlannerTests(TestCase):
         with self.assertRaises(TimeoutError):self.plan(cfg=cfg)
         self.plan(cfg=cfg)
         self.assertEqual([c['model'] for c in self.calls if c['key']=='variant'],['fixture-model','alternate-model'])
+        self.assertEqual([c['timeout'] for c in self.calls if c['key']=='variant'],[180,270])
         self.assertEqual(sum(c['key']=='workflow' for c in self.calls),1)
 
     def test_complete_plan_reuses_every_validated_unit_without_inference(self):

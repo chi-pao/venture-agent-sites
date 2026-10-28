@@ -29,6 +29,16 @@ def qa_retry_models(cfg, failure):
     return model,oracle_model
 
 
+def qa_retry_timeout(cfg, failure):
+    """Bound extra inference time to the unit that actually timed out."""
+    base=int(cfg.get('qa_part_timeout',180))
+    if not isinstance(failure,dict) or not re.search(r'\b(?:TimeoutError|timed out)\b',str(failure.get('error','')),re.I):return base
+    streak=failure.get('timeout_streak',1)
+    if type(streak)is not int or streak<1:streak=1
+    ceiling=max(base,int(cfg.get('qa_part_timeout_ceiling',360)))
+    return min(ceiling,base+(base//2)*min(streak,2))
+
+
 def qa_unit_schema(count,kind):
     step={'type':'object','properties':{
         'op':{'type':'string','enum':['fill','click','select','check','reload','wait','download_csv','download_json','restore_file','restore_invalid','cancel_restore']},
@@ -757,7 +767,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 error=failure.get('error','')
             except (ValueError,OSError):pass
         retry_model,retry_oracle=qa_retry_models(cfg,failure)
-        attempt_cfg=dict(cfg,model=retry_model,qa_oracle_model=retry_oracle)
+        attempt_timeout=qa_retry_timeout(cfg,failure)
+        attempt_cfg=dict(cfg,model=retry_model,qa_oracle_model=retry_oracle,qa_part_timeout=attempt_timeout)
         previous=''
         if error and (folder/(key+'-last-response.json')).exists():
             try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]
@@ -825,7 +836,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             elif repaired is not None:value=capture_and_validate(repaired)
             else:
                 value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
-                    request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture_and_validate)
+                    request_timeout=attempt_timeout,validator=capture_and_validate)
             if cfg.get('qa_probe_units') and (key.startswith('base-') or key.startswith('feature-')):
                 probe=folder/(key+'-browser');probe.mkdir(exist_ok=True)
                 if key.startswith('feature-'):
@@ -843,11 +854,15 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     path.unlink(missing_ok=True)
                     raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
             write_framework_json(path,dict(input_sha=input_sha,value=value))
-            write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=retry_model,oracle_model=retry_oracle))
+            write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout))
             error_path.unlink(missing_ok=True)
             return value
         except Exception as exc:
-            write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,checked=now()))
+            detail=type(exc).__name__+': '+str(exc)[:1500]
+            previous_streak=failure.get('timeout_streak',1) if re.search(r'\b(?:TimeoutError|timed out)\b',str(failure.get('error','')),re.I) else 0
+            if type(previous_streak)is not int:previous_streak=0
+            timeout_streak=previous_streak+1 if re.search(r'\b(?:TimeoutError|timed out)\b',detail,re.I) else 0
+            write_framework_json(error_path,dict(error=detail,seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout,timeout_streak=timeout_streak,checked=now()))
             raise
 
     scenarios=[]
