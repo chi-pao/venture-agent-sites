@@ -3998,6 +3998,19 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats
     return result
 
 
+def repair_qa_secondary_oracle(name,raw,fault,formats,spec,cfg,folder,key,error):
+    """Repair one independent secondary assertion, preserving primary/actions."""
+    checks=raw.get('checks',[])
+    if fault not in checks or fault.get('op') not in ('text_equals','text_contains') or fault.get('selector') not in formats:return None
+    isolated=dict(raw,exact_check=dict(fault))
+    repaired=repair_qa_exact_oracle(name,isolated,formats,spec,cfg,folder,key,error)
+    if repaired is None:return None
+    exact=repaired['exact_check']
+    if exact.get('selector')!=fault.get('selector'):raise AutoQAPlanError('補助期待値の修復で対象要素を変更できません')
+    replacement=dict(fault,value=exact['value'])
+    return dict(raw,checks=[replacement if c==fault else dict(c) for c in checks],secondary_oracle_basis=repaired.get('oracle_basis',''))
+
+
 def repair_qa_literal_selector(raw,fault,inventory,cfg,folder,key):
     # This path may relocate a check for an exact literal the QA author entered
     # (e.g. a registered person's name). It may not change that expected value,
@@ -4168,6 +4181,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                         # stale derived expectation must be replanned, not
                         # preserved while repeatedly repairing the primary.
                         repaired=repair_qa_literal_selector(raw,fault,inventory,attempt_cfg,folder,key)
+                        if repaired is None:
+                            repaired=repair_qa_secondary_oracle(name,raw,fault,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
                     else:
                         repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
             # The browser can identify exact required controls even when a

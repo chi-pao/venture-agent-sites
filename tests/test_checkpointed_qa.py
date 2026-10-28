@@ -700,3 +700,14 @@ class CheckpointedQAPlannerTests(TestCase):
                 app.qa_validate_explicit_percentage(text)
         for text in ('100% 1/1','50% 1/2','33% 1/3','0% 0/0','1件 / 超過0件'):
             self.assertEqual(app.qa_validate_explicit_percentage(text),text)
+
+    def test_secondary_oracle_repair_preserves_primary_actions_and_other_checks(self):
+        raw=dict(steps=[dict(op='click',selector='#save')],exact_check=dict(op='text_equals',selector='#total',value='10'),checks=[dict(op='text_equals',selector='#rows',value='10円'),dict(op='text_contains',selector='#notice',value='saved')])
+        fault=raw['checks'][0]
+        with patch.object(app,'repair_qa_exact_oracle',return_value=dict(exact_check=dict(selector='#rows',value='10'),oracle_basis='独立した要件と入力から再計算')):
+            fixed=app.repair_qa_secondary_oracle('x',raw,fault,{'#rows':{}},self.spec,self.cfg,self.root,'base-workflow','error')
+        self.assertEqual(fixed['exact_check'],raw['exact_check'])
+        self.assertEqual(fixed['steps'],raw['steps'])
+        self.assertEqual(fixed['checks'][0]['value'],'10')
+        self.assertEqual(fixed['checks'][1],raw['checks'][1])
+        self.assertEqual(raw['checks'][0]['value'],'10円')
