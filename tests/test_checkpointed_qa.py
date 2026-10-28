@@ -297,6 +297,23 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertFalse(list(self.root.rglob('base-workflow.json')))
         self.assertIn('actual 90分',next(self.root.rglob('base-workflow-error.json')).read_text())
 
+    def test_conflicting_expectations_repair_before_any_browser_observation(self):
+        raw=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#form button')],
+            checks=[dict(op='text_equals',selector='#planned',value='1分'),dict(op='visible',selector='#title')],
+            exact_check=dict(op='text_equals',selector='#planned',value='2分'),acceptance=[0],result_selector='#planned',rationale='入力から計算した期待値')
+        fixed=copy.deepcopy(raw);fixed['checks'][0]['value']='2分'
+        def model(prompt,cfg,tokens,**kw):return kw['validator'](copy.deepcopy(raw))
+        args=('在宅ワーク',self.page,dict(self.cfg,qa_probe_units=True),self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+        with patch.object(app,'ai_json',side_effect=model),patch.object(app,'execute_browser_qa',side_effect=ValueError('browser reached')) as browser:
+            with self.assertRaisesRegex(app.AutoQAPlanError,'期待値が矛盾'):
+                app.checkpointed_independent_qa_plan(*args)
+            self.assertEqual(browser.call_count,0)
+            with patch.object(app,'repair_qa_conflicting_checks',return_value=fixed) as repair:
+                with self.assertRaisesRegex(app.AutoQAPlanError,'browser reached'):
+                    app.checkpointed_independent_qa_plan(*args)
+                self.assertEqual(repair.call_count,1)
+                self.assertEqual(browser.call_count,1)
+
     def test_display_nodes_cannot_be_operated_as_checkboxes_and_files_cannot_be_clicked(self):
         inventory=app.compact_qa_inventory(self.page+'<input type="file" id="restoreFile">')
         for step in (dict(op='check',selector='#planned'),dict(op='click',selector='#restoreFile')):

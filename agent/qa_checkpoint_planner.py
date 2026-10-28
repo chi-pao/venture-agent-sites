@@ -796,14 +796,14 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
                 return validate_qa_inventory_actions(validated,full_inventory,key.removeprefix('base-'))
             repaired=None
-            if cached is None and formatted and previous and cfg.get('qa_probe_units'):
+            if cached is None and previous and cfg.get('qa_probe_units'):
                 try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
                 except (ValueError,OSError):raw=None
                 if raw and '期待値が矛盾' in error and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)):
                     repaired=repair_qa_conflicting_checks(raw,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock),folder,key,scenarios,formats)
                 # A concrete UI operation error needs operation repair, not a
                 # new oracle. Only expectation/format failures take this path.
-                if repaired is None and raw and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)) and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
+                if formatted and repaired is None and raw and not (key=='base-variant' and qa_variant_repeats_workflow(raw,scenarios)) and not qa_unsubmitted_forms(raw,inventory) and any(term in error for term in ('期待結果と不一致','expected_values','expected_literals')):
                     fault=None
                     if observation.exists():
                         try:fault=json.loads(observation.read_text(encoding='utf-8')).get('check')
