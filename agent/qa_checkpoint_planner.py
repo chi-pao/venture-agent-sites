@@ -362,6 +362,22 @@ def capture_qa_display_contracts(page):
     return qa_display_contracts_from_nodes(nodes)
 
 
+def qa_validate_explicit_percentage(text):
+    """Check explicit arithmetic within an independent oracle, never UI output.
+
+    Only integer percentages with an exact integral ratio are checked: rounding
+    and zero-denominator domain policy must be specified separately.
+    """
+    match=re.search(r'(?P<p>-?\d+(?:\.\d+)?)\s*[%％].*?(?P<n>\d+)\s*/\s*(?P<d>\d+)',str(text))
+    if match:
+        numerator=decimal.Decimal(match['n']);denominator=decimal.Decimal(match['d'])
+        if denominator:
+            computed=numerator*100/denominator
+            if computed==computed.to_integral_value() and decimal.Decimal(match['p'])!=computed:
+                raise AutoQAPlanError('expected_values: 期待値内の割合と分数が算術的に矛盾しています。仕様と入力から再計算してください')
+    return text
+
+
 def compile_qa_formatted_expectation(value,formats):
     if not isinstance(value,dict):return value
     exact=value.get('exact_check')
@@ -377,6 +393,7 @@ def compile_qa_formatted_expectation(value,formats):
     if any(re.search(r'\{n\d+\}|\d',v) for v in literals):
         raise AutoQAPlanError('expected_literals: 数値や未解決の書式記号を文字列に混ぜないでください。数値はexpected_valuesに分離してください')
     text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(values))
+    qa_validate_explicit_percentage(text)
     # Both numbers and surrounding business-state text come from independent
     # QA. The observed template is guidance only, never an automatic oracle.
     return dict(value,exact_check=dict(op='text_equals',selector=exact['selector'],value=text))
@@ -609,6 +626,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
         if not isinstance(answer,dict) or not isinstance(answer.get('expected_text'),str) or not 1<=len(answer['expected_text'])<=250 or re.search(r'\{n\d+\}',answer['expected_text']):
             raise AutoQAPlanError('主結果の単位・補足まで含む完全な期待文字列が必要です')
+        qa_validate_explicit_percentage(answer['expected_text'])
         # A percentage marker in the observed format is presentation data,
         # not the value or business verdict. A missing percentage cannot be a
         # complete exact assertion; reject it instead of retrying the same
@@ -674,6 +692,7 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats
                 raise AutoQAPlanError('expected_values: 矛盾修復でも全数値の独立した期待値が必要です')
             if contract.get('template','').startswith('{n0}') and not re.match(r'^\s*-?\d',expected):
                 raise AutoQAPlanError('expected_values: 矛盾修復に対象外の見出しを含めないでください')
+        qa_validate_explicit_percentage(expected)
         replacement=[dict(c) for c in checks]
         for i in indexes:
             if replacement[i]['op']=='text_equals':replacement[i]['value']=expected

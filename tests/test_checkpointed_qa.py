@@ -693,3 +693,10 @@ class CheckpointedQAPlannerTests(TestCase):
         for suffix in ('%{n1}', '%0%'):
             with self.assertRaisesRegex(app.AutoQAPlanError,'expected_literals'):
                 app.compile_qa_formatted_expectation(dict(exact_check=dict(selector='#rate',expected_values=['50'],expected_literals=['',suffix])),formats)
+
+    def test_percentage_oracle_arithmetic_is_checked_without_product_output(self):
+        for text in ('1%（出席扱い1/1、欠席0）','0% 1/2','100% 0/1'):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'算術'):
+                app.qa_validate_explicit_percentage(text)
+        for text in ('100% 1/1','50% 1/2','33% 1/3','0% 0/0','1件 / 超過0件'):
+            self.assertEqual(app.qa_validate_explicit_percentage(text),text)
