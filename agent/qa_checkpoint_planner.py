@@ -11,6 +11,39 @@ from datetime import datetime as qa_datetime, date as qa_date
 CHECKPOINT_QA_POLICY = '2026-10-26-single-scenario-4'
 
 
+def qa_save_failure_diagnosis(folder,key,page,spec,prior,trial,error,models,current_response=False):
+    """Freeze a failed attempt without treating an observed result as truth."""
+    folder=Path(folder)
+    kind=('inference_timeout' if re.search(r'timed out|TimeoutError',error,re.I) else
+          'test_input_rejected' if '入力検証で拒否' in error else
+          'assertion_mismatch_unresolved' if '期待結果と不一致' in error else
+          'test_definition_rejected' if any(t in error for t in ('expected_values','expected_literals','期待値が矛盾','期待値全体')) else 'unclassified')
+    snapshot=dict(case=key,spec=spec,prior_scenarios=prior,replay_plan=trial,
+                  source_sha=hashlib.sha256(page.encode()).hexdigest(),error=error,models=models)
+    attempt=hashlib.sha256(json.dumps(snapshot,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    directory=folder/'failure-diagnoses'/key/attempt;directory.mkdir(parents=True,exist_ok=True)
+    source=folder/'diagnostic-source.html'
+    if not source.exists() or hashlib.sha256(source.read_bytes()).hexdigest()!=snapshot['source_sha']:
+        source.write_text(page,encoding='utf-8')
+    write_framework_json(directory/'replay.json',snapshot)
+    evidence=[]
+    candidates=[folder/(key+'-browser')/'browser-observation-failure.json'] if trial is not None else []
+    if current_response:candidates.append(folder/(key+'-last-response.json'))
+    for path in candidates:
+        if path.exists():
+            target=directory/path.name;target.write_bytes(path.read_bytes())
+            evidence.append(dict(path=str(target),sha256=hashlib.sha256(target.read_bytes()).hexdigest()))
+    diagnosis=dict(attempt=attempt,kind=kind,cause_confirmed=False,
+        conclusion='ブラウザの結果と検査期待値の不一致だけでは製品側・検査側のどちらが誤りか未確定',
+        replay_available=trial is not None,source=str(source),source_sha=snapshot['source_sha'],
+        replay=str(directory/'replay.json'),evidence=evidence,
+        next_action=('同じ入力と仕様で独立参照計算を行い、期待値と実装を別々に照合' if kind=='assertion_mismatch_unresolved' else
+                     'モデル応答時間と要求サイズを調べ、成功済み検査を保持して失敗単位を修正'))
+    write_framework_json(directory/'diagnosis.json',diagnosis)
+    write_framework_json(folder/(key+'-diagnosis.json'),diagnosis)
+    return diagnosis
+
+
 def qa_retry_models(cfg, failure):
     """Switch only failed units to a configured alternative; retain gates."""
     primary=str(cfg.get('model') or '')
@@ -882,10 +915,13 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         if type(failure.get('repeats'))is int and failure['repeats']>=2:
             previous='';cached=None
         started=qa_time.monotonic()
+        trial=None;current_response=False
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checks/steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
         request=(prompt+('\n'+unit_operations+'\n'+unit_context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+qa_independent_failure_hint(error))
         try:
             def capture_and_validate(value):
+                nonlocal current_response
+                current_response=True
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 value=qa_resolve_unique_date_selector(value,inventory)
                 validated=validate(compile_qa_formatted_expectation(value,formats))
@@ -946,6 +982,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     trial=dict(result_selector=value.get('result_selector') or scenarios[0]['result_selector'],
                         scenarios=scenarios+[dict(value,kind=key.removeprefix('base-'))],feature_cases=[],audience_quotes=quotes[:2])
                 try:
+                    observation.unlink(missing_ok=True)
                     proof=execute_browser_qa(name,page,trial,probe,prefix_only=True)
                     if proof.get('partial_passed') is not True or proof.get('passed') is not False:raise AutoQAPlanError('部分操作の検査結果が不正です')
                     write_framework_json(probe/'partial-proof.json',proof)
@@ -958,6 +995,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             return value
         except Exception as exc:
             detail=type(exc).__name__+': '+str(exc)[:1500]
+            qa_save_failure_diagnosis(folder,key,page,spec,scenarios,trial,detail,dict(planner=retry_model,oracle=retry_oracle,timeout=attempt_timeout),current_response)
             previous_streak=failure.get('timeout_streak',1) if re.search(r'\b(?:TimeoutError|timed out)\b',str(failure.get('error','')),re.I) else 0
             if type(previous_streak)is not int:previous_streak=0
             timeout_streak=previous_streak+1 if re.search(r'\b(?:TimeoutError|timed out)\b',detail,re.I) else 0

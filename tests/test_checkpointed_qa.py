@@ -723,3 +723,13 @@ class CheckpointedQAPlannerTests(TestCase):
             result=app.repair_qa_exact_oracle('x',raw,{'#count':dict(template='{n0}')},self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','期待結果と不一致')
         self.assertEqual(result['exact_check']['value'],'2')
         self.assertEqual(result['steps'],raw['steps'])
+
+    def test_failure_diagnosis_freezes_replay_without_deciding_product_is_wrong(self):
+        plan=dict(scenarios=[dict(kind='workflow',steps=[dict(op='click',selector='#save')])])
+        d=app.qa_save_failure_diagnosis(self.root,'case','<html/>',self.spec,[],plan,'期待結果と不一致',dict(planner='x'),False)
+        self.assertEqual(d['kind'],'assertion_mismatch_unresolved')
+        self.assertFalse(d['cause_confirmed'])
+        self.assertEqual(json.loads(Path(d['replay']).read_text())['replay_plan'],plan)
+        self.assertEqual(d['source_sha'],app.hashlib.sha256(Path(d['source']).read_bytes()).hexdigest())
+        d=app.qa_save_failure_diagnosis(self.root,'case','<html/>',self.spec,[],None,'TimeoutError: timed out',dict(planner='x'),False)
+        self.assertFalse(d['replay_available']);self.assertEqual(d['evidence'],[])
