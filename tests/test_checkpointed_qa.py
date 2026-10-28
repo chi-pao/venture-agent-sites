@@ -711,3 +711,15 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(fixed['checks'][0]['value'],'10')
         self.assertEqual(fixed['checks'][1],raw['checks'][1])
         self.assertEqual(raw['checks'][0]['value'],'10円')
+
+    def test_numeric_only_oracle_uses_bounded_answer_and_retains_prior_inputs(self):
+        raw=dict(steps=[dict(op='fill',selector='#item',value='商品B')],acceptance=[0],exact_check=dict(selector='#count',value='1'))
+        prior=[dict(steps=[dict(op='fill',selector='#item',value='商品A')],checks=[])]
+        def model(prompt,cfg,tokens,**kw):
+            self.assertEqual(tokens,180)
+            self.assertIn('商品A',prompt);self.assertIn('商品B',prompt)
+            return kw['validator'](dict(value='2',basis='先行の一件と今回追加した一件で合計二件'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_exact_oracle('x',raw,{'#count':dict(template='{n0}')},self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','期待結果と不一致')
+        self.assertEqual(result['exact_check']['value'],'2')
+        self.assertEqual(result['steps'],raw['steps'])

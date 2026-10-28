@@ -584,6 +584,21 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)],
                 checks=[{k:check[k] for k in ('op','selector','value','nth') if k in check} for check in row.get('checks',[]) if isinstance(check,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
+    if contract.get('template')=='{n0}':
+        # A numeric-only counter does not need a full-page prose oracle.
+        # Retain prior inputs so an added record is not mistaken for a reset.
+        numeric_schema={'type':'object','properties':{'value':{'type':'string','pattern':r'^-?\d+(?:\.\d+)?$','maxLength':30},'basis':{'type':'string','minLength':12,'maxLength':240}},'required':['value','basis'],'additionalProperties':False}
+        numeric_prompt=('独立QA。数値だけを表示する対象要素の正解を、要件と操作から計算。JSON {value:数値文字列,basis:計算根拠}。'
+            '先行操作の保存状態を保持する。追加・編集・削除を区別し、入力回数だけで件数を決めない。対象以外の集計や見出しは出力しない。'
+            +'\n対象:'+exact['selector']+'\n要件:'+json.dumps(relevant,ensure_ascii=False)
+            +'\n先行操作:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
+            +'\n今回:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':')))
+        def numeric_validate(answer):
+            write_framework_json(folder/(key+'-numeric-oracle-last-response.json'),answer)
+            if not isinstance(answer,dict) or not re.fullmatch(r'-?\d+(?:\.\d+)?',str(answer.get('value',''))) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:
+                raise AutoQAPlanError('expected_values: 単一数値の独立した計算と根拠が必要です')
+            return dict(raw,exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['value']),oracle_basis=answer['basis'])
+        return ai_json(numeric_prompt,dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),180,schema=numeric_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=numeric_validate)
     if any(phrase in error for phrase in ('対象要素は割合から始まります','主結果は割合から始まります')) and re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')):
         # After a real-model format failure, request the independent numeric
         # answers and independent surrounding text separately. The observed
