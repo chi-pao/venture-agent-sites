@@ -625,7 +625,7 @@ class CheckpointedQAPlannerTests(TestCase):
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
         def model(prompt,cfg,tokens,**kw):
             self.assertNotIn('100%（出席扱い1/1、欠席0）',prompt)
-            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_literals=['','%（出席扱い','/','、欠席','）'],basis='二人中一人が出席し一人が欠席したため'))
+            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='二人中一人が出席し一人が欠席したため'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','対象要素は割合から始まります')
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
@@ -638,7 +638,7 @@ class CheckpointedQAPlannerTests(TestCase):
         def model(prompt,cfg,tokens,**kw):
             self.assertIn('先行検査の入力と独立した期待値',prompt)
             self.assertIn('出席',prompt);self.assertIn('欠席',prompt)
-            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_literals=['','%（出席扱い','/','、欠席','）'],basis='最初の出席と今回の欠席で二人となるため'))
+            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='最初の出席と今回の欠席で二人となるため'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','主結果は割合から始まります')
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
@@ -654,3 +654,36 @@ class CheckpointedQAPlannerTests(TestCase):
         self.assertEqual(repaired['checks'][1],raw['checks'][1])
         self.assertIsNone(app.repair_qa_literal_selector(raw,dict(fault,value='観測値を採用'),inventory,self.cfg,self.root,'base-workflow'))
 
+
+    def test_work_date_does_not_trigger_calendar_audit_for_capacity_result(self):
+        raw=dict(steps=[dict(op='fill',selector='#work_date',value='2026-10-28')],acceptance=[0])
+        spec=dict(acceptance=['予定480分、実績420分は稼働枠内と表示する'])
+        answer=dict(exact_check=dict(op='text_equals',selector='#summary',value='1件 / 稼働枠内'),oracle_basis='予定480分から実績420分を差し引くと残り60分で枠内')
+        with patch.object(app,'ai_json') as model:
+            self.assertEqual(app.qa_audit_date_oracle(raw,spec,dict(self.cfg,_qa_reference_clock={'date':'2026-10-28'}),[],answer),answer)
+            model.assert_not_called()
+
+    def test_percentage_compiler_has_no_model_supplied_heading_slot(self):
+        raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
+        formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertNotIn('expected_literals',kw['schema']['properties'])
+            self.assertEqual(kw['schema']['properties']['expected_suffixes']['minItems'],4)
+            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='独立した二人の入力から一人が出席、一人が欠席と計算'))
+        with patch.object(app,'ai_json',side_effect=model):
+            result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','主結果は割合から始まります')
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+        self.assertEqual(result['steps'],raw['steps'])
+
+    def test_identical_checkpoint_failures_escalate_without_carrying_old_streak(self):
+        first=app.qa_failure_memory({},'same failure')
+        second=app.qa_failure_memory(first,'same failure')
+        self.assertEqual(second['repeats'],2)
+        self.assertEqual(app.qa_failure_memory(second,'different failure')['repeats'],1)
+        self.assertEqual(app.qa_failure_memory(dict(first,repeats='bad'),'same failure')['repeats'],1)
+
+    def test_replanning_hint_does_not_expose_actual_product_answer(self):
+        hint=app.qa_independent_failure_hint('workflowの期待結果と不一致: expected 0 actual SECRET_OBSERVED_VALUE')
+        self.assertNotIn('SECRET_OBSERVED_VALUE',hint)
+        self.assertIn('独立',hint)
+        self.assertEqual(app.qa_independent_failure_hint('required field #title'),'required field #title')

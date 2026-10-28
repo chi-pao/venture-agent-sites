@@ -29,6 +29,21 @@ def qa_retry_models(cfg, failure):
     return model,oracle_model
 
 
+def qa_failure_memory(previous, detail):
+    """Count identical failed checkpoints without discarding passing siblings."""
+    signature=hashlib.sha256(detail.encode()).hexdigest()
+    repeats=previous.get('repeats',0) if previous.get('signature')==signature else 0
+    if type(repeats)is not int or repeats<0:repeats=0
+    return dict(signature=signature,repeats=repeats+1)
+
+
+def qa_independent_failure_hint(error):
+    # Actual UI values remain in evidence files, never become an oracle hint.
+    if '期待結果と不一致' in error:
+        return '既存の期待値が実ブラウザ検査を通過しません。実測結果は正解の資料に使わず、仕様と入力から独立して再計算してください。'
+    return error[:1200]
+
+
 def qa_retry_timeout(cfg, failure):
     """Bound extra inference time to the unit that actually timed out."""
     base=int(cfg.get('qa_part_timeout',180))
@@ -399,9 +414,17 @@ def qa_audit_date_oracle(raw, spec, cfg, prior, answer):
     steps=[s for row in prior for s in row.get('steps',[])]+raw.get('steps',[])
     facts=qa_independent_date_facts(steps,cfg.get('_qa_reference_clock',{}))
     if not facts:return answer
+    # A dated record is not necessarily a date-dependent business result.
+    # Auditing every work-date was rejecting valid duration/capacity results.
+    # Scope this extra audit to an explicit calendar rule or dated oracle basis;
+    # arithmetic and other feature assertions still run their own checks.
+    relevant=[spec.get('acceptance',[])[i] for i in raw.get('acceptance',[])
+              if type(i)is int and 0<=i<len(spec.get('acceptance',[]))]
+    date_rule=' '.join(map(str,relevant))+' '+str(spec.get('requested_outcome',''))+' '+' '.join(map(str,spec.get('must_have',[])))+' '+str(answer.get('oracle_basis',''))
+    if not re.search(r'期限|期日|締切|締め切り|営業日|日数|前日|翌日|deadline|due date|overdue|calendar',date_rule,re.I):return answer
     schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':8,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
     prompt=('独立監査。日付の前後関係、仕様、状態と期待値・根拠が矛盾しないか確認。'
-        '期限前後だけで処理済みや期限超過を決めず、状態と仕様も確認。正解を実画面から推測しない。'
+        '期限前後だけで処理済みや期限超過を決めず、状態と仕様も確認。正解を実画面から推測しない。日付規則の矛盾だけを判定し、予定時間と実績時間が異なること自体を不合格理由にしない。'
         'JSON {"valid":true,"reason":"判断根拠"}。矛盾または情報不足ならvalid:false。'
         '\n仕様:'+json.dumps(spec,ensure_ascii=False,separators=(',',':'))[:3000]
         +'\n日付差分:'+json.dumps(facts,ensure_ascii=False,separators=(',',':'))
@@ -545,17 +568,21 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         # display supplies slot count only, never values or literal text.
         count=contract.get('slots')
         if type(count) is not int or not 1<=count<=8:return None
-        schema={'type':'object','properties':{'expected_values':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','minLength':1,'maxLength':30}},'expected_literals':{'type':'array','minItems':count+1,'maxItems':count+1,'items':{'type':'string','maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_values','expected_literals','basis'],'additionalProperties':False}
+        schema={'type':'object','properties':{'expected_values':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','minLength':1,'maxLength':30}},'expected_suffixes':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_values','expected_suffixes','basis'],'additionalProperties':False}
         prompt=('独立QA。観測した数値・状態を正解に使わず、要件と入力から数値と文字列を計算。'
-            '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_literals":["数値の前","数値の間","最後"],"basis":"根拠"}。'
-            '数値は'+str(count)+'個、文字列は'+str(count+1)+'個。結果の先頭は割合の数値、続いて%を含める。'
+            '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_suffixes":["各数値の直後の文字列"],"basis":"根拠"}。'
+            '数値と後続文字列はそれぞれ'+str(count)+'個。先頭の数値の前にはプログラムが空文字を置く。先頭の後続文字列は%から始める。見出しは不要。'
             '\n要件:'+json.dumps(relevant,ensure_ascii=False)
             +'\n先行検査の入力と独立した期待値（実測値ではない。次の操作まで状態を保持し、根拠を要件から再計算）:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
             +'\n今回の操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
             +'\n書式の参考（数値は未記載、正解ではない）:'+str(contract.get('template','')))
         def validate_parts(answer):
             if not isinstance(answer,dict) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('独立した計算根拠が不足しています')
-            candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=answer.get('expected_values'),expected_literals=answer.get('expected_literals')))
+            write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
+            suffixes=answer.get('expected_suffixes')
+            if not isinstance(suffixes,list) or len(suffixes)!=count or not all(isinstance(x,str) for x in suffixes) or not re.match(r'^\s*[%％]',suffixes[0]):
+                raise AutoQAPlanError('expected_values: 割合の各数値の後続文字列を指定し、最初は%から始めてください')
+            candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=answer.get('expected_values'),expected_literals=['']+suffixes))
             result=compile_qa_formatted_expectation(candidate,formats)
             if not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',result['exact_check']['value']):raise AutoQAPlanError('expected_values: 主結果は割合から始まります。見出しを混ぜないでください')
             return dict(result,oracle_basis=answer['basis'])
@@ -784,9 +811,13 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         # to copy the same split operations and inflates CPU inference time.
         if '操作対象が不正です。steps[' in error:
             previous=''
+        # Do not endlessly patch the same bad plan. Replan only this failed
+        # checkpoint after two identical failures; retain successful siblings.
+        if type(failure.get('repeats'))is int and failure['repeats']>=2:
+            previous='';cached=None
         started=qa_time.monotonic()
         unit_operations=('mutation_stepsは{op:fill/click/select/check/wait,selector:CSS,value:入力値}の配列。select要素にはselectを使用。checks/steps/kindは出力しない。' if key=='base-roundtrip' else ('invalid_stepsは{op:fill/select/click/wait,selector:CSS,value:入力値}の配列。steps/kindは出力しない。壊れたJSONの実選択は検査プログラムが追加する。' if key=='base-invalid' else operations))
-        request=(prompt+('\n'+unit_operations+'\n'+unit_context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+error[:1200])
+        request=(prompt+('\n'+unit_operations+'\n'+unit_context if include_context else '')+'\nこの1件だけ返す。前回の不合格検査:'+previous+'\n前回の問題（実測値を正解へコピーせず、仕様から正解を再計算する）:'+qa_independent_failure_hint(error))
         try:
             def capture_and_validate(value):
                 write_framework_json(folder/(key+'-last-response.json'),value)
@@ -862,7 +893,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             previous_streak=failure.get('timeout_streak',1) if re.search(r'\b(?:TimeoutError|timed out)\b',str(failure.get('error','')),re.I) else 0
             if type(previous_streak)is not int:previous_streak=0
             timeout_streak=previous_streak+1 if re.search(r'\b(?:TimeoutError|timed out)\b',detail,re.I) else 0
-            write_framework_json(error_path,dict(error=detail,seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout,timeout_streak=timeout_streak,checked=now()))
+            write_framework_json(error_path,dict(error=detail,seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout,timeout_streak=timeout_streak,**qa_failure_memory(failure,detail),checked=now()))
             raise
 
     scenarios=[]
