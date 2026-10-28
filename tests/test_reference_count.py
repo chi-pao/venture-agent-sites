@@ -45,4 +45,30 @@ class ReferenceCountTests(unittest.TestCase):
         self.assertEqual(len(calls),2)
         self.assertNotIn('999',''.join(calls))
 
+
+    def test_composite_preserves_other_business_values_and_repairs_duplicates(self):
+        from unittest.mock import patch
+        raw=dict(steps=[dict(op='click',selector='#save')],exact_check=dict(selector='#summary',value='1件 / 超過3件'),checks=[dict(op='text_equals',selector='#summary',value='1件 / 超過3件'),dict(op='text_contains',selector='#summary',value='1件'),dict(op='text_contains',selector='#rows',value='商品A')])
+        def model(prompt,cfg,tokens,**kw):
+            return kw['validator'](dict(suffix='件 / 超過3件',contains_values=['2件'],basis='期限と状態に基づいて超過件数を独立判定する'))
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t, patch.object(qa,'qa_reference_count_oracle',return_value=dict(reference_count=dict(count=2),oracle_basis='参照状態による計算')):
+            result=qa.qa_reference_composite_oracle(raw,{'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2)},dict(acceptance=['返品を追加']),dict(model='x'),Path(t),'base-variant',[])
+        self.assertEqual(result['exact_check']['value'],'2件 / 超過3件')
+        self.assertEqual(result['checks'][0]['value'],'2件 / 超過3件')
+        self.assertEqual(result['checks'][1]['value'],'2件')
+        self.assertEqual(result['checks'][2],raw['checks'][2])
+        self.assertEqual(result['steps'],raw['steps'])
+        self.assertEqual(raw['exact_check']['value'],'1件 / 超過3件')
+
+    def test_first_submit_required_inputs_and_defaults(self):
+        controls=[dict(selector='#title',tag='input',required=True,form='#f'),dict(selector='#status',tag='select',required=True,form='#f',options=[dict(value='',label='選択'),dict(value='open',label='未処理',selected=True)]),dict(selector='#save',tag='button',form='#f')]
+        value=dict(steps=[dict(op='click',selector='#save')])
+        self.assertEqual(qa.qa_missing_initial_required_inputs(value,dict(controls=controls)),['#title'])
+        value['steps'].insert(0,dict(op='fill',selector='#title',value='仕事A'))
+        self.assertEqual(qa.qa_missing_initial_required_inputs(value,dict(controls=controls)),[])
+        controls[0]['disabled']=True;value['steps']=value['steps'][1:]
+        self.assertEqual(qa.qa_missing_initial_required_inputs(value,dict(controls=controls)),[])
+
 if __name__=='__main__':unittest.main()
+

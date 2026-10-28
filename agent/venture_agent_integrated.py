@@ -3463,7 +3463,7 @@ class _QAInventory(HTMLParser):
         if tag=='option':
             parent=next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='select'),None)
             select=next((n for n in reversed(self.nodes) if n['selector']=='#'+str(parent)),None)
-            if select is not None:select.setdefault('options',[]).append(dict(value=a.get('value'),label=''))
+            if select is not None:select.setdefault('options',[]).append(dict(value=a.get('value'),label='',selected='selected' in a))
         if tag in ('input','select','textarea','button') or a.get('id'):
             selector='#'+a['id'] if a.get('id') else ''
             if not selector:
@@ -3473,7 +3473,7 @@ class _QAInventory(HTMLParser):
                 node=dict(tag=tag,selector=selector)
                 form_id=a.get('form') or next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='form' and v.get('id')),None)
                 if form_id:node['form']='#'+form_id
-                for key in ('type','value','placeholder','min','max','required','name'):
+                for key in ('type','value','placeholder','min','max','required','name','disabled','readonly'):
                     if key in a:node[key]=a[key] if a[key] is not None else True
                 self.nodes.append(node)
         # Track text owners separately. Void controls do not own following text.
@@ -3626,7 +3626,32 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
     return ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
 
 
+def qa_missing_initial_required_inputs(value,inventory):
+    """Check known required fields before the first explicit form submit.
+
+    Later/dynamic form state remains the real browser's responsibility.
+    No values are fabricated to make a test pass.
+    """
+    controls=inventory.get('controls',[]);known={n['selector']:n for n in controls}
+    values={n['selector']:n.get('value','') for n in controls if n.get('tag')=='input'}
+    for n in controls:
+        if n.get('tag')=='select' and n.get('options'):
+            option=next((o for o in n['options'] if o.get('selected')),n['options'][0])
+            values[n['selector']]=option.get('value') if option.get('value') is not None else option.get('label','')
+    for step in value.get('steps',[]):
+        selector=step.get('selector');node=known.get(selector,{})
+        if step.get('op') in ('fill','select'):
+            values[selector]=step.get('value',step.get('label',''))
+        if step.get('op')=='click' and node.get('form') and (node.get('type')=='submit' or node.get('tag')=='button' and not node.get('type')):
+            required=[n for n in controls if n.get('form')==node['form'] and 'required' in n and 'disabled' not in n and 'readonly' not in n and n.get('tag') in ('input','select') and n.get('type') not in ('checkbox','radio','file','hidden')]
+            return [n['selector'] for n in required if values.get(n['selector']) is None or str(values.get(n['selector'],'')).strip()=='']
+    return []
+
+
 def validate_qa_inventory_actions(value,inventory,kind):
+    if kind=='workflow':
+        missing_inputs=qa_missing_initial_required_inputs(value,inventory)
+        if missing_inputs:raise AutoQAPlanError('検査計画の必須入力が不足しています。仕様に合う値を入力してから送信してください: '+str(missing_inputs))
     nodes=inventory['controls']+inventory['outputs']
     for step in value.get('steps',[]):
         op=step['op'];selector=step.get('selector','')
@@ -3950,6 +3975,47 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis='仕様と操作の対応を独立監査し、参照状態遷移で件数を計算',reference_count=result)
 
 
+def qa_reference_composite_oracle(raw,formats,spec,cfg,folder,key,prior):
+    """Use the reference count in a composite summary; other facts stay independent."""
+    exact=raw.get('exact_check',{});contract=formats.get(exact.get('selector'),{})
+    template=contract.get('template','')
+    if not template.startswith('{n0}件 / '):return None
+    component=dict(contract,label=str(contract.get('label',''))+' 先頭の件数（全保存記録か元仕様で確認）')
+    reference=qa_reference_count_oracle(raw,component,spec,cfg,folder,key,prior)
+    if reference is None:return None
+    count=reference['reference_count']['count']
+    checks=raw.get('checks',[])
+    indexes=[i for i,c in enumerate(checks) if c.get('selector')==exact['selector'] and c.get('nth',0)==exact.get('nth',0) and c.get('op') in ('text_equals','text_contains')]
+    contains=[i for i in indexes if checks[i]['op']=='text_contains']
+    schema={'type':'object','properties':{'suffix':{'type':'string','minLength':1,'maxLength':180},'contains_values':{'type':'array','minItems':len(contains),'maxItems':len(contains),'items':{'type':'string','minLength':1,'maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['suffix','contains_values','basis'],'additionalProperties':False}
+    prompt=('独立QA。全記録件数は参照状態計算で確定済み。件数は回答せず、先頭の件数の後ろに続く表示suffix（件 / から開始）と、指定の部分一致期待値だけを元仕様と入力から判断。'
+        '期限超過数や稼働状態など残りの業務判断は独立して計算。表示形式は正解を意味しない。JSON {suffix,contains_values,basis}。'
+        +'\n元仕様:'+json.dumps(spec,ensure_ascii=False,separators=(',',':'))
+        +'\n確定した件数:'+str(count)+'\n参照計算過程:'+json.dumps(reference['reference_count'],ensure_ascii=False)
+        +'\n先行入力:'+json.dumps([r.get('steps',[]) for r in prior],ensure_ascii=False)
+        +'\n今回入力:'+json.dumps(raw.get('steps',[]),ensure_ascii=False)
+        +'\n基準日:'+json.dumps(cfg.get('_qa_reference_clock',{}),ensure_ascii=False)
+        +'\n数値を除去した表示形式:'+template
+        +'\n部分一致対象:'+json.dumps([dict(selector=checks[i]['selector'],op=checks[i]['op']) for i in contains],ensure_ascii=False))
+    def validate(answer):
+        write_framework_json(folder/(key+'-composite-response.json'),answer)
+        suffix=answer.get('suffix') if isinstance(answer,dict) else None
+        literals=answer.get('contains_values') if isinstance(answer,dict) else None
+        if not isinstance(suffix,str) or not suffix.startswith('件 / ') or re.search(r'\{n\d+\}',suffix) or not isinstance(literals,list) or len(literals)!=len(contains) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:
+            raise AutoQAPlanError('参照状態: 件数以外の期待表示と根拠が不足しています')
+        expected=str(count)+suffix
+        if len(re.findall(r'-?\d+(?:\.\d+)?',expected))!=contract.get('slots'):
+            raise AutoQAPlanError('参照状態: 複合表示の残りの数値が不足しています')
+        revised=[dict(c) for c in checks]
+        for i in indexes:
+            if revised[i]['op']=='text_equals':revised[i]['value']=expected
+        for i,value in zip(contains,literals):
+            if not isinstance(value,str) or not value or value not in expected:raise AutoQAPlanError('参照状態: 補助期待値が計算した表示と矛盾します')
+            revised[i]['value']=value
+        return dict(raw,checks=revised,exact_check=dict(op='text_equals',selector=exact['selector'],value=expected),reference_count=reference['reference_count'],oracle_basis=reference['oracle_basis']+' / '+answer['basis'])
+    return ai_json(prompt,dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),350,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
+
+
 def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     exact=raw.get('exact_check') if isinstance(raw,dict) else None
     if not isinstance(exact,dict) or exact.get('selector') not in formats:return None
@@ -3963,6 +4029,8 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     prior=[dict(kind=row.get('kind',''),steps=[{k:step[k] for k in ('op','selector','value','label','nth') if k in step} for step in row.get('steps',[]) if isinstance(step,dict)],
                 checks=[{k:check[k] for k in ('op','selector','value','nth') if k in check} for check in row.get('checks',[]) if isinstance(check,dict)]) for row in prior if isinstance(row,dict)]
     relevant=[spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i)is int and 0<=i<len(spec['acceptance'])]
+    composite=qa_reference_composite_oracle(raw,formats,spec,cfg,folder,key,prior)
+    if composite is not None:return composite
     if contract.get('template')=='{n0}':
         reference=qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior)
         if reference is not None:return reference
@@ -4070,6 +4138,8 @@ def repair_qa_conflicting_checks(raw, spec, cfg, folder, key, scenarios, formats
         'basis':{'type':'string','minLength':12,'maxLength':300}},
         'required':['expected_text','replacement_values','basis'],'additionalProperties':False}
     prior = [{'kind': s.get('kind'), 'steps': s.get('steps',[])} for s in scenarios] if key == 'base-variant' else []
+    composite=qa_reference_composite_oracle(raw,formats or {},spec,cfg,folder,key,prior)
+    if composite is not None:return composite
     relevant = [spec['acceptance'][i] for i in raw.get('acceptance',[]) if type(i) is int and 0 <= i < len(spec['acceptance'])]
     prompts = [{'op':checks[i]['op'],'selector':checks[i]['selector']} for i in contains_indexes]
     prompt = ('独立QA。保存された操作と対象要素は変えず、矛盾した期待値すべてを仕様・入力から再計算する。'

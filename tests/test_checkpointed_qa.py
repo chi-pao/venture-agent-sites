@@ -33,6 +33,10 @@ class CheckpointedQAPlannerTests(TestCase):
         self.spec=dict(audience='在宅勤務者',requested_outcome='作業時間を計算して保存する',
             acceptance=['作業予定の集計','実績時間の集計','再読込して保持','出力と復元','誤入力を拒否'])
         self.cfg=dict(app.DEFAULT,model='fixture-model')
+        # Legacy prompt fixtures isolate their route; the composite reference
+        # branch is exercised independently in test_reference_count.py.
+        composite_patch=patch.object(app,'qa_reference_composite_oracle',return_value=None)
+        composite_patch.start();self.addCleanup(composite_patch.stop)
         self.page='<html><head><script>const SECRET="do-not-send";</script><style>body{color:red}</style></head><body><h1>在宅勤務の作業を整理する</h1><p>開始と終了を入力して作業時間を計算する。</p><form id="form"><label for="title">作業名</label><input id="title" required><button>保存する</button></form><strong id="planned">0分</strong></body></html>'
         self.full=work_plan();self.calls=[];self.timeout_once=False
 
