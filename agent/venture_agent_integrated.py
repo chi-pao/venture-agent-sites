@@ -3312,7 +3312,10 @@ def qa_retry_models(cfg, failure):
     last=str(failure.get('model') or primary)
     last_oracle=str(failure.get('oracle_model') or oracle)
     model=alternate if alternate!=primary and last!=alternate else primary
-    oracle_model=alternate if alternate!=oracle and last_oracle!=alternate else oracle
+    # Coding ability is not evidence of independent business-oracle quality.
+    # Keep the dedicated oracle unless an oracle-specific alternate is set.
+    alternate_oracle=str(cfg.get('qa_alternate_oracle_model') or '')
+    oracle_model=alternate_oracle if alternate_oracle and alternate_oracle!=oracle and last_oracle!=alternate_oracle else oracle
     return model,oracle_model
 
 

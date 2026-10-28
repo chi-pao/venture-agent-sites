@@ -16,7 +16,7 @@ class CheckpointedQAPlannerTests(TestCase):
     def test_failed_unit_switches_only_to_configured_alternative_and_back(self):
         cfg=dict(model='planner',qa_oracle_model='oracle',code_model='coder')
         self.assertEqual(app.qa_retry_models(cfg,{}),('planner','oracle'))
-        self.assertEqual(app.qa_retry_models(cfg,dict(error='TimeoutError: timed out')),('coder','coder'))
+        self.assertEqual(app.qa_retry_models(cfg,dict(error='TimeoutError: timed out')),('coder','oracle'))
         self.assertEqual(app.qa_retry_models(cfg,dict(error='invalid output',model='coder',oracle_model='coder')),('planner','oracle'))
         self.assertEqual(app.qa_retry_models(cfg,dict(error='HTTP Error 403')),('planner','oracle'))
         self.assertEqual(app.qa_retry_models(dict(model='planner'),dict(error='timed out')),('planner','planner'))
