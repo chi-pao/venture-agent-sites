@@ -590,7 +590,10 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         # display supplies slot count only, never values or literal text.
         count=contract.get('slots')
         if type(count) is not int or not 1<=count<=8:return None
+        ratio_layout=bool(re.search(r'\{n\d+\}/\{n\d+\}',contract.get('template','')))
         schema={'type':'object','properties':{'expected_values':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','minLength':1,'maxLength':30}},'expected_suffixes':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_values','expected_suffixes','basis'],'additionalProperties':False}
+        if ratio_layout:
+            del schema['properties']['expected_suffixes'];schema['required'].remove('expected_suffixes')
         prompt=('独立QA。観測した数値・状態を正解に使わず、要件と入力から数値と文字列を計算。'
             '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_suffixes":["各数値の直後の文字列"],"basis":"根拠"}。'
             '数値と後続文字列はそれぞれ'+str(count)+'個。先頭の数値の前にはプログラムが空文字を置く。先頭の後続文字列は%から始める。見出しは不要。'
@@ -601,13 +604,16 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         def validate_parts(answer):
             if not isinstance(answer,dict) or not isinstance(answer.get('basis'),str) or len(answer['basis'].strip())<12:raise AutoQAPlanError('独立した計算根拠が不足しています')
             write_framework_json(folder/(key+'-oracle-last-response.json'),answer)
-            suffixes=answer.get('expected_suffixes')
+            # For a percentage with an explicit fraction, labels and separators
+            # are presentation only. Independent QA still supplies every number.
+            suffixes=(re.split(r'\{n\d+\}',contract['template'])[1:] if ratio_layout else answer.get('expected_suffixes'))
             if not isinstance(suffixes,list) or len(suffixes)!=count or not all(isinstance(x,str) for x in suffixes) or not re.match(r'^\s*[%％]',suffixes[0]):
                 raise AutoQAPlanError('expected_values: 割合の各数値の後続文字列を指定し、最初は%から始めてください')
             candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=answer.get('expected_values'),expected_literals=['']+suffixes))
             result=compile_qa_formatted_expectation(candidate,formats)
             if not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',result['exact_check']['value']):raise AutoQAPlanError('expected_values: 主結果は割合から始まります。見出しを混ぜないでください')
             return dict(result,oracle_basis=answer['basis'])
+        if ratio_layout:prompt+='\n今回の出力はexpected_valuesとbasisだけ。%・分数の/・項目名はプログラムが表示書式から組み立てる。数値は全て要件と入力から独立して計算し、項目番号を回答しない。'
         oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
         answer=ai_json(prompt,oracle_cfg,450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate_parts)
         return qa_audit_date_oracle(raw,spec,cfg,prior,answer)

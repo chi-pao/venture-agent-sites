@@ -668,7 +668,7 @@ class CheckpointedQAPlannerTests(TestCase):
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
         def model(prompt,cfg,tokens,**kw):
             self.assertNotIn('expected_literals',kw['schema']['properties'])
-            self.assertEqual(kw['schema']['properties']['expected_suffixes']['minItems'],4)
+            self.assertNotIn('expected_suffixes',kw['schema']['properties'])
             return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='独立した二人の入力から一人が出席、一人が欠席と計算'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','主結果は割合から始まります')
