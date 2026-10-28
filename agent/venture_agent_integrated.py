@@ -3657,6 +3657,28 @@ def qa_independent_date_facts(steps, reference_clock):
     return facts[:12]
 
 
+def qa_audit_date_oracle(raw, spec, cfg, prior, answer):
+    """Audit date-based expectations against requirements, never UI output."""
+    steps=[s for row in prior for s in row.get('steps',[])]+raw.get('steps',[])
+    facts=qa_independent_date_facts(steps,cfg.get('_qa_reference_clock',{}))
+    if not facts:return answer
+    schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':8,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
+    prompt=('独立監査。日付の前後関係、仕様、状態と期待値・根拠が矛盾しないか確認。'
+        '期限前後だけで処理済みや期限超過を決めず、状態と仕様も確認。正解を実画面から推測しない。'
+        'JSON {"valid":true,"reason":"判断根拠"}。矛盾または情報不足ならvalid:false。'
+        '\n仕様:'+json.dumps(spec,ensure_ascii=False,separators=(',',':'))[:3000]
+        +'\n日付差分:'+json.dumps(facts,ensure_ascii=False,separators=(',',':'))
+        +'\n操作:'+json.dumps(steps,ensure_ascii=False,separators=(',',':'))[:2500]
+        +'\n期待値と理由:'+json.dumps({'expected':answer.get('exact_check'),'basis':answer.get('oracle_basis')},ensure_ascii=False))
+    def validate(result):
+        if not isinstance(result,dict) or result.get('valid') is not True or not isinstance(result.get('reason'),str) or len(result['reason'].strip())<8:
+            raise AutoQAPlanError('expected_values: 日付を使う期待値の独立監査が未合格: '+str(result)[:400])
+        return result
+    ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),250,schema=schema,max_attempts=1,
+        request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    return answer
+
+
 def qa_action_timeline(prior, current):
     # Count attempted actions only. A click can edit, fail validation, or be
     # cancelled, so its count is never treated as a count of saved records.
@@ -3801,7 +3823,8 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
             if not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',result['exact_check']['value']):raise AutoQAPlanError('expected_values: 主結果は割合から始まります。見出しを混ぜないでください')
             return dict(result,oracle_basis=answer['basis'])
         oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
-        return ai_json(prompt,oracle_cfg,450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate_parts)
+        answer=ai_json(prompt,oracle_cfg,450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate_parts)
+        return qa_audit_date_oracle(raw,spec,cfg,prior,answer)
     prompt=('独立QA。入力と操作は変更しない。主結果の完全な期待表示だけを、仕様から独立に計算して返す。'
         'JSON {"expected_text":"単位や補足も含む完全な期待文字列","basis":"入力からの計算式・根拠"}。'
         '数値を省略した表示書式の{n0},{n1}等を、入力から計算した数値に置き換える。必要な単位や文言を省略しない。'
@@ -3836,6 +3859,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
     oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
     repaired=ai_json(prompt,oracle_cfg,450,schema=schema,
         max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate)
+    repaired=qa_audit_date_oracle(raw,spec,cfg,prior,repaired)
     write_framework_json(folder/(key+'-oracle-repair.json'),dict(source_steps_sha=hashlib.sha256(json.dumps(dict(prior=prior,current=inputs),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),value=repaired))
     return repaired
 

@@ -383,6 +383,9 @@ class CheckpointedQAPlannerTests(TestCase):
         raw=dict(steps=[dict(op='fill',selector='#deadline',value='2023-12-31')],acceptance=[0],exact_check=dict(selector='#summary',value='0件'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='1件 / 超過1件')])
         def model(prompt,cfg,tokens,**kw):
+            if '独立監査。日付' in prompt:
+                self.assertNotIn('実画面から推測した値',prompt)
+                return kw['validator'](dict(valid=True,reason='期限と検証日時を要求に照らして確認しました'))
             self.assertEqual(cfg['model'],'experiment-oracle')
             self.assertEqual(kw['request_timeout'],300)
             self.assertIn('2026-10-27',prompt)
@@ -392,6 +395,17 @@ class CheckpointedQAPlannerTests(TestCase):
         with patch.object(app,'ai_json',side_effect=model):
             fixed=app.repair_qa_exact_oracle('返品管理',raw,formats,self.spec,dict(self.cfg,qa_oracle_model='experiment-oracle',qa_oracle_timeout=300,_qa_reference_clock={'date':'2026-10-27','timezone':'Asia/Tokyo','source':'browser local clock'}),self.root,'base-workflow','期待結果と不一致')
         self.assertEqual(fixed['exact_check']['value'],'1件 / 超過1件')
+
+    def test_date_oracle_audit_rejects_contradictory_basis(self):
+        raw=dict(steps=[dict(op='fill',selector='#deadline',value='2026-10-27')])
+        candidate=dict(exact_check=dict(op='text_equals',selector='#summary',value='1件 / 超過0件'),oracle_basis='期限が基準日より前だが超過は発生しない')
+        cfg=dict(self.cfg,_qa_reference_clock={'date':'2026-10-28'})
+        def audit(prompt,cfg,tokens,**kw):
+            self.assertIn('"relation":"before"',prompt)
+            return kw['validator'](dict(valid=False,reason='未処理の期限が基準日より前で根拠と結果が矛盾する'))
+        with patch.object(app,'ai_json',side_effect=audit):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'独立監査が未合格'):
+                app.qa_audit_date_oracle(raw,self.spec,cfg,[],candidate)
 
     def test_variant_oracle_receives_prior_operations_but_feature_starts_clean(self):
         prior=[dict(kind='workflow',steps=[dict(op='fill',selector='#order',value='FIRST-123'),dict(op='click',selector='#save')])]
