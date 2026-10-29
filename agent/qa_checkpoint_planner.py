@@ -1576,7 +1576,7 @@ def qa_reference_rows(steps,events):
 def qa_evaluate_projection(rows,projection,reference_clock):
     """Small explicit aggregate language, with no eval or model arithmetic."""
     metric=projection.get('metric');where=projection.get('where');field=projection.get('field');members=projection.get('members',[])
-    if metric not in ('count','percent','sum') or where not in ('all','in','before_date','on_input_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
+    if metric not in ('count','percent','sum') or where not in ('all','in','before_date','on_reference_date','on_input_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
     if not isinstance(members,list) or any(not isinstance(v,str) for v in members):raise AutoQAPlanError('参照集計: 条件値が不正です')
     selected=[]
     for row in rows:
@@ -1588,7 +1588,8 @@ def qa_evaluate_projection(rows,projection,reference_clock):
                 try:
                     import datetime as projection_time
                     actual=projection_time.date.fromisoformat(str(row[field]))
-                    if where=='before_date':reference=projection_time.date.fromisoformat(reference_clock['date']);matched=actual<reference
+                    if where in ('before_date','on_reference_date'):
+                        reference=projection_time.date.fromisoformat(reference_clock['date']);matched=actual<reference if where=='before_date' else actual==reference
                     else:reference=projection_time.date.fromisoformat(reference_clock['input_values'][projection['reference_input']]);matched=actual==reference
                 except (KeyError,TypeError,ValueError):raise AutoQAPlanError('参照集計: 正しい日付入力と独立した基準値が必要です')
         also=projection.get('also')
@@ -1630,7 +1631,10 @@ def qa_projection_candidates(controls,template,index,output=None,input_values=No
     for node in sorted(controls,key=lambda n:n['selector']):
         field=node['selector'];label=node.get('label') or field
         if row_fields is not None and field not in row_fields:continue
-        if node.get('type')=='date':candidates.append(rule('before_date',field,label=label+'が実行基準日より前の保存記録'))
+        if node.get('type')=='date':
+            candidates.append(rule('before_date',field,label=label+'が実行基準日より前の保存記録'))
+            if re.search(r'今日|本日|当日',str((output or {}).get('label',''))+template):
+                candidates.append(rule('on_reference_date',field,label=label+'が今日（独立した実行基準日）と同じ保存記録'))
         options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value')))
         if 0<len(options)<=5:
             for length in range(1,len(options)+1):
@@ -1641,7 +1645,7 @@ def qa_projection_candidates(controls,template,index,output=None,input_values=No
                     if length==len(options) and 'required' in node and node['required']is not False and 'disabled' not in node:continue
                     candidates.append(rule('in',field,list(members),label+'が'+('または'.join(members))+'の保存記録'))
         if not percent and node.get('type')=='number':candidates.append(dict(metric='sum',where='all',field=field,members=[],rounding='exact',places=0,basis=label+'の全保存記録の合計'))
-    date_rules=[p for p in candidates if p['where']=='before_date']
+    date_rules=[p for p in candidates if p['where']in ('before_date','on_reference_date')]
     state_rules=[p for p in candidates if p['where']=='in']
     for date_rule in date_rules:
         for state_rule in state_rules:
@@ -1654,6 +1658,19 @@ def qa_projection_candidates(controls,template,index,output=None,input_values=No
                 candidates.append(dict(rule('on_input_date',node['selector'],label=(node.get('label')or node['selector'])+'が入力済みの'+(reference.get('label')or css)+'と同じ日付の保存記録'),reference_input=css))
 
     return candidates
+
+
+def qa_compact_projection_choices(candidates,controls):
+    """Lossless short meanings keep finite semantic choices within CPU budgets."""
+    labels={n['selector']:n.get('label')or n['selector'] for n in controls}
+    def meaning(p):
+        field=labels.get(p.get('field'),p.get('field',''))
+        where=p['where']
+        condition=('全保存記録' if where=='all' else field+'∈{'+','.join(p.get('members',[]))+'}' if where=='in' else field+'<基準日' if where=='before_date' else field+'=今日(基準日)' if where=='on_reference_date' else field+'=入力['+labels.get(p.get('reference_input'),p.get('reference_input',''))+']')
+        if p.get('also'):
+            extra=p['also'];condition+=' AND '+labels.get(extra['field'],extra['field'])+'∈{'+','.join(extra['members'])+'}'
+        return ('件数' if p['metric']=='count' else '割合(分母=全保存記録)' if p['metric']=='percent' else field+'合計')+'('+condition+')'
+    return [[i,meaning(p)] for i,p in enumerate(candidates)]
 
 
 def qa_require_independent_agreement(proposed,independent,scope):
@@ -1712,9 +1729,9 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
         output_descriptor=dict(selector=selector,label=contract.get('label',''),target_label=qa_quantity_scope(contract,index),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
         context=dict(requirements=requirements,controls=controls,input_values=input_values,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
         scoped_output={k:output_descriptor[k] for k in ('selector','target_label')}
-        prompt=('対象の数値項目「'+scoped_output['target_label']+'」だけの意味に対応する計算規則を選択肢から選ぶ。他の項目は今回扱わない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        prompt=('対象の数値項目「'+scoped_output['target_label']+'」だけの意味に対応する計算規則を選択肢から選ぶ。他の項目は今回扱わない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
-        blind_prompt=('別担当が独立して規則を選ぶ。先行する提案は示さない。対象は出力項目「'+scoped_output['target_label']+'」1個だけ。ほかの集計・表示形式の網羅性は判定しない。原文に対応する選択肢番号を選び、未確定は-1。JSON {"choice":番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        blind_prompt=('別担当が独立して規則を選ぶ。先行する提案は示さない。対象は出力項目「'+scoped_output['target_label']+'」1個だけ。ほかの集計・表示形式の網羅性は判定しない。原文に対応する選択肢番号を選び、未確定は-1。JSON {"choice":番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
         independent=generate('primary-projection-blind-'+str(index),blind_prompt,schema,validate,context)
         if projection==independent:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
         else:projection,audit=qa_resolve_projection_binding(projection,independent,requirements,output_descriptor,rows,controls,evaluation_context,generate,str(index))
@@ -1766,6 +1783,35 @@ def qa_primary_component_expectation(selector,formats,context,generate):
         answer=generate('primary-literal-'+str(index),prompt,schema,validate,dict(context=context,selector=selector,index=index,values=values))
         literals.append(validate(answer)['value'])
     return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+
+
+def qa_component_saved_checks(actions,primary,inventory,cfg):
+    """Check declared collection state, never draft values or guessed row layout.
+
+    The full numeric primary and feature audits still run. Unrecognized actors
+    decline this path; no generic record workflow is imposed on other apps.
+    """
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(steps,binding)
+    if events is None:return None
+    rows=qa_reference_rows(steps,events)
+    if not rows:return None
+    nodes={n['selector']:n for n in inventory.get('controls',[])}
+    checks=[]
+    if primary.get('selector')!='#recordCount':
+        checks.append(dict(op='text_equals',selector='#recordCount',value=str(len(rows))))
+    # Select distinct literal submitted text fields, not punctuation, ordering,
+    # action labels, dates with unknown localization, or a now-cleared input.
+    for row in reversed(rows):
+        for css,value in row.items():
+            node=nodes.get(css,{})
+            if node.get('form')!='#recordForm' or node.get('tag')not in ('input','textarea') or node.get('type','text')not in ('text','textarea'):continue
+            if not isinstance(value,str) or not 2<=len(value)<=250 or value!=value.strip():continue
+            check=dict(op='text_contains',selector='#recordRows',value=value)
+            if check not in checks:checks.append(check)
+            if len(checks)==2:return checks
+    return None
 
 
 def qa_clear_primary_components(directory):
@@ -1863,6 +1909,8 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
             repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
             if repaired is not None:value=repaired
         if kind=='workflow':value=repair_qa_repeated_form_inputs(value,inventory,cfg)
+        if kind=='variant' and qa_variant_repeats_workflow(value,cfg.get('_qa_prior_scenarios',[])):
+            raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
         return validate_qa_inventory_actions(value,inventory,kind)
     actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
         action_schema,semantic,700,validate_actions)
@@ -1883,6 +1931,10 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     else:
         primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
             primary_schema,oracle,300,validate_primary,actions)['exact_check']
+    component_checks=qa_component_saved_checks(actions,primary,inventory,cfg) if kind in ('workflow','variant') else None
+    if component_checks is not None:
+        write_framework_json(directory/'secondary-component-contract.json',dict(contract=cfg['qa_component_contract'],checks=component_checks,method='declared saved collection count and submitted text membership; not model/layout inference'))
+        return validator(dict(actions,checks=component_checks,exact_check=primary))
     checks=[]
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
     for index in range(2):

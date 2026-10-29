@@ -405,3 +405,81 @@ class ReferenceAggregateTests(unittest.TestCase):
         with self.assertRaises(ValueError):qa.qa_validate_repeated_form_inputs(dict(steps=steps),inventory)
         steps.insert(-1,dict(op='select',selector='#status',value='open'))
         self.assertEqual(qa.qa_validate_repeated_form_inputs(dict(steps=steps),inventory)['steps'],steps)
+
+    def test_saved_secondary_checks_target_collection_not_cleared_draft(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#title',value='保存済みA'),dict(op='click',selector='#saveRecord'),dict(op='fill',selector='#title',value='未保存B'),dict(op='click',selector='#clearForm')]
+        checks=qa.qa_component_saved_checks(dict(steps=steps),dict(selector='#summaryValue'),inventory,cfg)
+        self.assertEqual(checks,[dict(op='text_equals',selector='#recordCount',value='1'),dict(op='text_contains',selector='#recordRows',value='保存済みA')])
+        self.assertFalse(any(c['selector']=='#title' or c['value']=='未保存B' for c in checks))
+
+    def test_saved_secondary_checks_retain_prior_variant_records(self):
+        inventory,cfg=self.component_fixture()
+        prior=[dict(op='fill',selector='#title',value='先行A'),dict(op='click',selector='#saveRecord')]
+        current=[dict(op='fill',selector='#title',value='追加B'),dict(op='click',selector='#saveRecord')]
+        checks=qa.qa_component_saved_checks(dict(steps=current),dict(selector='#recordCount'),inventory,dict(cfg,_qa_prior_scenarios=[dict(kind='workflow',steps=prior)]))
+        self.assertEqual(checks,[dict(op='text_contains',selector='#recordRows',value='追加B'),dict(op='text_contains',selector='#recordRows',value='先行A')])
+        self.assertTrue(all(c['op']!='text_equals' for c in checks))
+
+    def test_saved_secondary_declines_unknown_actor_and_insufficient_values(self):
+        inventory,cfg=self.component_fixture()
+        actions=dict(steps=[dict(op='fill',selector='#title',value='保存A'),dict(op='click',selector='#saveRecord')])
+        self.assertIsNone(qa.qa_component_saved_checks(actions,dict(selector='#recordCount'),inventory,cfg))
+        self.assertIsNone(qa.qa_component_saved_checks(actions,dict(selector='#summaryValue'),inventory,dict(cfg,qa_component_contract='unknown')))
+        self.assertIsNone(qa.qa_component_saved_checks(dict(steps=actions['steps']+[dict(op='click',selector='#edit')]),dict(selector='#summaryValue'),inventory,cfg))
+
+    def test_today_projection_is_distinct_from_all_and_overdue(self):
+        nodes=[dict(selector='#date',type='date',label='日付')]
+        choices=qa.qa_projection_candidates(nodes,'{n0}件',0,output=dict(label='今日の件数'),row_fields={'#date'})
+        projection=next(p for p in choices if p['where']=='on_reference_date')
+        rows=[{'#date':'2026-10-28'},{'#date':'2026-10-29'},{'#date':'2026-10-30'}]
+        self.assertEqual(qa.qa_evaluate_projection(rows,projection,dict(date='2026-10-29')),'1')
+        self.assertEqual(qa.qa_evaluate_projection(rows[:1],projection,dict(date='2026-10-29')),'0')
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection(rows,projection,{})
+
+    def test_same_variant_is_rejected_before_primary_generation_and_cache_reuse(self):
+        inventory,cfg=self.component_fixture()
+        actions=dict(steps=[dict(op='fill',selector='#title',value='同一A'),dict(op='click',selector='#saveRecord')],acceptance=[0],rationale='入力後保存する',result_selector='#recordCount')
+        cfg=dict(cfg,_qa_prior_scenarios=[dict(actions,kind='workflow')],_qa_display_contracts={'#recordCount':dict(slots=1,template='{n0}',label='登録数')})
+        calls=[]
+        def model(prompt,config,tokens,**kw):
+            calls.append(Path(config['_json_transport_evidence']).name)
+            return kw['validator'](actions)
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True):
+            for _ in range(2):
+                with self.assertRaisesRegex(ValueError,'同一操作'):
+                    qa.qa_split_unit_generation('元要件',cfg,Path(t),'base-variant','input',qa.qa_unit_schema(1,'variant'),lambda raw:raw,inventory)
+            self.assertFalse((Path(t)/'base-variant-split'/'actions.json').exists())
+        self.assertEqual(calls,['actions-transport.json','actions-transport.json'])
+
+    def test_compact_choices_preserve_predicates_and_reduce_real_five_state_prompt(self):
+        controls=[dict(selector='#date',type='date',label='対応期限'),dict(selector='#state',label='対応状況',options=[dict(value=x) for x in ['受付','返送待ち','確認中','返金済み','対象外']],required=True)]
+        choices=qa.qa_projection_candidates(controls,'{n0}件 / 超過{n1}件',1,output=dict(label='未完了 / 期限超過'))
+        short=qa.qa_compact_projection_choices(choices,controls)
+        long=[dict(choice=i,meaning=p['basis']) for i,p in enumerate(choices)]
+        self.assertLess(len(json.dumps(short,ensure_ascii=False)),len(json.dumps(long,ensure_ascii=False))*.8)
+        self.assertFalse(any(p['where']=='on_reference_date' for p in choices))
+        for i,p in enumerate(choices):
+            self.assertEqual(short[i][0],i)
+            if p['where']=='in':self.assertTrue(all(m in short[i][1] for m in p['members']))
+            if p['where']=='before_date':self.assertIn('<基準日',short[i][1])
+            if p.get('also'):self.assertIn(' AND ',short[i][1])
+
+    def test_split_component_compiles_saved_checks_without_replacing_primary(self):
+        inventory,cfg=self.component_fixture()
+        cfg=dict(cfg,qa_reference_aggregates=True,_qa_display_contracts={'#recordCount':dict(slots=1,template='{n0}',label='登録数'),'#summaryValue':dict(slots=1,template='{n0}件',label='未完了')})
+        inventory['outputs'].append(dict(selector='#summaryValue',tag='strong'))
+        calls=[]
+        def model(prompt,config,tokens,**kw):
+            calls.append(Path(config['_json_transport_evidence']).name)
+            return kw['validator'](dict(steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='click',selector='#saveRecord')],acceptance=[0],result_selector='#summaryValue',rationale='保存して集計と記録を確認する'))
+        primary=dict(exact_check=dict(op='text_equals',selector='#summaryValue',value='1件'))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True),patch.object(qa,'qa_reference_primary_expectation',return_value=primary) as independent:
+            result=qa.qa_split_unit_generation('元要件',cfg,Path(t),'base-workflow','input',qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+            independent.assert_called_once()
+            self.assertTrue((Path(t)/'base-workflow-split'/'secondary-component-contract.json').exists())
+        self.assertEqual(result['exact_check'],primary['exact_check'])
+        self.assertEqual(result['checks'][0],dict(op='text_equals',selector='#recordCount',value='1'))
+        self.assertEqual(calls,['actions-transport.json'])
