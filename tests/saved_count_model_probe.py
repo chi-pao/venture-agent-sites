@@ -103,8 +103,11 @@ def main():
                         component_context='空の保存領域から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。現在の実行年:'+str(year)+'。対象CSSは#summaryValue。'
                         def component(name,prompt,schema,check,dependency):
                             return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
-                                _json_transport_evidence=str(evidence/(name+'-transport.json'))),120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
-                        bound=app.qa_primary_component_expectation('#summaryValue',formats,component_context,component)
+                                _json_transport_evidence=str(evidence/(name+'-transport.json'))),280 if 'projection' in name else 180 if 'audit' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
+                        summary_rule=rule+' summaryValueは全保存記録件数と、対応期限が今日より前の期限超過件数を表示する。'
+                        aggregate_cfg=dict(cfg,_qa_reference_clock=dict(date=tab.evaluate('new Date().toISOString().slice(0,10)')))
+                        bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
+                            dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)
                         if bound['exact_check']['value']!='1件 / 超過0件':raise AssertionError('Primary oracle differs from fixed one-record future-deadline result')
                         proof['bound_primary_model']=bound;bound_primary=bound['exact_check']['value']
                     for state in ('saved','reloaded'):

@@ -66,7 +66,9 @@ class ReferenceCountTests(unittest.TestCase):
             return kw['validator'](answer)
         qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
         with tempfile.TemporaryDirectory() as t:
-            args=('元仕様',dict(model='planner',qa_oracle_model='oracle',_qa_display_contracts={'#count':dict(template='{n0}件',slots=1)}),Path(t),'base-workflow','fixed',qa.qa_unit_schema(1,'workflow'),lambda raw:(qa.validate_qa_unit(raw,'workflow',1),raw)[1],inventory)
+            schema=qa.qa_unit_schema(1,'workflow')
+            schema['properties']['exact_check']['properties']['selector']['enum']=['#rows','#count']
+            args=('元仕様',dict(model='planner',qa_oracle_model='oracle',_qa_display_contracts={'#count':dict(template='{n0}件',slots=1)}),Path(t),'base-workflow','fixed',schema,lambda raw:(qa.validate_qa_unit(raw,'workflow',1),raw)[1],inventory)
             with self.assertRaises(TimeoutError):qa.qa_split_unit_generation(*args)
             result=qa.qa_split_unit_generation(*args)
             self.assertEqual(result['exact_check']['value'],'1件')

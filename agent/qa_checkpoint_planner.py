@@ -410,6 +410,24 @@ def qa_missing_initial_required_inputs(value,inventory):
     return []
 
 
+def qa_validate_repeated_form_inputs(value,inventory):
+    """Do not assume a saved form retains required fields for the next record."""
+    controls=inventory.get('controls',[]);known={n['selector']:n for n in controls}
+    submitted=set();entered={}
+    for index,step in enumerate(value.get('steps',[])):
+        selector=step.get('selector');node=known.get(selector,{})
+        if step.get('op') in ('fill','select','check'):entered[selector]=step.get('value',step.get('label',''))
+        form=node.get('form')
+        if step.get('op')!='click' or not form or not (node.get('type')=='submit' or node.get('tag')=='button' and not node.get('type')):continue
+        required=[n['selector'] for n in controls if n.get('form')==form and 'required' in n and 'disabled' not in n and 'readonly' not in n and n.get('tag') in ('input','select','textarea') and n.get('type')not in ('hidden','file','radio','checkbox')]
+        if form in submitted:
+            missing=[css for css in required if css not in entered or entered[css]is None or str(entered[css]).strip()=='']
+            if missing:raise AutoQAPlanError('次の記録の保存前に同じformの必須欄を再入力してください。送信後の値の残存は仮定しません。操作'+str(index)+': '+json.dumps(missing,ensure_ascii=False))
+        submitted.add(form)
+        for css in required:entered.pop(css,None)
+    return value
+
+
 def repair_qa_missing_initial_inputs(raw,inventory,cfg,spec):
     missing=qa_missing_initial_required_inputs(raw,inventory)
     if not missing:return None
@@ -1311,6 +1329,114 @@ def qa_compile_bound_primary(value,selector,formats):
     return qa_validate_display_boundary(value,formats)
 
 
+def qa_reference_rows(steps,events):
+    """Snapshot submitted inputs; never infer state from rendered text."""
+    qa_evaluate_record_events(steps,events)
+    events_by_index={e['step_index']:e for e in events};pending={};rows={}
+    for index,step in enumerate(steps):
+        if step.get('op') in ('fill','select','check'):
+            pending[step['selector']]=step.get('value')
+        event=events_by_index.get(index)
+        if not event:continue
+        effect=event['effect']
+        if effect=='create':rows[index]=dict(pending);pending={}
+        elif effect=='update':rows[event['target']].update(pending);pending={}
+        elif effect=='delete':rows.pop(event['target'])
+    return list(rows.values())
+
+
+def qa_evaluate_projection(rows,projection,reference_clock):
+    """Small explicit aggregate language, with no eval or model arithmetic."""
+    metric=projection.get('metric');where=projection.get('where');field=projection.get('field');members=projection.get('members',[])
+    if metric not in ('count','percent','sum') or where not in ('all','in','before_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
+    if not isinstance(members,list) or any(not isinstance(v,str) for v in members):raise AutoQAPlanError('参照集計: 条件値が不正です')
+    selected=[]
+    for row in rows:
+        if where=='all':selected.append(row);continue
+        if field not in row:raise AutoQAPlanError('参照集計: 保存操作に集計項目がありません: '+str(field))
+        if where=='in' and str(row[field]) in members:selected.append(row)
+        if where=='before_date':
+            try:
+                import datetime as projection_time
+                deadline=projection_time.date.fromisoformat(str(row[field]));today=projection_time.date.fromisoformat(reference_clock['date'])
+            except (KeyError,TypeError,ValueError):raise AutoQAPlanError('参照集計: 正しい期限入力と基準日が必要です')
+            if deadline<today:selected.append(row)
+    import decimal as projection_decimal
+    D=projection_decimal.Decimal
+    if metric=='count':result=D(len(selected))
+    elif metric=='percent':
+        if not rows:raise AutoQAPlanError('参照集計: 母数0の割合の仕様が未定義です')
+        result=D(len(selected))*100/D(len(rows))
+    else:
+        if any(field not in row or not re.fullmatch(r'-?\d+(?:\.\d+)?',str(row[field])) for row in selected):raise AutoQAPlanError('参照集計: 合計対象の独立した数値入力が必要です')
+        result=sum((D(str(row[field])) for row in selected),D(0))
+    rounding=projection.get('rounding','exact');places=projection.get('places',0)
+    if type(places)is not int or not 0<=places<=4:raise AutoQAPlanError('参照集計: 桁数が範囲外です')
+    quant=D(1).scaleb(-places)
+    if rounding=='exact':
+        if result!=result.quantize(quant):raise AutoQAPlanError('参照集計: 非整数の丸め規則が仕様で未確定です')
+    elif rounding=='nearest':result=result.quantize(quant,rounding=projection_decimal.ROUND_HALF_UP)
+    else:raise AutoQAPlanError('参照集計: 未対応の丸め規則です')
+    if not result.is_finite() or abs(result)>D('1e15'):raise AutoQAPlanError('参照集計: 計算範囲外です')
+    return format(result,'f').rstrip('0').rstrip('.') if '.' in format(result,'f') else format(result,'f')
+
+
+def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,key,generate):
+    """Bind requirements to a checked projection; compute instead of guessing."""
+    selector=actions['result_selector'];contract=formats.get(selector,{})
+    count=contract.get('slots');template=contract.get('template','')
+    if type(count)is not int or not 1<=count<=8:raise AutoQAPlanError('参照集計: 数値表示の契約が必要です')
+    # Original capability requirements set the rules. Repaired test examples
+    # are not records and must never enter the reference data set.
+    requirements=dict(outcome=spec.get('requested_outcome',''),must_have=spec.get('must_have',[]),workflow=spec.get('workflow',[]))
+    source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
+    events=qa_bind_record_clicks(steps,source,selector,cfg,Path(folder),key)
+    binding=dict(quantity='record_count',source_quote=source,events=events)
+    audit_schema=dict(type='object',properties=dict(valid=dict(type='boolean'),reason=dict(type='string',minLength=12,maxLength=300)),required=['valid','reason'],additionalProperties=False)
+    def audit_value(value):
+        if not isinstance(value,dict) or value.get('valid')is not True or not isinstance(value.get('reason'),str) or len(value['reason'])<12:raise AutoQAPlanError('参照集計: 独立した意味監査が未合格: '+str(value))
+        return value
+    event_audit=generate('primary-event-audit',qa_reference_mapping_audit_prompt('対象集計の全保存記録（表示の割合自体を件数とは判定しない） '+selector,steps,binding),audit_schema,audit_value,dict(requirements=requirements,events=events,steps=steps))
+    rows=qa_reference_rows(steps,events)
+    controls=[{k:n[k] for k in ('selector','label','type','options') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
+    fields=['']+[n['selector'] for n in controls]
+    properties=dict(metric=dict(type='string',enum=['count','percent','sum','unsupported']),where=dict(type='string',enum=['all','in','before_date']),field=dict(type='string',enum=fields),members=dict(type='array',maxItems=12,items=dict(type='string',maxLength=100)),rounding=dict(type='string',enum=['exact','nearest']),places=dict(type='integer',minimum=0,maximum=4),basis=dict(type='string',minLength=12,maxLength=300))
+    schema=dict(type='object',properties=properties,required=list(properties),additionalProperties=False)
+    values=[];projections=[];audits=[]
+    for index in range(count):
+        def validate(value):
+            if not isinstance(value,dict) or set(value)!=set(properties) or value.get('metric')not in ('count','percent','sum') or value.get('where')not in ('all','in','before_date') or value.get('field')not in fields or not isinstance(value.get('basis'),str) or len(value['basis'])<12:raise AutoQAPlanError('参照集計: 対応が不明な計算を完成扱いにできません')
+            if value['where']!='all' and not value['field']:raise AutoQAPlanError('参照集計: 条件の入力項目が未対応です')
+            if value['where']=='in' and not value.get('members'):raise AutoQAPlanError('参照集計: 条件値が必要です')
+            if value['metric']=='sum' and not value['field']:raise AutoQAPlanError('参照集計: 合計対象の入力項目が必要です')
+            if value['where']=='before_date' and next((c.get('type') for c in controls if c['selector']==value['field']),None)!='date':raise AutoQAPlanError('参照集計: 期限条件には日付入力を対応付けてください')
+            if value.get('rounding')=='nearest' and not re.search(r'四捨五入|丸め|小数第',source):raise AutoQAPlanError('参照集計: 元要件に明記されない丸め規則は採用できません')
+            return value
+        context=dict(requirements=requirements,controls=controls,display_template=template,slot='n'+str(index))
+        prompt=('独立した仕様対応。対象の数値位置の計算規則だけを選び、計算結果は回答しない。metric=countは条件に合う保存記録数、percentは条件に合う数/全保存記録数*100、sumはfieldの数値合計。where=allは全記録、inはfieldがmembersのいずれか、before_dateはfieldの日付が実行基準日より前。最終入力欄ではなく保存記録が母集団。明示されない四捨五入を作らずrounding=exactにする。未対応の計算はunsupported。JSONはmetric,where,field,members,rounding,places,basisのみ。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
+        projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
+        audit_prompt=('独立監査。数値結果は採点しない。提案した集計規則が元要件と対象表示位置の意味に対応するか確認。要求外の条件・状態・丸め・期限の扱いを足した場合false。仕様中の入力例を保存データと数えてはいけない。表示の数値・アプリ内部の計算式は根拠にしない。JSON {valid,reason}。\n'+json.dumps(dict(context,projection=projection),ensure_ascii=False,separators=(',',':')))
+        audit=generate('primary-projection-audit-'+str(index),audit_prompt,audit_schema,audit_value,dict(context,projection=projection))
+        values.append(qa_evaluate_projection(rows,projection,cfg.get('_qa_reference_clock',{})));projections.append(projection);audits.append(audit)
+    literals=re.split(r'\{n\d+\}',template)
+    if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
+    static_context=dict(requirements=requirements,template=template,projections=projections)
+    static_prompt=('独立監査。表示の数値以外の文字列が固定のラベル・単位・句読点だけならvalid=true。稼働枠内/枠超過、成功/失敗等、入力や状態で変わる判定結果を含むなら必ずfalse。falseは不合格ではなく独立した状態判断が別に必要という意味。JSON {valid,reason}。\n'+json.dumps(static_context,ensure_ascii=False,separators=(',',':')))
+    def static_validate(value):
+        if not isinstance(value,dict) or type(value.get('valid'))is not bool or not isinstance(value.get('reason'),str) or len(value['reason'])<12:raise AutoQAPlanError('参照集計: 表示文言の分類が必要です')
+        return value
+    fixed=generate('primary-affix-audit',static_prompt,audit_schema,static_validate,static_context)
+    if not fixed['valid']:
+        def reuse_numbers(name,prompt,part_schema,check,dependency):
+            if name.startswith('primary-number-'):return check(dict(value=values[int(name.rsplit('-',1)[1])]))
+            return generate(name,prompt,part_schema,check,dependency)
+        result=qa_primary_component_expectation(selector,formats,json.dumps(dict(requirements=requirements,steps=steps,reference_rows=rows,reference_values=values),ensure_ascii=False),reuse_numbers)
+    else:result=qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+    write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=cfg.get('_qa_reference_clock',{}),method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
+    return result
+
+
 def qa_primary_component_expectation(selector,formats,context,generate):
     """Predict one scalar per request; retain independent business-value checks."""
     contract=formats.get(selector,{})
@@ -1344,7 +1470,7 @@ def qa_primary_component_expectation(selector,formats,context,generate):
 def qa_clear_primary_components(directory):
     directory=Path(directory)
     for path in directory.glob('primary-*.json'):
-        if re.fullmatch(r'primary-(number|literal)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
+        if re.fullmatch(r'primary-(number|literal|projection|projection-audit)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
 
 
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
@@ -1369,7 +1495,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         started=qa_stage_time.monotonic()
         write_framework_json(directory/(name+'-request.json'),dict(prompt=prompt,prompt_chars=len(prompt),schema=stage_schema,model=model,tokens=tokens,timeout=int(cfg.get('qa_part_timeout',180))))
         try:
-            answer=ai_json(prompt,dict(cfg,model=model,_schema_in_prompt=False,_bounded_json_retry=True,
+            answer=ai_json(prompt,dict(cfg,model=model,_schema_in_prompt=name.startswith('primary-'),_bounded_json_retry=True,
                 _json_transport_evidence=str(directory/(name+'-transport.json'))),tokens,schema=stage_schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture)
         except Exception as exc:
@@ -1384,7 +1510,10 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
     target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
     output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style','tbody','table','thead','tr')]
-    if target.get('enum'):action_props['result_selector']=target
+    if target.get('enum'):
+        permitted=[v for v in target['enum'] if v in output_selectors]
+        if not permitted:raise AutoQAPlanError('主結果には一覧表以外の独立した結果要素が必要です')
+        action_props['result_selector']=dict(type='string',enum=permitted)
     elif output_selectors:action_props['result_selector']=dict(type='string',enum=output_selectors)
     if kind=='feature':
         condition_index=int(key.split('-')[1])
@@ -1412,6 +1541,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if kind=='workflow' and qa_missing_initial_required_inputs(value,inventory):
             repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
             if repaired is not None:value=repaired
+        if kind=='workflow':qa_validate_repeated_form_inputs(value,inventory)
         return validate_qa_inventory_actions(value,inventory,kind)
     actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
         action_schema,semantic,700,validate_actions)
@@ -1425,8 +1555,10 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     component_context=oracle_context+'\n確定済み操作:'+action_context
     if type(formats.get(actions['result_selector'],{}).get('slots'))is int and 1<=formats[actions['result_selector']]['slots']<=8:
         def component(name,prompt,part_schema,check,dependency):
-            return stage(name,prompt+'\n出力キーはvalue一つだけ。',part_schema,oracle,120,check,dependency)
-        primary=qa_primary_component_expectation(actions['result_selector'],formats,component_context,component)['exact_check']
+            return stage(name,prompt,part_schema,oracle,280 if 'projection' in name else 180 if 'audit' in name else 120,check,dependency)
+        if cfg.get('qa_reference_aggregates'):
+            primary=qa_reference_primary_expectation(actions,formats,cfg.get('_qa_spec',{}),cfg,inventory,folder,key,component)['exact_check']
+        else:primary=qa_primary_component_expectation(actions['result_selector'],formats,component_context,component)['exact_check']
     else:
         primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
             primary_schema,oracle,300,validate_primary,actions)['exact_check']
