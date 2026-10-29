@@ -141,7 +141,20 @@ class ReferenceCountTests(unittest.TestCase):
         self.assertIn('情報不足はvalid:false',prompt)
         self.assertNotIn('source_index',prompt)
 
+
+    def test_event_schema_only_offers_existing_record_origins(self):
+        empty=qa.qa_record_event_schema([])
+        self.assertEqual(empty['properties']['effect']['enum'],['create','none'])
+        self.assertEqual(empty['properties']['target']['enum'],[None])
+        existing=qa.qa_record_event_schema([7,2])
+        self.assertEqual(existing['properties']['target']['enum'],[None,2,7])
+        self.assertIn('delete',existing['properties']['effect']['enum'])
+        prompt=qa.qa_reference_mapping_audit_prompt('#count',[],dict(quantity='record_count',source_quote='記録を保存',events=[]))
+        self.assertIn('createは新しい記録を作るため既存対象targetはnullが正しい',prompt)
+        self.assertIn('対象情報不足と判断しない',prompt)
+
 if __name__=='__main__':unittest.main()
+
 
 
 

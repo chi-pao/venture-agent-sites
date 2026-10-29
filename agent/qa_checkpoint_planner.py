@@ -698,6 +698,13 @@ def qa_evaluate_record_events(steps,events):
     return dict(count=len(records),trace=trace)
 
 
+def qa_record_event_schema(active):
+    """Only offer effects and record origins possible in reference state."""
+    active=sorted(active)
+    effects=['create','none']+(['update','delete'] if active else [])
+    return {'type':'object','properties':{'effect':{'type':'string','enum':effects},'target':{'enum':[None]+active}},'required':['effect','target'],'additionalProperties':False}
+
+
 def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     """The runner owns event enumeration; a model handles one click only."""
     events=[]
@@ -717,7 +724,9 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
             try:event=validate(json.loads(path.read_text(encoding='utf-8')))
             except (ValueError,KeyError,TypeError):pass
         if event is None:
-            schema={'type':'object','properties':{'effect':{'type':'string','enum':['create','update','delete','none']},'target':{'type':['integer','null']}},'required':['effect','target'],'additionalProperties':False}
+            previous_state=qa_evaluate_record_events(steps[:index],events)
+            active=previous_state['trace'][-1]['record_origins'] if previous_state['trace'] else []
+            schema=qa_record_event_schema(active)
             prompt=('一つのclickだけを仕様へ対応付ける。操作番号や件数は回答しない。今回のclickが保存記録の新規追加ならcreate、既存の変更保存ならupdate、削除確定ならdelete、編集画面を開く・表示切替など保存変更なしならnone。'
                 'update/deleteのtargetは作成click番号、それ以外はnull。入力操作を追加と数えない。JSON {effect,target}。'
                 +'\n元仕様:'+source+'\n対象集計:'+selector+'\n先行の分類:'+json.dumps(events,ensure_ascii=False)
@@ -731,6 +740,7 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
 def qa_reference_mapping_audit_prompt(selector,steps,binding):
     """Audit one component contract, not coverage of an entire product."""
     return ('独立した操作対応の監査。今回の判定対象は、選択した仕様に照らして、この表示が全保存記録の件数か、各クリックのcreate/update/delete/noneと対象記録が正しいか、の二点だけ。'
+        'データ形式の定義: step_indexは元の操作番号。createは新しい記録を作るため既存対象targetはnullが正しい。noneもtargetはnull。update/deleteだけは先行createのstep_indexをtargetに指定する。新規追加のtargetがnullであることを対象情報不足と判断しない。'
         '全製品機能の網羅性を採点しない。返金計算や期限確認等の別機能が今回の操作にないことを不合格理由にしない。それらの完成条件は別の機能検査が担当する。'
         '部分的な検査であること自体は不備ではない。保存しない操作をcreateとした等の具体的な対応誤り、関連しない仕様の選択、対象記録の誤りや情報不足はvalid:falseとし根拠を示す。件数の算術はプログラムが行う。JSON {valid,reason}。'
         +'\n対象の表示:'+selector+'\n対応する元仕様の原文:'+binding['source_quote']
