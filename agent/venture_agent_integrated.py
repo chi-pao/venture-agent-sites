@@ -3661,10 +3661,46 @@ def repair_qa_missing_initial_inputs(raw,inventory,cfg,spec):
     return None
 
 
+def qa_bad_typed_inputs(value,inventory):
+    controls={n['selector']:n for n in inventory.get('controls',[])};bad=[]
+    for index,step in enumerate(value.get('steps',[])):
+        node=controls.get(step.get('selector'),{});typ=node.get('type');v=step.get('value')
+        if step.get('op')!='fill' or typ not in ('number','date'):continue
+        try:
+            if typ=='number':
+                if isinstance(v,bool) or v is None or not decimal.Decimal(str(v)).is_finite():raise ValueError()
+            else:
+                if not isinstance(v,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',v):raise ValueError()
+                qa_date.fromisoformat(v)
+        except (ValueError,decimal.InvalidOperation):bad.append(dict(step_index=index,control=node,value=v))
+    return bad
+
+
+def repair_qa_typed_inputs(raw,inventory,cfg,spec):
+    bad=qa_bad_typed_inputs(raw,inventory)
+    if not bad:return None
+    indexes=[b['step_index'] for b in bad]
+    schema={'type':'object','properties':{'inputs':{'type':'array','minItems':len(indexes),'maxItems':len(indexes),'items':{'type':'object','properties':{'step_index':{'type':'integer','enum':indexes},'value':{'type':'string','minLength':1,'maxLength':100}},'required':['step_index','value'],'additionalProperties':False}}},'required':['inputs'],'additionalProperties':False}
+    def validate(answer):
+        items=answer.get('inputs') if isinstance(answer,dict) else None
+        if not isinstance(items,list) or len(items)!=len(indexes) or any(not isinstance(i,dict) or type(i.get('step_index'))is not int for i in items) or {i['step_index'] for i in items}!=set(indexes):raise AutoQAPlanError('型修復は指定の操作番号だけに値を指定してください')
+        steps=[dict(s) for s in raw['steps']]
+        for item in items:
+            if not isinstance(item.get('value'),str) or not 1<=len(item['value'])<=100:raise AutoQAPlanError('型修復の入力値が不正です')
+            steps[item['step_index']]['value']=item['value']
+        fixed=dict(raw,steps=steps)
+        if qa_bad_typed_inputs(fixed,inventory):raise AutoQAPlanError('型修復後も入力形式が不正です')
+        return fixed
+    return ai_json('独立QA。形式が不正な入力操作だけを、画面のtype・単位と元仕様に沿う値へ修復する。時刻と期間を区別し、期間のHH:MMは単位が分なら総分へ計算。dateはYYYY-MM-DD。元仕様で意味や単位を確定できなければ値を推測しない。既存の他の操作・期待値は変更しない。JSON {inputs:[{step_index,value}]}。\n元仕様:'+json.dumps(spec,ensure_ascii=False,separators=(',',':'))+'\n不正な入力:'+json.dumps(bad,ensure_ascii=False,separators=(',',':'))+'\n全操作:'+json.dumps(raw['steps'],ensure_ascii=False,separators=(',',':')),dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),300,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+
+
 def validate_qa_inventory_actions(value,inventory,kind):
     if kind=='workflow':
         missing_inputs=qa_missing_initial_required_inputs(value,inventory)
         if missing_inputs:raise AutoQAPlanError('検査計画の必須入力が不足しています。仕様に合う値を入力してから送信してください: '+str(missing_inputs))
+    if kind!='invalid':
+        bad_dates=[b for b in qa_bad_typed_inputs(value,inventory) if b['control'].get('type')=='date']
+        if bad_dates:raise AutoQAPlanError('日付入力欄はYYYY-MM-DD形式の実在する日付が必要です: '+str(bad_dates))
     nodes=inventory['controls']+inventory['outputs']
     for step in value.get('steps',[]):
         op=step['op'];selector=step.get('selector','')
@@ -4388,6 +4424,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                             repaired=repair_qa_secondary_oracle(name,raw,fault,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
                     else:
                         repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
+            if repaired is None and cached is None and previous and key!='base-invalid' and any(t in error for t in ('数値入力欄','日付入力欄','Malformed value')):
+                raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
+                repaired=repair_qa_typed_inputs(raw,full_inventory,attempt_cfg,spec)
             if repaired is None and cached is None and previous and key=='base-workflow' and '検査計画の必須入力が不足' in error:
                 raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
                 repaired=repair_qa_missing_initial_inputs(raw,full_inventory,attempt_cfg,spec)

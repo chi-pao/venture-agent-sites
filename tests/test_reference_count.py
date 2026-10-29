@@ -94,6 +94,27 @@ class ReferenceCountTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t, self.assertRaises(ValueError):
             qa.qa_reference_count_oracle(dict(steps=[],exact_check=dict(selector='#recordCount')),{},dict(must_have=['記録を登録']),dict(model='x'),Path(t),'base-workflow',[])
 
+
+    def test_type_repair_replaces_only_rejected_values_and_preserves_oracle(self):
+        inventory=dict(controls=[dict(selector='#minutes',type='number',label='予定（分）'),dict(selector='#deadline',type='date')])
+        raw=dict(steps=[dict(op='fill',selector='#minutes',value='08:00'),dict(op='fill',selector='#deadline',value='2026-10-29T23:59:59'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#total',value='480')])
+        def model(prompt,cfg,tokens,**kw):
+            return kw['validator'](dict(inputs=[dict(step_index=0,value='480'),dict(step_index=1,value='2026-10-29')]))
+        qa.ai_json=model
+        fixed=qa.repair_qa_typed_inputs(raw,inventory,dict(model='x'),dict(must_have=['予定8時間を分で保存']))
+        self.assertEqual([s.get('value') for s in fixed['steps'][:2]],['480','2026-10-29'])
+        self.assertEqual(fixed['checks'],raw['checks'])
+        self.assertEqual(fixed['steps'][2],raw['steps'][2])
+        self.assertEqual(raw['steps'][0]['value'],'08:00')
+        self.assertEqual(qa.qa_bad_typed_inputs(fixed,inventory),[])
+
+    def test_calendar_validation_rejects_nonexistent_and_timestamp_dates(self):
+        inventory=dict(controls=[dict(selector='#date',type='date')])
+        for value in ('2026-02-30','2026-10-29T12:00:00','29/10/2026'):
+            self.assertEqual(len(qa.qa_bad_typed_inputs(dict(steps=[dict(op='fill',selector='#date',value=value)]),inventory)),1)
+        self.assertEqual(qa.qa_bad_typed_inputs(dict(steps=[dict(op='fill',selector='#date',value='2028-02-29')]),inventory),[])
+
 if __name__=='__main__':unittest.main()
+
 
 
