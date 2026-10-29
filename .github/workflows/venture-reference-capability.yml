@@ -1,0 +1,55 @@
+name: Reference model capability comparison
+on:
+  push:
+    branches: [codex/department-pipeline]
+    paths:
+      - 'agent/**'
+      - 'tests/reference_model_probe.py'
+      - '.github/workflows/venture-reference-capability.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: venture-reference-capability-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fixed-oracle:
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ['qwen2.5:7b', 'qwen2.5:14b', 'qwen2.5-coder:7b']
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OLLAMA_HOST: http://127.0.0.1:11435
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      PROBE_MODEL: ${{ matrix.model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install streamlit pandas pillow
+      - run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start actual inference runtime
+        run: |
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl --fail --silent "$OLLAMA_HOST/api/tags" >/dev/null; then break; fi
+            sleep 2
+          done
+          ollama pull "$PROBE_MODEL"
+      - name: Compare actual model with fixed independent answers
+        run: python -u tests/reference_model_probe.py
+      - name: Preserve completed calls and verdicts
+        if: always()
+        run: |
+          mkdir -p reference-model-evidence
+          cp "$RUNNER_TEMP/ollama.log" reference-model-evidence/ollama.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reference-capability-${{ strategy.job-index }}
+          path: reference-model-evidence/
+          retention-days: 14
