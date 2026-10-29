@@ -131,7 +131,18 @@ class ReferenceCountTests(unittest.TestCase):
         self.assertEqual(len(calls),1)
         self.assertEqual(qa.qa_evaluate_record_events(steps,first)['count'],1)
 
+
+    def test_reference_audit_targets_component_mapping_not_product_coverage(self):
+        binding=dict(quantity='record_count',source_quote='返品記録を登録する',events=[dict(step_index=0,effect='create',target=None)],source_index=0)
+        prompt=qa.qa_reference_mapping_audit_prompt('#recordCount',[dict(op='click',selector='#save')],binding)
+        self.assertIn('全製品機能の網羅性を採点しない',prompt)
+        self.assertIn('返品記録を登録する',prompt)
+        self.assertIn('具体的な対応誤り',prompt)
+        self.assertIn('情報不足はvalid:false',prompt)
+        self.assertNotIn('source_index',prompt)
+
 if __name__=='__main__':unittest.main()
+
 
 
 

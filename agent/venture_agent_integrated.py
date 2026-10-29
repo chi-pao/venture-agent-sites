@@ -4015,6 +4015,16 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     return events
 
 
+def qa_reference_mapping_audit_prompt(selector,steps,binding):
+    """Audit one component contract, not coverage of an entire product."""
+    return ('独立した操作対応の監査。今回の判定対象は、選択した仕様に照らして、この表示が全保存記録の件数か、各クリックのcreate/update/delete/noneと対象記録が正しいか、の二点だけ。'
+        '全製品機能の網羅性を採点しない。返金計算や期限確認等の別機能が今回の操作にないことを不合格理由にしない。それらの完成条件は別の機能検査が担当する。'
+        '部分的な検査であること自体は不備ではない。保存しない操作をcreateとした等の具体的な対応誤り、関連しない仕様の選択、対象記録の誤りや情報不足はvalid:falseとし根拠を示す。件数の算術はプログラムが行う。JSON {valid,reason}。'
+        +'\n対象の表示:'+selector+'\n対応する元仕様の原文:'+binding['source_quote']
+        +'\n操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False,separators=(',',':'))
+        +'\n対応案:'+json.dumps(dict(quantity=binding['quantity'],events=binding['events']),ensure_ascii=False,separators=(',',':')))
+
+
 def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     """Pilot reference semantics for explicit record-count outputs only.
 
@@ -4051,7 +4061,7 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
         if not isinstance(value,dict) or value.get('valid') is not True or not isinstance(value.get('reason'),str) or len(value['reason'].strip())<12:
             raise AutoQAPlanError('参照状態: 操作と仕様の独立監査が未合格: '+str(value))
         return value
-    audit=ai_json('独立監査。件数は計算しない。対象が全記録件数か、各クリックの新規・編集・削除・不変が元仕様と入力操作に整合し、対象記録も正しいか確認。引用があるだけで合格にしない。未確定ならvalid:false。JSON {valid,reason}。\n元仕様:'+source+'\n対象:'+selector+'\n全操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False)+'\n対応案:'+json.dumps(binding,ensure_ascii=False),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
+    audit=ai_json(qa_reference_mapping_audit_prompt(selector,steps,binding),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
     result=qa_evaluate_record_events(steps,binding['events'])
     write_framework_json(folder/(key+'-reference-count-proof.json'),dict(binding=binding,audit=audit,reference=result,steps=steps,source=source,method='independent state reducer; browser verification still required'))
     return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis='仕様と操作の対応を独立監査し、参照状態遷移で件数を計算',reference_count=result)
