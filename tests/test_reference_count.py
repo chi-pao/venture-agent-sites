@@ -153,7 +153,21 @@ class ReferenceCountTests(unittest.TestCase):
         self.assertIn('createは新しい記録を作るため既存対象targetはnullが正しい',prompt)
         self.assertIn('対象情報不足と判断しない',prompt)
 
+
+    def test_audit_material_never_presents_field_edits_as_records(self):
+        steps=[dict(op='fill',selector='#f'+str(i),value=str(i)) for i in range(6)]+[dict(op='click',selector='#save')]
+        events=[dict(step_index=6,effect='create',target=None)]
+        cases=qa.qa_reference_click_audit_cases(steps,events)
+        self.assertEqual(len(cases),1)
+        self.assertEqual(cases[0]['click_index'],6)
+        self.assertEqual(len(cases[0]['entered_fields']),6)
+        self.assertEqual(cases[0]['proposed_effect'],events[0])
+        prompt=qa.qa_reference_mapping_audit_prompt('#count',steps,dict(quantity='record_count',source_quote='返品記録を追加',events=events))
+        self.assertIn('初期状態は空の保存領域',prompt)
+        self.assertIn('入力欄の数を記録数と解釈しない',prompt)
+
 if __name__=='__main__':unittest.main()
+
 
 
 

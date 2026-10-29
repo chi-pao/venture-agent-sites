@@ -737,14 +737,26 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     return events
 
 
+def qa_reference_click_audit_cases(steps,events):
+    """Separate field editing from commit actions without reading app output."""
+    proposals={e['step_index']:e for e in events};inputs={};cases=[]
+    for index,step in enumerate(steps):
+        if step.get('op') in ('fill','select','check'):
+            inputs[step.get('selector','')]=dict(op=step['op'],value=step.get('value'),label=step.get('label'))
+        elif step.get('op')=='click':
+            cases.append(dict(click_index=index,click=step,entered_fields=dict(inputs),proposed_effect=proposals.get(index)))
+    return cases
+
+
 def qa_reference_mapping_audit_prompt(selector,steps,binding):
     """Audit one component contract, not coverage of an entire product."""
     return ('独立した操作対応の監査。今回の判定対象は、選択した仕様に照らして、この表示が全保存記録の件数か、各クリックのcreate/update/delete/noneと対象記録が正しいか、の二点だけ。'
+        '初期状態は空の保存領域。入力欄へのfill/select/checkは保存記録の作成ではない。入力済み欄があっても保存クリック以前の記録を仮定しない。番号は操作識別子であり件数ではない。以下の資料はクリックごとに入力値を付けたもので、入力欄の数を記録数と解釈しない。'
         'データ形式の定義: step_indexは元の操作番号。createは新しい記録を作るため既存対象targetはnullが正しい。noneもtargetはnull。update/deleteだけは先行createのstep_indexをtargetに指定する。新規追加のtargetがnullであることを対象情報不足と判断しない。'
         '全製品機能の網羅性を採点しない。返金計算や期限確認等の別機能が今回の操作にないことを不合格理由にしない。それらの完成条件は別の機能検査が担当する。'
         '部分的な検査であること自体は不備ではない。保存しない操作をcreateとした等の具体的な対応誤り、関連しない仕様の選択、対象記録の誤りや情報不足はvalid:falseとし根拠を示す。件数の算術はプログラムが行う。JSON {valid,reason}。'
         +'\n対象の表示:'+selector+'\n対応する元仕様の原文:'+binding['source_quote']
-        +'\n操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False,separators=(',',':'))
+        +'\nクリックごとの監査資料:'+json.dumps(qa_reference_click_audit_cases(steps,binding['events']),ensure_ascii=False,separators=(',',':'))
         +'\n対応案:'+json.dumps(dict(quantity=binding['quantity'],events=binding['events']),ensure_ascii=False,separators=(',',':')))
 
 
