@@ -11,6 +11,23 @@ contract_spec=importlib.util.spec_from_file_location('spec_contract',Path(__file
 contract=importlib.util.module_from_spec(contract_spec);contract_spec.loader.exec_module(contract)
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_bound_primary_cannot_omit_numeric_display_slots(self):
+        formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2)}
+        original=qa.qa_unit_schema(1,'workflow')['properties']['exact_check']
+        schema=qa.qa_bound_primary_schema(original,'#summary',formats)
+        props=schema['properties']['exact_check']['properties']
+        self.assertNotIn('value',props)
+        self.assertEqual(props['expected_values']['minItems'],2)
+        with self.assertRaises(ValueError):qa.qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector='#summary',value='1')),'#summary',formats)
+        answer=dict(exact_check=dict(op='text_equals',selector='#summary',expected_values=['2','0'],expected_literals=['','件 / 超過','件']))
+        result=qa.qa_compile_bound_primary(answer,'#summary',formats)
+        self.assertEqual(result['exact_check']['value'],'2件 / 超過0件')
+
+    def test_split_oracle_receives_masked_format_contract(self):
+        formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2),'#other':dict(template='{n0}円',slots=1)}
+        spec=dict(acceptance=['登録して件数と超過を確認する'])
+        view=qa.json.loads(qa.qa_split_stage_context('',dict(_qa_spec=spec,_qa_display_contracts=formats),dict(controls=[],outputs=[]),'base-workflow',dict(result_selector='#summary',acceptance=[0],steps=[])))
+        self.assertEqual(view['display_contracts'],{'#summary':formats['#summary']})
     def test_json_fallback_still_rejects_wrong_native_operations(self):
         inventory=qa.compact_qa_inventory('<input id="date" type="date"><input id="minutes" type="number"><select id="status"><option value="open">未着手</option></select><button id="save">保存</button>')
         schema=qa.qa_bound_step_schema(qa.qa_unit_schema(1,'workflow')['properties']['steps']['items'],inventory,'workflow')
@@ -66,7 +83,11 @@ class ReferenceCountTests(unittest.TestCase):
             with self.assertRaises(TimeoutError):qa.qa_split_unit_generation(*args)
             result=qa.qa_split_unit_generation(*args,hint='時間切れの項目だけ再開')
             self.assertEqual(result['checks'][0],dict(op='text_equals',selector='#count',value='1'))
-        self.assertEqual(calls,['actions','primary','secondary-0','secondary-1','secondary-1'])
+            path=Path(t)/'base-workflow-split'/'actions.json'
+            receipt=qa.json.loads(path.read_text());receipt['value']['result_selector']='#invented'
+            path.write_text(qa.json.dumps(receipt))
+            qa.qa_split_unit_generation(*args)
+        self.assertEqual(calls,['actions','primary','secondary-0','secondary-1','secondary-1','actions'])
 
     def test_browser_fault_invalidates_only_its_split_checkpoint(self):
         raw=dict(exact_check=dict(op='text_equals',selector='#count',value='1'),checks=[dict(op='text_contains',selector='#rows',value='A'),dict(op='visible',selector='#save')])

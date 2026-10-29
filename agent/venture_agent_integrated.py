@@ -4561,7 +4561,8 @@ def qa_split_stage_context(fallback,cfg,inventory,key,actions=None):
     outputs=[{k:n[k] for k in ('tag','selector','label') if k in n} for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form')]
     view=dict(audience=spec.get('audience'),outcome=spec.get('requested_outcome'),conditions_by_index=conditions,
               controls=controls,outputs=outputs,prior=cfg.get('_qa_prior_scenarios',[]),kind=key,
-              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=cfg.get('_qa_feature_context'))
+              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=cfg.get('_qa_feature_context'),
+              display_contracts={k:v for k,v in (cfg.get('_qa_display_contracts') or {}).items() if not actions or k==actions.get('result_selector')})
     return json.dumps(view,ensure_ascii=False,separators=(',',':'))
 
 
@@ -4576,6 +4577,32 @@ def qa_validate_workflow_overwrites(value):
     return value
 
 
+def qa_bound_primary_schema(original,selector,formats):
+    """Make every numeric display slot explicit without using observed values."""
+    exact=json.loads(json.dumps(original));exact['properties']['selector']=dict(type='string',enum=[selector])
+    contract=formats.get(selector,{})
+    count=contract.get('slots')
+    if type(count)is int and 1<=count<=8:
+        exact=dict(type='object',properties=dict(op=dict(type='string',enum=['text_equals']),selector=dict(type='string',enum=[selector]),
+            expected_values=dict(type='array',minItems=count,maxItems=count,items=dict(type='string',pattern=r'^-?\d+(?:\.\d+)?$')),
+            expected_literals=dict(type='array',minItems=count+1,maxItems=count+1,items=dict(type='string',maxLength=180))),
+            required=['op','selector','expected_values','expected_literals'],additionalProperties=False)
+    return dict(type='object',properties=dict(exact_check=exact),required=['exact_check'],additionalProperties=False)
+
+
+def qa_compile_bound_primary(value,selector,formats):
+    exact=value.get('exact_check') if isinstance(value,dict) else None
+    if not isinstance(exact,dict) or exact.get('op')!='text_equals' or exact.get('selector')!=selector:raise AutoQAPlanError('主結果は指定したCSSだけを照合してください')
+    contract=formats.get(selector,{})
+    if contract.get('template','').startswith('{n0}') and exact.get('expected_literals') and exact['expected_literals'][0]!='':
+        raise AutoQAPlanError('数値から始まる結果要素に外側の見出しを追加できません')
+    value=compile_qa_formatted_expectation(value,formats)
+    exact=value.get('exact_check',{})
+    if not isinstance(exact.get('value'),str) or not exact['value']:raise AutoQAPlanError('主結果全体の独立した期待値が必要です')
+    if contract.get('template','').startswith('{n0}') and not re.match(r'^-?\d',exact['value']):raise AutoQAPlanError('対象外の見出しを数値表示の期待値へ追加できません')
+    return qa_validate_display_boundary(value,formats)
+
+
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
     """Cache action planning and each independent assertion separately."""
     import time as qa_stage_time
@@ -4585,7 +4612,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     oracle=cfg.get('qa_oracle_model') or semantic
     kind='workflow' if key=='base-workflow' else 'variant' if key=='base-variant' else 'feature'
     def stage(name,prompt,stage_schema,model,tokens,check,dependency=None):
-        digest=hashlib.sha256(json.dumps(dict(policy='split-unit-1',input_sha=input_sha,model=model,dependency=dependency),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        digest=hashlib.sha256(json.dumps(dict(policy='split-unit-2',input_sha=input_sha,model=model,dependency=dependency,schema=stage_schema),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         path=directory/(name+'.json')
         if path.exists():
             try:
@@ -4626,6 +4653,8 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<=maximum for i in covers):raise AutoQAPlanError('操作計画の完成条件番号が不正です')
         if kind=='feature' and covers!=[int(key.split('-')[1])]:raise AutoQAPlanError('今回の完成条件だけを検査してください')
         if not isinstance(value.get('result_selector'),str) or not value['result_selector']:raise AutoQAPlanError('操作計画の主結果CSSが必要です')
+        permitted=action_props['result_selector'].get('enum')
+        if permitted and value['result_selector'] not in permitted:raise AutoQAPlanError('保存された操作計画の表示先は現在の表示契約に含まれていません')
         allowed=properties['steps']['items']['properties']['op']['enum'] if kind=='feature' else ('fill','select','check','click','wait')
         if any(not isinstance(step,dict) or step.get('op') not in allowed for step in value['steps']):raise AutoQAPlanError('操作計画には今回の検査に必要な実操作を指定してください')
         value=qa_normalize_duration_inputs(qa_normalize_select_inputs(value,inventory),inventory)
@@ -4644,13 +4673,12 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         action_schema,semantic,700,validate_actions)
     action_context=json.dumps(actions,ensure_ascii=False,separators=(',',':'))
     oracle_context=qa_split_stage_context(context,cfg,inventory,key,actions)
-    primary_schema=dict(type='object',properties={'exact_check':json.loads(json.dumps(properties['exact_check']))},required=['exact_check'],additionalProperties=False)
-    primary_schema['properties']['exact_check']['properties']['selector']=dict(type='string',enum=[actions['result_selector']])
+    formats=cfg.get('_qa_display_contracts') or {}
+    primary_schema=qa_bound_primary_schema(properties['exact_check'],actions['result_selector'],formats)
     def validate_primary(value):
-        exact=value.get('exact_check') if isinstance(value,dict) else None
-        if not isinstance(exact,dict) or exact.get('op')!='text_equals' or exact.get('selector')!=actions['result_selector'] or not isinstance(exact.get('value'),str) or not exact['value']:raise AutoQAPlanError('主結果は選択したCSSの完全な独立期待値だけを指定してください')
-        return value
-    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。JSON {exact_check:{op:text_equals,selector:指定した主結果CSS,value:単位や補足まで含む完全な正解}}。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
+        return qa_compile_bound_primary(value,actions['result_selector'],formats)
+    primary_shape=('JSON {exact_check:{op:text_equals,selector:指定CSS,expected_values:[各数値の独立した正解],expected_literals:[数値の前後の全文字列]}}。' if 'expected_values' in primary_schema['properties']['exact_check']['properties'] else 'JSON {exact_check:{op:text_equals,selector:指定CSS,value:単位や補足まで含む完全な正解}}。')
+    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
         primary_schema,oracle,300,validate_primary,actions)['exact_check']
     checks=[]
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
@@ -4862,7 +4890,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 value=capture_and_validate(supplied)
             elif repaired is not None:value=capture_and_validate(repaired)
             elif cached is None and split_mode:
-                value=qa_split_unit_generation(unit_context+'\n'+prompt,dict(attempt_cfg,_qa_spec=spec,_qa_prior_scenarios=scenarios if key=='base-variant' else [],_qa_reference_clock=reference_clock,_qa_feature_context=(dict(condition_index=int(key.split('-')[1]),case_index=int(key.split('-')[2]),previous_cases=[c for c in feature_cases if c.get('acceptance_index')==int(key.split('-')[1])],design_example=feature_contracts.get(int(key.split('-')[1]),{})) if key.startswith('feature-') else None)),folder,key,input_sha,schema,capture_and_validate,full_inventory,qa_independent_failure_hint(error))
+                value=qa_split_unit_generation(unit_context+'\n'+prompt,dict(attempt_cfg,_qa_spec=spec,_qa_display_contracts=formats,_qa_prior_scenarios=scenarios if key=='base-variant' else [],_qa_reference_clock=reference_clock,_qa_feature_context=(dict(condition_index=int(key.split('-')[1]),case_index=int(key.split('-')[2]),previous_cases=[c for c in feature_cases if c.get('acceptance_index')==int(key.split('-')[1])],design_example=feature_contracts.get(int(key.split('-')[1]),{})) if key.startswith('feature-') else None)),folder,key,input_sha,schema,capture_and_validate,full_inventory,qa_independent_failure_hint(error))
             else:
                 value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                     request_timeout=attempt_timeout,validator=capture_and_validate)

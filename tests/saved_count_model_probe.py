@@ -75,6 +75,7 @@ def main():
                     dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),500,schema=native_schema,max_attempts=1,request_timeout=300,validator=validate_native)
         proof['native_schema_plan']=native
         proof['native_schema_browser']=[]
+        bound_primary=None
         from playwright.sync_api import sync_playwright
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
@@ -87,11 +88,29 @@ def main():
                         if operation['op']=='fill':control.fill(operation['value'])
                         elif operation['op']=='select':control.select_option(operation['value'])
                         else:control.click()
+                    if bound_primary is None:
+                        contract=app.capture_qa_display_contracts(tab).get('#summaryValue')
+                        if not contract or contract.get('slots')!=2:raise AssertionError('Saved returns summary must expose its count and overdue count')
+                        formats={'#summaryValue':contract}
+                        primary_schema=app.qa_bound_primary_schema(app.qa_unit_schema(1,'workflow')['properties']['exact_check'],'#summaryValue',formats)
+                        def validate_bound_primary(value):
+                            # These two numbers come from this fixed fixture,
+                            # not from the browser observation or app code.
+                            if value.get('exact_check',{}).get('expected_values')!=['1','0']:
+                                raise AssertionError('Primary oracle differs from one saved record with a future deadline')
+                            return app.qa_compile_bound_primary(value,'#summaryValue',formats)
+                        year=tab.evaluate('new Date().getFullYear()')
+                        if year>=2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
+                        bound=app.ai_json('独立QA。空の保存から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。数値はこの操作と仕様から計算し、数値を除去した書式に沿ってexpected_valuesとexpected_literalsを返す。\nブラウザの実行年:'+str(year)+'\n数値を除去した書式:'+json.dumps(contract,ensure_ascii=False),
+                            dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),300,schema=primary_schema,max_attempts=1,request_timeout=300,validator=validate_bound_primary)
+                        proof['bound_primary_model']=bound;bound_primary=bound['exact_check']['value']
                     for state in ('saved','reloaded'):
                         if state=='reloaded':tab.reload()
                         actual=tab.locator('#recordCount').inner_text().strip()
-                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='1',actual=actual))
+                        summary=tab.locator('#summaryValue').inner_text().strip()
+                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='1',actual=actual,expected_summary=bound_primary,actual_summary=summary))
                         if actual!='1':raise AssertionError('Native model operations failed independent one-record count')
+                        if summary!=bound_primary:raise AssertionError('Bound primary oracle failed actual saved-page summary comparison')
                     tab.screenshot(path=str(evidence/f'native-model-{width}.png'),full_page=True);context.close()
             finally:browser.close()
         # This existing independent Chromium probe uses precisely the same inputs.
