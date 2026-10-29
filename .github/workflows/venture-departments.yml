@@ -104,10 +104,17 @@ jobs:
           exit 1
       - name: Pull the same coding and visual models used by the local app
         run: |
-          ollama pull qwen2.5-coder:7b
-          ollama pull qwen2.5vl:3b
-          ollama pull qwen2.5:7b
-          ollama pull qwen2.5:14b
+          for model in qwen2.5-coder:7b qwen2.5vl:3b qwen2.5:7b qwen2.5:14b; do
+            ready=false
+            for attempt in 1 2 3; do
+              if ollama pull "$model"; then ready=true; break; fi
+              if [ "$attempt" -lt 3 ]; then sleep $((attempt * 5)); fi
+            done
+            if [ "$ready" != true ]; then
+              echo "Model download unavailable after 3 attempts: $model"
+              exit 1
+            fi
+          done
       - name: Replay fixed count with real semantic models and saved Chromium page
         if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
         env:

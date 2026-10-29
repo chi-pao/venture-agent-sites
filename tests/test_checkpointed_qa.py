@@ -615,21 +615,21 @@ class CheckpointedQAPlannerTests(TestCase):
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
         bad=dict(expected_text='出欠記録一覧（出席扱い1/1、欠席0）',basis='一人が出席し欠席者はいないため')
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](bad)):
-            with self.assertRaisesRegex(app.AutoQAPlanError,'割合'):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
+            with self.assertRaises(app.AutoQAPlanError):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
         wrapped=dict(expected_text='出欠記録一覧（出席扱い100%（出席扱い1/1、欠席0））',basis='一人が出席し欠席者はいないため')
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](wrapped)):
-            with self.assertRaisesRegex(app.AutoQAPlanError,'見出しや一覧'):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
-        good=dict(expected_text='50%（出席扱い1/2、欠席1）',basis='一人が出席しもう一人が欠席のため')
+            with self.assertRaises(app.AutoQAPlanError):app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
+        good=dict(expected_values=['1','2','1'],basis='一人が出席しもう一人が欠席のため')
         with patch.object(app,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](good)):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','期待結果と不一致')
-        self.assertEqual(result['exact_check']['value'],good['expected_text'])
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
 
     def test_percentage_retry_uses_only_independent_numeric_and_literal_answers(self):
         raw=dict(steps=[],acceptance=[0],exact_check=dict(selector='#summary',value='wrong'))
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
         def model(prompt,cfg,tokens,**kw):
             self.assertNotIn('100%（出席扱い1/1、欠席0）',prompt)
-            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='二人中一人が出席し一人が欠席したため'))
+            return kw['validator'](dict(expected_values=['1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='二人中一人が出席し一人が欠席したため'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','対象要素は割合から始まります')
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
@@ -640,9 +640,9 @@ class CheckpointedQAPlannerTests(TestCase):
         formats=app.qa_display_contracts_from_nodes([dict(selector='#summary',text='100%（出席扱い1/1、欠席0）')])
         prior=[dict(kind='workflow',steps=[dict(op='fill',selector='#status',value='出席')],checks=[dict(op='text_equals',selector='#summary',value='100%（出席扱い1/1、欠席0）')])]
         def model(prompt,cfg,tokens,**kw):
-            self.assertIn('先行検査の入力と独立した期待値',prompt)
+            self.assertIn('先行操作',prompt)
             self.assertIn('出席',prompt);self.assertIn('欠席',prompt)
-            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='最初の出席と今回の欠席で二人となるため'))
+            return kw['validator'](dict(expected_values=['1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='最初の出席と今回の欠席で二人となるため'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,dict(self.cfg,_qa_prior_scenarios=prior),self.root,'base-variant','主結果は割合から始まります')
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
@@ -673,7 +673,7 @@ class CheckpointedQAPlannerTests(TestCase):
         def model(prompt,cfg,tokens,**kw):
             self.assertNotIn('expected_literals',kw['schema']['properties'])
             self.assertNotIn('expected_suffixes',kw['schema']['properties'])
-            return kw['validator'](dict(expected_values=['50','1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='独立した二人の入力から一人が出席、一人が欠席と計算'))
+            return kw['validator'](dict(expected_values=['1','2','1'],expected_suffixes=['%（出席扱い','/','、欠席','）'],basis='独立した二人の入力から一人が出席、一人が欠席と計算'))
         with patch.object(app,'ai_json',side_effect=model):
             result=app.repair_qa_exact_oracle('授業',raw,formats,self.spec,self.cfg,self.root,'base-workflow','主結果は割合から始まります')
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')

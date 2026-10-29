@@ -49,6 +49,19 @@ def main():
             row['passed']=True
         except Exception as exc:row['error']=type(exc).__name__+': '+str(exc)
         result['cases'].append(row)
+    for case_name,statuses,expected in [('attendance_all_present',['出席'],'100%（出席扱い1/1、欠席0）'),('attendance_half_present',['出席','欠席'],'50%（出席扱い1/2、欠席1）')]:
+        row=dict(name=case_name,passed=False,expected=expected)
+        steps=[]
+        for i,status in enumerate(statuses):
+            steps.extend([dict(op='fill',selector='#student',value='生徒'+str(i+1)),dict(op='select',selector='#status',value=status),dict(op='click',selector='#save')])
+        rule='保存領域は空から開始する。生徒名と出欠を入力しsaveを押すと一人分の出欠記録を追加する。出席率は出席扱いの人数を全保存記録の人数で割って100を掛ける。欠席は欠席記録数。'
+        raw=dict(steps=steps,acceptance=[0],exact_check=dict(selector='#summaryValue',value='untrusted'))
+        directory=root/case_name;directory.mkdir(exist_ok=True)
+        try:
+            answer=app.repair_qa_exact_oracle('授業管理',raw,{'#summaryValue':dict(template='{n0}%（出席扱い{n1}/{n2}、欠席{n3}）',slots=4)},dict(requested_outcome=rule,must_have=[rule],acceptance=[rule]),cfg,directory,'base-workflow','期待結果と不一致')
+            row.update(actual=answer,passed=answer['exact_check']['value']==expected)
+        except Exception as exc:row['error']=type(exc).__name__+': '+str(exc)
+        result['cases'].append(row)
     wrong=dict(quantity='record_count',source_quote=RULE,events=[dict(step_index=1,effect='none',target=None)])
     row=dict(name='audit_must_reject_wrong_binding',passed=False)
     try:

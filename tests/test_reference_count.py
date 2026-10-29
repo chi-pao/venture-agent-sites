@@ -9,6 +9,32 @@ qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 qa.AutoQAPlanError=ValueError
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_explicit_duration_normalization_does_not_guess_units(self):
+        raw=dict(steps=[dict(op='fill',selector='#break',value='01:00')],exact_check=dict(value='unchanged'))
+        result=qa.qa_normalize_duration_inputs(raw,dict(controls=[dict(selector='#break',type='number',label='休憩時間（分）')]))
+        self.assertEqual(result['steps'][0]['value'],'60')
+        self.assertEqual(result['exact_check'],raw['exact_check'])
+        self.assertEqual(raw['steps'][0]['value'],'01:00')
+        for label in ('休憩','開始時間（分）','休憩時間（時間）'):
+            self.assertEqual(qa.qa_normalize_duration_inputs(raw,dict(controls=[dict(selector='#break',type='number',label=label)])),raw)
+
+    def test_impossible_percentage_denominator_is_rejected(self):
+        with self.assertRaises(ValueError):qa.qa_validate_explicit_percentage('1%（出席扱い1/0、欠席0）')
+        self.assertEqual(qa.qa_validate_explicit_percentage('100%（出席扱い1/1、欠席0）'),'100%（出席扱い1/1、欠席0）')
+
+    def test_fraction_oracle_computes_percentage_without_model_arithmetic(self):
+        from unittest.mock import patch
+        raw=dict(steps=[dict(op='click',selector='#save')],acceptance=[0],exact_check=dict(selector='#summary',value='1%'))
+        formats={'#summary':dict(template='{n0}%（出席扱い{n1}/{n2}、欠席{n3}）',slots=4)}
+        def model(prompt,cfg,tokens,**kw):
+            self.assertEqual(kw['schema']['properties']['expected_values']['maxItems'],3)
+            return kw['validator'](dict(expected_values=['1','1','0'],basis='空の保存状態から一人を登録し、出席一人、総数一人、欠席ゼロ'))
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t, patch.object(qa,'qa_audit_date_oracle',side_effect=lambda r,s,c,p,a:a):
+            fixed=qa.repair_qa_exact_oracle('授業',raw,formats,dict(acceptance=['登録して出席率を確認']),dict(model='x'),Path(t),'base-workflow','期待結果と不一致')
+        self.assertEqual(fixed['exact_check']['value'],'100%（出席扱い1/1、欠席0）')
+        self.assertEqual(fixed['steps'],raw['steps'])
+
     def test_mapping_role_survives_coding_planner_retry(self):
         cfg=dict(model='coder',qa_mapping_model='semantic',qa_oracle_model='auditor')
         self.assertEqual(qa.qa_reference_model_config(cfg)['model'],'semantic')

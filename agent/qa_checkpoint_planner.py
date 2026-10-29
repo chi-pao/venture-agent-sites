@@ -389,7 +389,26 @@ def qa_bad_typed_inputs(value,inventory):
     return bad
 
 
+def qa_normalize_duration_inputs(raw,inventory):
+    """Convert explicit duration HH:MM to minutes only with a minute label."""
+    controls={n['selector']:n for n in inventory.get('controls',[])}
+    steps=[dict(s) for s in raw.get('steps',[])]
+    for step in steps:
+        node=controls.get(step.get('selector'),{})
+        label=str(node.get('label',''))
+        match=re.fullmatch(r'(\d{1,3}):([0-5]\d)',str(step.get('value','')))
+        if (step.get('op')=='fill' and node.get('type')=='number' and match
+                and re.search(r'分|\bminutes?\b|\bmin\b',label,re.I)
+                and re.search(r'休憩|所要|時間|期間|duration|break|minutes?',label,re.I)
+                and not re.search(r'開始|終了|出発|到着|start|end|departure|arrival',label,re.I)):
+            step['value']=str(int(match[1])*60+int(match[2]))
+    return dict(raw,steps=steps)
+
+
 def repair_qa_typed_inputs(raw,inventory,cfg,spec):
+    normalized=qa_normalize_duration_inputs(raw,inventory)
+    if normalized!=raw and not qa_bad_typed_inputs(normalized,inventory):return normalized
+    raw=normalized
     bad=qa_bad_typed_inputs(raw,inventory)
     if not bad:return None
     indexes=[b['step_index'] for b in bad]
@@ -481,6 +500,8 @@ def qa_validate_explicit_percentage(text):
     match=re.search(r'(?P<p>-?\d+(?:\.\d+)?)\s*[%％].*?(?P<n>\d+)\s*/\s*(?P<d>\d+)',str(text))
     if match:
         numerator=decimal.Decimal(match['n']);denominator=decimal.Decimal(match['d'])
+        if not denominator and numerator:
+            raise AutoQAPlanError('expected_values: 分母0で分子が正の割合は不正です。入力と仕様から対象総数を再計算してください')
         if denominator:
             computed=numerator*100/denominator
             if computed==computed.to_integral_value() and decimal.Decimal(match['p'])!=computed:
@@ -882,7 +903,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
                 raise AutoQAPlanError('expected_values: 単一数値の独立した計算と根拠が必要です')
             return dict(raw,exact_check=dict(op='text_equals',selector=exact['selector'],value=answer['value']),oracle_basis=answer['basis'])
         return ai_json(numeric_prompt,dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),180,schema=numeric_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=numeric_validate)
-    if any(phrase in error for phrase in ('対象要素は割合から始まります','主結果は割合から始まります')) and re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')):
+    if re.match(r'^\s*\{n0\}\s*[%％]',contract.get('template','')) and (re.search(r'\{n\d+\}/\{n\d+\}',contract.get('template','')) or any(phrase in error for phrase in ('対象要素は割合から始まります','主結果は割合から始まります'))):
         # After a real-model format failure, request the independent numeric
         # answers and independent surrounding text separately. The observed
         # display supplies slot count only, never values or literal text.
@@ -892,6 +913,7 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
         schema={'type':'object','properties':{'expected_values':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','minLength':1,'maxLength':30}},'expected_suffixes':{'type':'array','minItems':count,'maxItems':count,'items':{'type':'string','maxLength':180}},'basis':{'type':'string','minLength':12,'maxLength':300}},'required':['expected_values','expected_suffixes','basis'],'additionalProperties':False}
         if ratio_layout:
             del schema['properties']['expected_suffixes'];schema['required'].remove('expected_suffixes')
+            schema['properties']['expected_values'].update(minItems=count-1,maxItems=count-1)
         prompt=('独立QA。観測した数値・状態を正解に使わず、要件と入力から数値と文字列を計算。'
             '見出しや一覧は含めない。JSON {"expected_values":["数値"],"expected_suffixes":["各数値の直後の文字列"],"basis":"根拠"}。'
             '数値と後続文字列はそれぞれ'+str(count)+'個。先頭の数値の前にはプログラムが空文字を置く。先頭の後続文字列は%から始める。見出しは不要。'
@@ -907,11 +929,29 @@ def repair_qa_exact_oracle(name,raw,formats,spec,cfg,folder,key,error):
             suffixes=(re.split(r'\{n\d+\}',contract['template'])[1:] if ratio_layout else answer.get('expected_suffixes'))
             if not isinstance(suffixes,list) or len(suffixes)!=count or not all(isinstance(x,str) for x in suffixes) or not re.match(r'^\s*[%％]',suffixes[0]):
                 raise AutoQAPlanError('expected_values: 割合の各数値の後続文字列を指定し、最初は%から始めてください')
-            candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=answer.get('expected_values'),expected_literals=['']+suffixes))
+            values=answer.get('expected_values')
+            if ratio_layout:
+                if not isinstance(values,list) or len(values)!=count-1:raise AutoQAPlanError('expected_values: 割合以外の独立した集計値が必要です')
+                fraction=re.search(r'\{n(?P<n>\d+)\}/\{n(?P<d>\d+)\}',contract['template'])
+                try:
+                    numerator=decimal.Decimal(values[int(fraction['n'])-1]);denominator=decimal.Decimal(values[int(fraction['d'])-1])
+                    if not numerator.is_finite() or not denominator.is_finite() or numerator<0 or denominator<=0:raise ValueError()
+                    percentage=numerator*100/denominator
+                    if percentage!=percentage.to_integral_value():raise ValueError('丸め規則が必要')
+                except (ValueError,IndexError,TypeError,decimal.InvalidOperation) as exc:
+                    raise AutoQAPlanError('expected_values: 正の分母と非負の分子が必要です。非整数割合の丸め規則は別途検証してください') from exc
+                values=[str(int(percentage))]+values
+            candidate=dict(raw,exact_check=dict(selector=exact['selector'],expected_values=values,expected_literals=['']+suffixes))
             result=compile_qa_formatted_expectation(candidate,formats)
             if not re.match(r'^\s*-?\d+(?:\.\d+)?\s*[%％]',result['exact_check']['value']):raise AutoQAPlanError('expected_values: 主結果は割合から始まります。見出しを混ぜないでください')
             return dict(result,oracle_basis=answer['basis'])
-        if ratio_layout:prompt+='\n今回の出力はexpected_valuesとbasisだけ。%・分数の/・項目名はプログラムが表示書式から組み立てる。数値は全て要件と入力から独立して計算し、項目番号を回答しない。'
+        if ratio_layout:
+            prompt=('独立QA。割合の算術はプログラムが行う。先頭の%値を回答せず、分数の分子・分母と残りの数値だけを表示順に'+str(count-1)+'個返す。'
+                'JSON {expected_values:[数値文字列],basis:根拠}。操作前ではなく全操作後の状態を集計する。入力欄の数・操作番号を人数と解釈しない。保存されていない仮想記録を作らない。'
+                '\n元仕様:'+json.dumps(dict(requested_outcome=spec.get('requested_outcome'),must_have=spec.get('must_have'),acceptance=relevant),ensure_ascii=False,separators=(',',':'))
+                +'\n先行操作:'+json.dumps(prior,ensure_ascii=False,separators=(',',':'))
+                +'\n今回の入力と操作:'+json.dumps(inputs,ensure_ascii=False,separators=(',',':'))
+                +'\n数値を含まない表示の形式:'+contract['template'])
         oracle_cfg=dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True)
         answer=ai_json(prompt,oracle_cfg,450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=validate_parts)
         return qa_audit_date_oracle(raw,spec,cfg,prior,answer)
@@ -1176,6 +1216,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 current_response=True
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 value=qa_resolve_unique_date_selector(value,inventory)
+                if key!='base-invalid':
+                    normalized=qa_normalize_duration_inputs(value,full_inventory)
+                    if normalized!=value:write_framework_json(folder/(key+'-normalized-inputs.json'),dict(original=value,normalized=normalized,method='explicit minute-label duration conversion'))
+                    value=normalized
                 validated=validate(compile_qa_formatted_expectation(value,formats))
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
