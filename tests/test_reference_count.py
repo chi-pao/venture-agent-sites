@@ -11,11 +11,48 @@ contract_spec=importlib.util.spec_from_file_location('spec_contract',Path(__file
 contract=importlib.util.module_from_spec(contract_spec);contract_spec.loader.exec_module(contract)
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_json_fallback_still_rejects_wrong_native_operations(self):
+        inventory=qa.compact_qa_inventory('<input id="date" type="date"><input id="minutes" type="number"><select id="status"><option value="open">未着手</option></select><button id="save">保存</button>')
+        schema=qa.qa_bound_step_schema(qa.qa_unit_schema(1,'workflow')['properties']['steps']['items'],inventory,'workflow')
+        for step in (dict(op='select',selector='#date',value='2026-10-29'),dict(op='select',selector='#status',value='missing'),dict(op='fill',selector='#minutes',value='01:00'),dict(op='click',selector='#invented')):
+            with self.assertRaises(ValueError):qa.qa_validate_step_choices(dict(steps=[step]),schema)
+        raw=dict(steps=[dict(op='fill',selector='#date',value='2026-10-29'),dict(op='select',selector='#status',value='open'),dict(op='click',selector='#save')])
+        self.assertEqual(qa.qa_validate_step_choices(raw,schema),raw)
+    def test_bound_schema_never_offers_date_input_as_select(self):
+        inventory=qa.compact_qa_inventory('<input id="date" type="date"><input id="minutes" type="number"><select id="status"><option value="open">未着手</option></select><button id="save">保存</button>')
+        schema=qa.qa_bound_step_schema(qa.qa_unit_schema(1,'workflow')['properties']['steps']['items'],inventory,'workflow')
+        select=[b for b in schema['anyOf'] if b['properties']['op'].get('enum')==['select']]
+        self.assertEqual(len(select),1)
+        self.assertEqual(select[0]['properties']['selector']['enum'],['#status'])
+        self.assertEqual(select[0]['properties']['value']['enum'],['open'])
+        date=[b for b in schema['anyOf'] if b['properties']['op'].get('enum')==['fill'] and '#date' in b['properties']['selector']['enum']]
+        self.assertEqual(date[0]['properties']['value']['pattern'],r'^\d{4}-\d{2}-\d{2}$')
+
+    def test_oracle_context_keeps_only_selected_full_criteria_and_operations(self):
+        spec=dict(audience='講師',requested_outcome='出欠確認',acceptance=['登録Aの具体的な正解を最後まで記載','無関係な別条件の長い入力例'],acceptance_source_requirements=['登録','別条件'])
+        inventory=dict(controls=[dict(tag='input',selector='#a'),dict(tag='input',selector='#b')],outputs=[dict(tag='strong',selector='#count',text='999')])
+        actions=dict(acceptance=[0],steps=[dict(op='fill',selector='#a',value='A')])
+        view=qa.json.loads(qa.qa_split_stage_context('old',dict(_qa_spec=spec),inventory,'base-workflow',actions))
+        self.assertEqual(view['conditions_by_index'],{'0':spec['acceptance'][0]})
+        self.assertEqual([n['selector'] for n in view['controls']],['#a'])
+        self.assertNotIn('999',qa.json.dumps(view))
+        self.assertNotIn(spec['acceptance'][1],qa.json.dumps(view,ensure_ascii=False))
+
+    def test_workflow_cannot_overwrite_three_records_before_one_save(self):
+        bad=dict(steps=[dict(op='fill',selector='#student',value=name) for name in ('A','B','C')]+[dict(op='click',selector='#save')])
+        with self.assertRaises(ValueError):qa.qa_validate_workflow_overwrites(bad)
+        good=dict(steps=[dict(op='fill',selector='#student',value='A'),dict(op='click',selector='#save'),dict(op='fill',selector='#student',value='B'),dict(op='click',selector='#save')])
+        self.assertEqual(qa.qa_validate_workflow_overwrites(good),good)
+
     def test_split_generation_resumes_only_timed_out_assertion(self):
         inventory=qa.compact_qa_inventory('<form id="f"><input id="title"><button id="save" type="submit">保存</button></form><strong id="count">0</strong><tbody id="rows"></tbody>')
         calls=[];timeout=[True]
         def model(prompt,cfg,tokens,**kw):
             name=Path(cfg['_json_transport_evidence']).stem.removesuffix('-transport');calls.append(name)
+            if name.startswith('secondary-'):
+                options=kw['schema']['properties']['check']['properties']['selector']['enum']
+                self.assertNotIn('#count',options)
+                if name=='secondary-1':self.assertNotIn('#title',options)
             if name=='actions':answer=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#save')],acceptance=[0],rationale='入力した記録を保存して件数を照合',result_selector='#count')
             elif name=='primary':answer=dict(exact_check=dict(op='text_equals',selector='#count',value='1'))
             elif name=='secondary-0':answer=dict(check=dict(op='value_equals',selector='#title',value='A'))

@@ -56,6 +56,44 @@ def main():
         if answer is None or answer['exact_check']['value']!='2':raise AssertionError('Reference mapping differs from fixed two-record fixture')
         if [x['effect'] for x in answer['reference_count']['trace']]!=['create','create']:raise AssertionError('Both saves must create records')
         if any(c['model']=='qwen2.5-coder:7b' for c in calls):raise AssertionError('Semantic role leaked to coding planner')
+        # Exercise the new native-control grammar with a real model, then
+        # execute its returned operations against the unchanged saved HTML.
+        inventory=app.compact_qa_inventory(source)
+        step_schema=app.qa_bound_step_schema(app.qa_unit_schema(1,'workflow')['properties']['steps']['items'],inventory,'workflow')
+        native_schema=dict(type='object',properties=dict(steps=dict(type='array',minItems=6,maxItems=6,items=step_schema)),required=['steps'],additionalProperties=False)
+        intended=steps[:6]
+        expected_inputs={s['selector']:(s['op'],s.get('value')) for s in intended if s['op']!='click'}
+        def validate_native(value):
+            actual=value.get('steps',[]) if isinstance(value,dict) else []
+            inputs={s.get('selector'):(s.get('op'),s.get('value')) for s in actual if isinstance(s,dict) and s.get('op')!='click'}
+            clicks=[(s.get('op'),s.get('selector')) for s in actual if isinstance(s,dict) and s.get('op')=='click']
+            if len(actual)!=6 or any(s.get('nth',0)!=0 for s in actual) or inputs!=expected_inputs or clicks!=[('click','#saveRecord')] or actual[-1].get('op')!='click':
+                raise AssertionError('Model changed the fixed input values or failed to submit the required form')
+            app.validate_qa_inventory_actions(value,inventory,'workflow')
+            return value
+        native=app.ai_json('実画面の型に沿って、指定した1件だけを入力し最後に保存する。JSON {steps:[操作]}。選択欄にはselect、日付や数値入力にはfill。入力値を変更しない。\n指定入力と保存操作:'+json.dumps(intended,ensure_ascii=False),
+                    dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),500,schema=native_schema,max_attempts=1,request_timeout=300,validator=validate_native)
+        proof['native_schema_plan']=native
+        proof['native_schema_browser']=[]
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as playwright:
+            browser=playwright.chromium.launch(headless=True)
+            try:
+                for width in (1280,390):
+                    context=browser.new_context(viewport=dict(width=width,height=900));tab=context.new_page()
+                    tab.goto(page.as_uri(),wait_until='load');tab.evaluate('localStorage.clear()');tab.reload()
+                    for operation in native['steps']:
+                        control=tab.locator(operation['selector'])
+                        if operation['op']=='fill':control.fill(operation['value'])
+                        elif operation['op']=='select':control.select_option(operation['value'])
+                        else:control.click()
+                    for state in ('saved','reloaded'):
+                        if state=='reloaded':tab.reload()
+                        actual=tab.locator('#recordCount').inner_text().strip()
+                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='1',actual=actual))
+                        if actual!='1':raise AssertionError('Native model operations failed independent one-record count')
+                    tab.screenshot(path=str(evidence/f'native-model-{width}.png'),full_page=True);context.close()
+            finally:browser.close()
         # This existing independent Chromium probe uses precisely the same inputs.
         # Its expected values are fixed, never copied from the model or app.
         runpy.run_path(str(Path(__file__).with_name('returns_oracle_probe.py')),run_name='__main__')

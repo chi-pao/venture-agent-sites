@@ -3494,7 +3494,7 @@ class _QAInventory(HTMLParser):
                 node=dict(tag=tag,selector=selector)
                 form_id=a.get('form') or next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='form' and v.get('id')),None)
                 if form_id:node['form']='#'+form_id
-                for key in ('type','value','placeholder','min','max','required','name','disabled','readonly'):
+                for key in ('type','value','placeholder','min','max','required','name','disabled','readonly','role'):
                     if key in a:node[key]=a[key] if a[key] is not None else True
                 self.nodes.append(node)
         # Track text owners separately. Void controls do not own following text.
@@ -4493,8 +4493,92 @@ def qa_variant_repeats_workflow(value, scenarios):
     return bool(current) and current == relevant(prior.get('steps', []))
 
 
+def qa_bound_step_schema(original,inventory,kind):
+    """Bind native actions to observed control types and actual options."""
+    choices=[];props=original['properties'];controls=inventory.get('controls',[])
+    def branch(op,selectors,value=None):
+        if not selectors:return
+        fields=dict(op=dict(type='string',enum=[op]),selector=dict(type='string',enum=sorted(set(selectors))))
+        required=['op','selector']
+        if value is not None:fields['value']=value;required.append('value')
+        if 'nth' in props:fields['nth']=props['nth']
+        choices.append(dict(type='object',properties=fields,required=required,additionalProperties=False))
+    for typ,pattern in ((None,None),('number',r'^-?\d+(?:\.\d+)?$'),('date',r'^\d{4}-\d{2}-\d{2}$'),('time',r'^\d{2}:\d{2}(?::\d{2})?$')):
+        nodes=[n for n in controls if n.get('tag') in ('input','textarea') and n.get('type') not in ('file','checkbox','radio','button','submit','hidden') and (n.get('type')==typ if typ else n.get('type') not in ('number','date','time'))]
+        value=dict(type='string',maxLength=300)
+        if pattern:value['pattern']=pattern
+        branch('fill',[n['selector'] for n in nodes],value)
+    for node in controls:
+        if node.get('tag')!='select':continue
+        values=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value') is not None))
+        value=dict(type='string',enum=values) if values else dict(type='string',minLength=1,maxLength=100)
+        branch('select',[node['selector']],value)
+    branch('check',[n['selector'] for n in controls if n.get('type') in ('checkbox','radio')],dict(type='boolean'))
+    buttons=[n['selector'] for n in controls if n.get('tag')=='button' or n.get('type') in ('button','submit')]
+    buttons += [n['selector'] for n in inventory.get('outputs',[]) if n.get('tag')=='a' or n.get('role')=='button']
+    buttons += [n['selector']+' button' for n in inventory.get('outputs',[]) if n.get('tag') in ('tbody','table')]
+    branch('click',buttons)
+    passive=['wait']+(['reload','download_csv','download_json','restore_file','restore_invalid','cancel_restore'] if kind=='feature' else [])
+    fallback=json.loads(json.dumps(original));fallback['properties']['op']['enum']=passive
+    choices.append(fallback)
+    return dict(anyOf=choices)
+
+
+def qa_validate_step_choices(value,bound_schema):
+    """Retain native grammar constraints even if the server uses JSON fallback."""
+    def matches(step,branch):
+        if not isinstance(step,dict) or any(k not in step for k in branch.get('required',[])):return False
+        props=branch['properties']
+        if branch.get('additionalProperties') is False and set(step)-set(props):return False
+        for name,item in step.items():
+            rule=props.get(name,{})
+            if 'enum' in rule and item not in rule['enum']:return False
+            types=rule.get('type',[]);types=[types] if isinstance(types,str) else types
+            if types:
+                checks=dict(string=isinstance(item,str),integer=type(item)is int,boolean=type(item)is bool,array=isinstance(item,list),object=isinstance(item,dict),null=item is None)
+                if not any(checks.get(t,False) for t in types):return False
+            if rule.get('pattern') and (not isinstance(item,str) or re.fullmatch(rule['pattern'],item) is None):return False
+            if isinstance(item,str) and (len(item)<rule.get('minLength',0) or len(item)>rule.get('maxLength',10**9)):return False
+            if type(item)is int and (item<rule.get('minimum',-10**30) or item>rule.get('maximum',10**30)):return False
+        return True
+    for index,step in enumerate(value.get('steps',[])):
+        if not any(matches(step,branch) for branch in bound_schema['anyOf']):raise AutoQAPlanError('実画面の型・選択肢に対応付かない操作です: steps['+str(index)+'] '+json.dumps(step,ensure_ascii=False))
+    return value
+
+
+def qa_split_stage_context(fallback,cfg,inventory,key,actions=None):
+    """Send only selected full criteria to an oracle, not every example."""
+    spec=cfg.get('_qa_spec') or {}
+    if not spec.get('acceptance'):return fallback
+    criteria=spec['acceptance'];feature=key.startswith('feature-')
+    if actions is not None:indexes=actions.get('acceptance',[])
+    elif feature:indexes=[int(key.split('-')[1])]
+    else:indexes=list(range(len(criteria)))
+    titles=spec.get('acceptance_source_requirements',[])
+    conditions={str(i):(titles[i] if actions is None and not feature and len(titles)==len(criteria) else criteria[i]) for i in indexes if type(i)is int and 0<=i<len(criteria)}
+    used={step.get('selector') for step in (actions or {}).get('steps',[])}
+    controls=[n for n in inventory.get('controls',[]) if not actions or n.get('selector') in used]
+    outputs=[{k:n[k] for k in ('tag','selector','label') if k in n} for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form')]
+    view=dict(audience=spec.get('audience'),outcome=spec.get('requested_outcome'),conditions_by_index=conditions,
+              controls=controls,outputs=outputs,prior=cfg.get('_qa_prior_scenarios',[]),kind=key,
+              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=cfg.get('_qa_feature_context'))
+    return json.dumps(view,ensure_ascii=False,separators=(',',':'))
+
+
+def qa_validate_workflow_overwrites(value):
+    pending=set()
+    for step in value.get('steps',[]):
+        if step.get('op')=='click':pending.clear()
+        elif step.get('op') in ('fill','select'):
+            selector=step.get('selector')
+            if selector in pending:raise AutoQAPlanError('中心作業では保存前に同じ入力欄を繰り返し上書きしないでください。複数記録は各記録を保存してから次を入力してください: '+str(selector))
+            pending.add(selector)
+    return value
+
+
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
     """Cache action planning and each independent assertion separately."""
+    import time as qa_stage_time
     directory=Path(folder)/(key+'-split');directory.mkdir(parents=True,exist_ok=True)
     properties=schema['properties']
     semantic=cfg.get('qa_action_model') or cfg.get('qa_mapping_model') or cfg['model']
@@ -4511,54 +4595,78 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         def capture(value):
             write_framework_json(directory/(name+'-last-response.json'),value)
             return check(value)
+        started=qa_stage_time.monotonic()
+        write_framework_json(directory/(name+'-request.json'),dict(prompt=prompt,prompt_chars=len(prompt),schema=stage_schema,model=model,tokens=tokens,timeout=int(cfg.get('qa_part_timeout',180))))
         try:
             answer=ai_json(prompt,dict(cfg,model=model,_schema_in_prompt=False,_bounded_json_retry=True,
                 _json_transport_evidence=str(directory/(name+'-transport.json'))),tokens,schema=stage_schema,max_attempts=1,
                 request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture)
         except Exception as exc:
-            write_framework_json(directory/(name+'-error.json'),dict(error=type(exc).__name__+': '+str(exc),model=model,tokens=tokens))
+            write_framework_json(directory/(name+'-error.json'),dict(error=type(exc).__name__+': '+str(exc),model=model,tokens=tokens,seconds=round(qa_stage_time.monotonic()-started,2),prompt_chars=len(prompt)))
             raise
-        write_framework_json(path,dict(input_sha=digest,value=answer))
+        write_framework_json(path,dict(input_sha=digest,value=answer,seconds=round(qa_stage_time.monotonic()-started,2),prompt_chars=len(prompt)))
         (directory/(name+'-error.json')).unlink(missing_ok=True)
         return answer
-    action_props={k:properties[k] for k in ('steps','acceptance','rationale')}
+    action_props={k:json.loads(json.dumps(properties[k])) for k in ('steps','acceptance','rationale')}
+    action_props['steps']['items']=qa_bound_step_schema(properties['steps']['items'],inventory,kind)
+    context=qa_split_stage_context(context,cfg,inventory,key)
     action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
     target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
+    output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')]
     if target.get('enum'):action_props['result_selector']=target
+    elif output_selectors:action_props['result_selector']=dict(type='string',enum=output_selectors)
+    if kind=='feature':
+        condition_index=int(key.split('-')[1])
+        action_props['acceptance']=dict(type='array',items=dict(type='integer',enum=[condition_index]),minItems=1,maxItems=1)
     action_schema=dict(type='object',properties=action_props,required=list(action_props),additionalProperties=False)
     def validate_actions(value):
         if not isinstance(value,dict) or not isinstance(value.get('steps'),list) or not value['steps']:raise AutoQAPlanError('操作計画には入力と実行が必要です')
         covers=value.get('acceptance')
         maximum=properties['acceptance']['items']['maximum']
         if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<=maximum for i in covers):raise AutoQAPlanError('操作計画の完成条件番号が不正です')
+        if kind=='feature' and covers!=[int(key.split('-')[1])]:raise AutoQAPlanError('今回の完成条件だけを検査してください')
         if not isinstance(value.get('result_selector'),str) or not value['result_selector']:raise AutoQAPlanError('操作計画の主結果CSSが必要です')
         allowed=properties['steps']['items']['properties']['op']['enum'] if kind=='feature' else ('fill','select','check','click','wait')
         if any(not isinstance(step,dict) or step.get('op') not in allowed for step in value['steps']):raise AutoQAPlanError('操作計画には今回の検査に必要な実操作を指定してください')
         value=qa_normalize_duration_inputs(qa_normalize_select_inputs(value,inventory),inventory)
+        qa_validate_step_choices(value,action_props['steps']['items'])
+        if kind=='workflow':qa_validate_workflow_overwrites(value)
+        for step in value['steps']:
+            node=next((n for n in inventory.get('controls',[]) if n['selector']==step.get('selector')),None)
+            if node and step.get('op')=='select' and node.get('options'):
+                options=[o.get('value') for o in node['options']]
+                if step.get('value') not in options:raise AutoQAPlanError('選択値は画面に実在するoptionのvalueから指定してください')
         if kind=='workflow' and qa_missing_initial_required_inputs(value,inventory):
             repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
             if repaired is not None:value=repaired
         return validate_qa_inventory_actions(value,inventory,kind)
-    actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
+    actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
         action_schema,semantic,700,validate_actions)
     action_context=json.dumps(actions,ensure_ascii=False,separators=(',',':'))
-    primary_schema=dict(type='object',properties={'exact_check':properties['exact_check']},required=['exact_check'],additionalProperties=False)
+    oracle_context=qa_split_stage_context(context,cfg,inventory,key,actions)
+    primary_schema=dict(type='object',properties={'exact_check':json.loads(json.dumps(properties['exact_check']))},required=['exact_check'],additionalProperties=False)
+    primary_schema['properties']['exact_check']['properties']['selector']=dict(type='string',enum=[actions['result_selector']])
     def validate_primary(value):
         exact=value.get('exact_check') if isinstance(value,dict) else None
         if not isinstance(exact,dict) or exact.get('op')!='text_equals' or exact.get('selector')!=actions['result_selector'] or not isinstance(exact.get('value'),str) or not exact['value']:raise AutoQAPlanError('主結果は選択したCSSの完全な独立期待値だけを指定してください')
         return value
-    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。JSON {exact_check:{op:text_equals,selector:指定した主結果CSS,value:単位や補足まで含む完全な正解}}。\n'+context+'\n確定済み操作:'+action_context,
+    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。JSON {exact_check:{op:text_equals,selector:指定した主結果CSS,value:単位や補足まで含む完全な正解}}。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
         primary_schema,oracle,300,validate_primary,actions)['exact_check']
     checks=[]
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
     for index in range(2):
+        excluded={primary['selector']}|{c['selector'] for c in checks}
+        options=sorted({n['selector'] for n in inventory.get('controls',[])+inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')} - excluded)
+        if not options:raise AutoQAPlanError('主結果と別の補助検査先が画面にありません')
+        check_schema=json.loads(json.dumps(check_schema))
+        check_schema['properties']['check']['properties']['selector']=dict(type='string',enum=options)
         def validate_check(value):
             check=value.get('check') if isinstance(value,dict) else None
             if not isinstance(check,dict) or check.get('op') not in ('text_equals','text_contains','value_equals','count','invalid','visible') or not isinstance(check.get('selector'),str):raise AutoQAPlanError('補助検査1個の具体的な照合が必要です')
-            if check==primary or check in checks:raise AutoQAPlanError('補助検査は主結果や前の検査と同一にしないでください')
+            if check.get('selector') not in options or check==primary or check in checks:raise AutoQAPlanError('補助検査は主結果や前の検査と同一にしないでください')
             return value
         dependency=dict(actions=actions,primary=primary,earlier=checks)
-        value=stage('secondary-'+str(index),'独立QA。補助検査を1個だけ返す。主結果とは別の表示先で、入力内容または処理後の保存状態を具体的に照合する。画面にない通知文や見出しを創作しない。操作・主結果は変更しない。JSON {check:{op,selector,value}}。\n'+context+'\n確定済みの操作と検査:'+json.dumps(dependency,ensure_ascii=False,separators=(',',':')),
+        value=stage('secondary-'+str(index),'独立QA。補助検査を1個だけ返す。主結果とは別の表示先で、入力内容または処理後の保存状態を具体的に照合する。画面にない通知文や見出しを創作しない。操作・主結果は変更しない。JSON {check:{op,selector,value}}。\n'+oracle_context+'\n確定済みの操作と検査:'+json.dumps(dependency,ensure_ascii=False,separators=(',',':')),
             check_schema,oracle,220,validate_check,dependency)
         checks.append(value['check'])
     raw=dict(actions,checks=checks,exact_check=primary)
@@ -4754,7 +4862,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 value=capture_and_validate(supplied)
             elif repaired is not None:value=capture_and_validate(repaired)
             elif cached is None and split_mode:
-                value=qa_split_unit_generation(unit_context+'\n'+prompt,dict(attempt_cfg,_qa_spec=spec),folder,key,input_sha,schema,capture_and_validate,full_inventory,qa_independent_failure_hint(error))
+                value=qa_split_unit_generation(unit_context+'\n'+prompt,dict(attempt_cfg,_qa_spec=spec,_qa_prior_scenarios=scenarios if key=='base-variant' else [],_qa_reference_clock=reference_clock,_qa_feature_context=(dict(condition_index=int(key.split('-')[1]),case_index=int(key.split('-')[2]),previous_cases=[c for c in feature_cases if c.get('acceptance_index')==int(key.split('-')[1])],design_example=feature_contracts.get(int(key.split('-')[1]),{})) if key.startswith('feature-') else None)),folder,key,input_sha,schema,capture_and_validate,full_inventory,qa_independent_failure_hint(error))
             else:
                 value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                     request_timeout=attempt_timeout,validator=capture_and_validate)
