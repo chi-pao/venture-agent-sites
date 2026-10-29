@@ -398,6 +398,39 @@ def qa_bad_typed_inputs(value,inventory):
     return bad
 
 
+def qa_normalize_select_inputs(raw,inventory):
+    """Bind unchanged intended values to a unique native select option."""
+    controls={n['selector']:n for n in inventory.get('controls',[])}
+    steps=[dict(step) for step in raw.get('steps',[])]
+    for step in steps:
+        node=controls.get(step.get('selector'),{})
+        if step.get('op')!='fill' or node.get('tag')!='select':continue
+        value=step.get('value')
+        if not isinstance(value,str):continue
+        options=node.get('options',[])
+        by_value=[o for o in options if o.get('value')==value]
+        by_label=[o for o in options if o.get('label')==value]
+        matches=by_value if len(by_value)==1 else by_label if not by_value else []
+        if len(matches)!=1:continue
+        selected=matches[0]
+        step['op']='select'
+        if selected.get('value') is not None:step['value']=selected['value'];step.pop('label',None)
+        else:step.pop('value',None);step['label']=selected['label']
+    return dict(raw,steps=steps)
+
+
+def qa_validate_display_boundary(raw,formats):
+    """Reject truncated numeric assertions without adopting observed numbers."""
+    exact=raw.get('exact_check') or {}
+    contract=formats.get(exact.get('selector'),{})
+    text=exact.get('value')
+    if not contract or not isinstance(text,str):return raw
+    slots=contract.get('slots')
+    if type(slots)is int and slots>0 and len(re.findall(r'-?\d+(?:\.\d+)?',text))!=slots:
+        raise AutoQAPlanError('expected_values: 対象要素の全数値を仕様と入力から独立して計算してください。数値だけに切り詰めた期待値は禁止です')
+    return raw
+
+
 def qa_normalize_duration_inputs(raw,inventory):
     """Convert explicit duration HH:MM to minutes only with a minute label."""
     controls={n['selector']:n for n in inventory.get('controls',[])}
@@ -1225,11 +1258,14 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 current_response=True
                 write_framework_json(folder/(key+'-last-response.json'),value)
                 value=qa_resolve_unique_date_selector(value,inventory)
+                selected=qa_normalize_select_inputs(value,full_inventory)
+                if selected!=value:write_framework_json(folder/(key+'-normalized-selects.json'),dict(original=value,normalized=selected,method='unique native option match; expected values unchanged'))
+                value=selected
                 if key!='base-invalid':
                     normalized=qa_normalize_duration_inputs(value,full_inventory)
                     if normalized!=value:write_framework_json(folder/(key+'-normalized-inputs.json'),dict(original=value,normalized=normalized,method='explicit minute-label duration conversion'))
                     value=normalized
-                validated=validate(compile_qa_formatted_expectation(value,formats))
+                validated=validate(qa_validate_display_boundary(compile_qa_formatted_expectation(value,formats),formats))
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
                 return validate_qa_inventory_actions(validated,full_inventory,key.removeprefix('base-'))

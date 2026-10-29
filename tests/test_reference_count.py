@@ -9,6 +9,28 @@ qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 qa.AutoQAPlanError=ValueError
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_select_normalization_preserves_intent_and_assertions(self):
+        inventory=qa.compact_qa_inventory('<label>状態<select id="status"><option value="open">未着手</option><option value="done">完了</option></select></label>')
+        for entered in ('完了','done'):
+            raw=dict(steps=[dict(op='fill',selector='#status',value=entered)],checks=[dict(op='text_equals',selector='#count',value='2')])
+            fixed=qa.qa_normalize_select_inputs(raw,inventory)
+            self.assertEqual(fixed['steps'],[dict(op='select',selector='#status',value='done')])
+            self.assertEqual(fixed['checks'],raw['checks'])
+            self.assertEqual(raw['steps'][0]['op'],'fill')
+        raw=dict(steps=[dict(op='fill',selector='#status',value='存在しない値')])
+        self.assertEqual(qa.qa_normalize_select_inputs(raw,inventory),raw)
+
+    def test_ambiguous_option_is_not_guessed(self):
+        inventory=qa.compact_qa_inventory('<select id="s"><option value="a">同名</option><option value="b">同名</option></select>')
+        raw=dict(steps=[dict(op='fill',selector='#s',value='同名')])
+        self.assertEqual(qa.qa_normalize_select_inputs(raw,inventory),raw)
+
+    def test_display_boundary_does_not_take_numbers_from_browser(self):
+        formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2)}
+        with self.assertRaises(ValueError):qa.qa_validate_display_boundary(dict(exact_check=dict(selector='#summary',value='1')),formats)
+        raw=dict(exact_check=dict(selector='#summary',value='2件 / 超過1件'))
+        self.assertEqual(qa.qa_validate_display_boundary(raw,formats),raw)
+
     def test_wrapping_labels_feed_real_input_units_to_normalization(self):
         inventory=qa.compact_qa_inventory('<label><span>休憩（分）</span><input id="break" type="number"></label><label>状態<select id="status"><option>選択</option></select></label>')
         self.assertEqual(inventory['controls'][0]['label'],'休憩（分）')

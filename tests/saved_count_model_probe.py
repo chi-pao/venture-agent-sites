@@ -24,13 +24,20 @@ def main():
         steps.extend([dict(op='fill',selector='#return_item',value=f'独立検証商品{i}'),
                       dict(op='fill',selector='#order_number',value=f'ORDER-{i:03d}'),
                       dict(op='fill',selector='#response_deadline',value='2035-12-31'),
-                      dict(op='select',selector='#return_status',value='返送待ち'),
+                      dict(op='fill',selector='#return_status',value='返送待ち'),
                       dict(op='fill',selector='#refund_amount',value=str(i*1000)),
                       dict(op='click',selector='#saveRecord')])
+    required=('id="return_item"','id="order_number"','id="saveRecord"','id="recordCount"')
+    pages=[p for p in sorted(root.glob('outputs/sectors/**/02_builds/**/*.html')) if all(x in p.read_text(encoding='utf-8') for x in required)]
+    if not pages:raise RuntimeError('Saved real returns page is required')
+    page=pages[-1];source=page.read_text(encoding='utf-8')
+    intended_steps=steps
+    steps=app.qa_normalize_select_inputs(dict(steps=steps),app.compact_qa_inventory(source))['steps']
+    if [s['op'] for s in steps if s.get('selector')=='#return_status']!=['select','select']:raise AssertionError('Native select normalization failed on real saved page')
     fixture=dict(steps=steps,spec=dict(requested_outcome=rule,must_have=[rule]),expected_count=2)
     proof=dict(kind='saved real page and real model count diagnostic; not product acceptance',
                fixture=fixture,fixture_sha256=hashlib.sha256(json.dumps(fixture,sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
-               models={k:cfg[k] for k in ('model','qa_mapping_model','qa_oracle_model')},passed=False)
+               source_sha256=hashlib.sha256(page.read_bytes()).hexdigest(),intended_steps=intended_steps,models={k:cfg[k] for k in ('model','qa_mapping_model','qa_oracle_model')},passed=False)
     original=app.ai_json;calls=[]
     def recorded(prompt,config,tokens,**kw):
         start=time.monotonic();row=dict(model=config['model'],prompt=prompt,schema=kw.get('schema'))

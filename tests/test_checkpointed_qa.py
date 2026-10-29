@@ -231,17 +231,15 @@ class CheckpointedQAPlannerTests(TestCase):
         schema=app.qa_unit_schema(5,'workflow')
         self.assertIn('exact_check',schema['required'])
 
-    def test_select_cannot_be_filled_as_a_text_input(self):
-        page=self.page+'<select id="work_status"><option value="done">完了</option></select>'
-        original=self.model
-        def model(prompt,cfg,tokens,**kw):
-            def reject_target(value):
-                value['steps'].insert(0,dict(op='fill',selector='#work_status',value='done'))
-                return kw['validator'](value)
-            return original(prompt,cfg,tokens,**dict(kw,validator=reject_target))
-        with patch.object(app,'ai_json',side_effect=model):
-            with self.assertRaisesRegex(app.AutoQAPlanError,'要素に合わない操作'):
-                app.checkpointed_independent_qa_plan('在宅ワーク',page,self.cfg,self.spec,['対象者向けの説明です','最初の使い方の説明です'])
+    def test_select_requires_native_operation_but_unique_value_can_be_bound(self):
+        inventory=app.compact_qa_inventory('<select id="work_status"><option value="done">完了</option></select>')
+        raw=dict(steps=[dict(op='fill',selector='#work_status',value='done')],checks=[])
+        with self.assertRaisesRegex(app.AutoQAPlanError,'要素に合わない操作'):
+            app.validate_qa_inventory_actions(raw,inventory,'feature')
+        normalized=app.qa_normalize_select_inputs(raw,inventory)
+        self.assertEqual(normalized['steps'],[dict(op='select',selector='#work_status',value='done')])
+        self.assertEqual(app.validate_qa_inventory_actions(normalized,inventory,'feature'),normalized)
+        self.assertEqual(raw['steps'][0]['op'],'fill')
 
     def test_roundtrip_compiler_emits_real_file_protocol_without_model_op_names(self):
         value=dict(csv_selector='#csv',csv_contains=['注文A','商品A'],json_selector='#json',restore_selector='#restore',mutation_steps=[dict(op='fill',selector='#title',value='別記録C'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#count',value='2'),dict(op='text_equals',selector='#summary',value='合計300円')],acceptance=[0],rationale='復元を照合する')
