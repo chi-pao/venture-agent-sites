@@ -142,6 +142,36 @@ class ReferenceAggregateTests(unittest.TestCase):
         self.assertEqual(events[-1],dict(step_index=2,effect='delete',target=0))
         self.assertEqual(qa.qa_evaluate_record_events(steps,events)['count'],0)
 
+    def test_required_complete_option_filter_is_not_a_duplicate_candidate(self):
+        node=dict(selector='#status',label='状態',required=True,options=[dict(value=''),dict(value='open'),dict(value='done')])
+        candidates=qa.qa_projection_candidates([node],'{n0}件',0)
+        self.assertEqual(sum(c['where']=='all' for c in candidates),1)
+        self.assertFalse(any(set(c['members'])=={'open','done'} for c in candidates))
+        optional={k:v for k,v in node.items() if k!='required'}
+        optional_candidates=qa.qa_projection_candidates([optional],'{n0}件',0)
+        full=next(c for c in optional_candidates if set(c['members'])=={'open','done'})
+        self.assertEqual(qa.qa_evaluate_projection([{'#status':''}],full,{}),'0')
+        self.assertEqual(qa.qa_evaluate_projection([{'#status':''}],optional_candidates[0],{}),'1')
+        explicit_optional=qa.qa_projection_candidates([dict(node,required=False)],'{n0}件',0)
+        self.assertTrue(any(set(c['members'])=={'open','done'} for c in explicit_optional))
+        disabled=qa.qa_projection_candidates([dict(node,disabled=True)],'{n0}件',0)
+        self.assertTrue(any(set(c['members'])=={'open','done'} for c in disabled))
+
+    def test_record_binding_facts_distinguish_new_input_and_export(self):
+        steps=[dict(op='fill',selector='#student',value='A'),dict(op='click',selector='#save'),dict(op='fill',selector='#student',value='B'),dict(op='click',selector='#save'),dict(op='click',selector='#export')]
+        first=[dict(step_index=1,effect='create',target=None)]
+        controls=[dict(selector='#student',label='受講者名'),dict(selector='#save',tag='button',type='submit',form='#f',text='出欠を保存'),dict(selector='#export',tag='button',text='CSV出力')]
+        second=qa.qa_record_binding_context(steps,first,3,controls)
+        self.assertEqual(second['active_records'],[dict(origin=1,fields={'#student':'A'})])
+        self.assertEqual(second['entered_since_commit'],{'#student':'B'})
+        self.assertEqual(second['current_control']['text'],'出欠を保存')
+        self.assertEqual(second['field_labels'],{'#student':'受講者名'})
+        exported=qa.qa_record_binding_context(steps,first+[dict(step_index=3,effect='create',target=None)],4,controls)
+        self.assertEqual(len(exported['active_records']),2)
+        self.assertEqual(exported['entered_since_commit'],{})
+        self.assertEqual(exported['current_control']['text'],'CSV出力')
+        self.assertNotIn('effect',exported['current_control'])
+
     def test_second_submit_requires_required_select_again(self):
         inventory=qa.compact_qa_inventory('<form id="form"><input id="name" required><select id="status" required><option value="">選択</option><option value="open">未着手</option></select><button id="save" type="submit">保存</button></form>')
         steps=[dict(op='fill',selector='#name',value='A'),dict(op='select',selector='#status',value='open'),dict(op='click',selector='#save'),dict(op='fill',selector='#name',value='B'),dict(op='click',selector='#save')]

@@ -4162,13 +4162,31 @@ def qa_reference_model_config(cfg):
     return dict(cfg,model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
 
 
+def qa_record_binding_context(steps,events,index,controls):
+    """Supply reference inputs and control identity, never app output values."""
+    prefix=steps[:index]
+    reference=qa_evaluate_record_events(prefix,events)
+    origins=reference['trace'][-1]['record_origins'] if reference['trace'] else []
+    rows=qa_reference_rows(prefix,events)
+    last_commit=max((e['step_index'] for e in events if e['effect'] in ('create','update','delete')),default=-1)
+    entered={step['selector']:step.get('value',step.get('label')) for step in prefix[last_commit+1:] if step.get('op') in ('fill','select','check')}
+    nodes={n['selector']:n for n in controls}
+    used=set(entered)|{css for row in rows for css in row}
+    labels={css:nodes[css].get('label',nodes[css].get('text','')) for css in sorted(used) if css in nodes}
+    click=steps[index];node=nodes.get(click.get('selector'),{})
+    return dict(active_records=[dict(origin=origin,fields=row) for origin,row in zip(origins,rows)],entered_since_commit=entered,
+                field_labels=labels,current_control={k:node[k] for k in ('selector','tag','type','form','label','text') if k in node},
+                intervening_clicks=[step for step in prefix[last_commit+1:] if step.get('op')=='click'])
+
+
 def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     """The runner owns event enumeration; a model handles one click only."""
     cfg=qa_reference_model_config(cfg)
     events=[]
     for index,step in enumerate(steps):
         if step.get('op')!='click':continue
-        context=dict(policy='record-choice-1',blind=bool(cfg.get('_qa_blind_binding')),source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
+        facts=qa_record_binding_context(steps,events,index,cfg.get('_qa_binding_controls',[]))
+        context=dict(policy='record-choice-2',blind=bool(cfg.get('_qa_blind_binding')),source=source,selector=selector,prefix=steps[:index+1],prior_events=events,facts=facts,model=cfg['model'])
         digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         directory=folder/(key+'-reference-events');directory.mkdir(exist_ok=True)
         path=directory/(digest+'.json')
@@ -4188,7 +4206,7 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
             schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=list(range(len(choices))))),required=['choice'],additionalProperties=False)
             prompt=('今回のクリック1個を元要件に対応付け、提示された選択肢番号だけをJSON {"choice":整数}で回答する。createは新しい保存記録を追加。noneはCSV/JSON出力、画面表示、編集画面を開く等の保存記録を変えない操作。update/deleteは表示済みの作成操作を起源とする既存記録だけ。targetを作ったり操作番号を件数と解釈しない。'
                 +'\n元要件:'+source+'\n対象集計:'+selector+'\n選択肢:'+json.dumps(list(enumerate(choices)),ensure_ascii=False)
-                +'\n確定した先行分類:'+json.dumps(events,ensure_ascii=False)+'\n先行入力・操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))+'\n今回のクリック:'+json.dumps(step,ensure_ascii=False))
+                +'\n保存済み記録と今回の未保存入力（参照計算であり画面実測値ではない）:'+json.dumps(facts,ensure_ascii=False,separators=(',',':'))+'\n今回のクリック:'+json.dumps(step,ensure_ascii=False))
             if cfg.get('_qa_blind_binding'):prompt='独立担当。別の担当の提案は参照せず、元要件と操作履歴だけから選択する。\n'+prompt
             def choose(value):
                 write_framework_json(directory/(digest+'-response.json'),value)
@@ -4734,7 +4752,12 @@ def qa_projection_candidates(controls,template,index):
         options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value')))
         if 0<len(options)<=5:
             for length in range(1,len(options)+1):
-                for members in projection_itertools.combinations(options,length):candidates.append(rule('in',field,list(members),label+'が'+('または'.join(members))+'の保存記録'))
+                for members in projection_itertools.combinations(options,length):
+                    # In a required, enabled native choice every valid new
+                    # record has one of these values. Its complete-set filter
+                    # duplicates 'all'; optional fields retain that distinction.
+                    if length==len(options) and 'required' in node and node['required']is not False and 'disabled' not in node:continue
+                    candidates.append(rule('in',field,list(members),label+'が'+('または'.join(members))+'の保存記録'))
         if not percent and node.get('type')=='number':candidates.append(dict(metric='sum',where='all',field=field,members=[],rounding='exact',places=0,basis=label+'の全保存記録の合計'))
     return candidates
 
@@ -4761,11 +4784,12 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     requirements=dict(outcome=spec.get('requested_outcome',''),must_have=spec.get('must_have',[]),workflow=spec.get('workflow',[]))
     source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
     steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
-    events=qa_bind_record_clicks(steps,source,selector,cfg,Path(folder),key)
+    binding_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]))
+    events=qa_bind_record_clicks(steps,source,selector,binding_cfg,Path(folder),key)
     audit_schema=dict(type='object',properties=dict(valid=dict(type='boolean'),reason=dict(type='string',minLength=12,maxLength=300)),required=['valid','reason'],additionalProperties=False)
-    event_audit=qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key)
+    event_audit=qa_blind_record_event_audit(steps,events,source,selector,binding_cfg,folder,key)
     rows=qa_reference_rows(steps,events)
-    controls=[{k:n[k] for k in ('selector','label','type','options') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
+    controls=[{k:n[k] for k in ('selector','label','type','options','required','disabled') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
     values=[];projections=[];audits=[]
     for index in range(count):
