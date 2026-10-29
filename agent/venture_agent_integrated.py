@@ -4168,7 +4168,7 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     events=[]
     for index,step in enumerate(steps):
         if step.get('op')!='click':continue
-        context=dict(policy='record-choice-1',source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
+        context=dict(policy='record-choice-1',blind=bool(cfg.get('_qa_blind_binding')),source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
         digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         directory=folder/(key+'-reference-events');directory.mkdir(exist_ok=True)
         path=directory/(digest+'.json')
@@ -4189,6 +4189,7 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
             prompt=('今回のクリック1個を元要件に対応付け、提示された選択肢番号だけをJSON {"choice":整数}で回答する。createは新しい保存記録を追加。noneはCSV/JSON出力、画面表示、編集画面を開く等の保存記録を変えない操作。update/deleteは表示済みの作成操作を起源とする既存記録だけ。targetを作ったり操作番号を件数と解釈しない。'
                 +'\n元要件:'+source+'\n対象集計:'+selector+'\n選択肢:'+json.dumps(list(enumerate(choices)),ensure_ascii=False)
                 +'\n確定した先行分類:'+json.dumps(events,ensure_ascii=False)+'\n先行入力・操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))+'\n今回のクリック:'+json.dumps(step,ensure_ascii=False))
+            if cfg.get('_qa_blind_binding'):prompt='独立担当。別の担当の提案は参照せず、元要件と操作履歴だけから選択する。\n'+prompt
             def choose(value):
                 write_framework_json(directory/(digest+'-response.json'),value)
                 if isinstance(value,dict) and type(value.get('choice'))is int and 0<=value['choice']<len(choices):return validate(choices[value['choice']])
@@ -4738,6 +4739,18 @@ def qa_projection_candidates(controls,template,index):
     return candidates
 
 
+def qa_require_independent_agreement(proposed,independent,scope):
+    if proposed!=independent:raise AutoQAPlanError('独立対応が不一致です（'+scope+'）。どちらも合格にせず、仕様と対応資料を再診断します: '+json.dumps(dict(proposed=proposed,independent=independent),ensure_ascii=False)[:900])
+    return dict(valid=True,method='blind independent semantic binding agreement',scope=scope,independent=independent)
+
+
+def qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key):
+    # The second mapper never sees the first mapper's event assignments.
+    independent_cfg=dict(cfg,qa_mapping_model=cfg.get('qa_oracle_model') or cfg.get('qa_mapping_model') or cfg['model'],_qa_blind_binding=True)
+    independent=qa_bind_record_clicks(steps,source,selector,independent_cfg,Path(folder),key+'-independent')
+    return qa_require_independent_agreement(events,independent,'保存操作と既存対象の対応')
+
+
 def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,key,generate):
     """Bind requirements to a checked projection; compute instead of guessing."""
     selector=actions['result_selector'];contract=formats.get(selector,{})
@@ -4749,12 +4762,8 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
     steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
     events=qa_bind_record_clicks(steps,source,selector,cfg,Path(folder),key)
-    binding=dict(quantity='record_count',source_quote=source,events=events)
     audit_schema=dict(type='object',properties=dict(valid=dict(type='boolean'),reason=dict(type='string',minLength=12,maxLength=300)),required=['valid','reason'],additionalProperties=False)
-    def audit_value(value):
-        if not isinstance(value,dict) or value.get('valid')is not True or not isinstance(value.get('reason'),str) or len(value['reason'])<12:raise AutoQAPlanError('参照集計: 独立した意味監査が未合格: '+str(value))
-        return value
-    event_audit=generate('primary-event-audit',qa_reference_mapping_audit_prompt('対象集計の全保存記録（表示の割合自体を件数とは判定しない） '+selector,steps,binding),audit_schema,audit_value,dict(requirements=requirements,events=events,steps=steps))
+    event_audit=qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key)
     rows=qa_reference_rows(steps,events)
     controls=[{k:n[k] for k in ('selector','label','type','options') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
@@ -4767,12 +4776,13 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             if isinstance(value,dict) and value in candidates:return value
             raise AutoQAPlanError('参照集計: 対象位置に対応する選択肢が未確定です。未対応の規則を推測して採用できません')
         marked=template.replace('{n'+str(index)+'}','【今回の対象数値】')
-        context=dict(requirements=requirements,controls=controls,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
-        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        output_descriptor=dict(selector=selector,label=contract.get('label',''),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
+        context=dict(requirements=requirements,controls=controls,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
+        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n出力先と見出し:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
-        audit_context={k:v for k,v in context.items() if k!='candidates'}
-        audit_prompt=('独立監査。今回の対象は左からtarget_position番目の数値1個だけ。主結果全体の全項目を1個の規則で網羅する必要はない。数値結果は採点しない。提案した集計規則が元要件と【今回の対象数値】の意味に対応するか確認。要求外の条件・状態・丸め・期限の扱いを足した場合false。仕様中の入力例を保存データと数えてはいけない。表示の数値・アプリ内部の計算式は根拠にしない。JSON {valid,reason}。\n'+json.dumps(dict(audit_context,projection=projection),ensure_ascii=False,separators=(',',':')))
-        audit=generate('primary-projection-audit-'+str(index),audit_prompt,audit_schema,audit_value,dict(audit_context,projection=projection))
+        blind_prompt=('別の担当による独立した対応付け。先行する提案は示さない。今回の対象は左から'+str(index+1)+'番目の【対象数値】1個だけ。この数値1個に対応する計算規則を選択肢から選ぶ。表示全体を1規則で網羅する必要はない。対象が不明なら-1。結果の数値や他の表示位置を回答しない。JSON {"choice":番号}のみ。\n出力先:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n表示:'+marked.replace('【今回の対象数値】','【対象数値】')+'\n元要件:'+source+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        independent=generate('primary-projection-blind-'+str(index),blind_prompt,schema,validate,context)
+        audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
         values.append(qa_evaluate_projection(rows,projection,cfg.get('_qa_reference_clock',{})));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
@@ -4825,7 +4835,7 @@ def qa_primary_component_expectation(selector,formats,context,generate):
 def qa_clear_primary_components(directory):
     directory=Path(directory)
     for path in directory.glob('primary-*.json'):
-        if re.fullmatch(r'primary-(number|literal|projection|projection-audit)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
+        if re.fullmatch(r'primary-(number|literal|projection|projection-audit|projection-blind)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
 
 
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):

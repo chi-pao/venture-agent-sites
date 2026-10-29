@@ -41,7 +41,9 @@ class ReferenceAggregateTests(unittest.TestCase):
         def generate(name,prompt,schema,validate,dependency):
             calls.append(name)
             self.assertNotIn('未実行の100件',prompt)
-            if name in ('primary-projection-0','primary-projection-1'):
+            if name.startswith('primary-projection-'):
+                self.assertIn('#summary',prompt)
+                self.assertEqual(dependency['output']['selector'],'#summary')
                 wanted='all' if name.endswith('0') else 'before_date'
                 answer=dict(choice=next(i for i,c in enumerate(dependency['candidates']) if c['where']==wanted))
             else:answer=dict(valid=True,reason='元要件と実入力項目に対応し、固定の表示ラベルのみを扱う')
@@ -49,14 +51,39 @@ class ReferenceAggregateTests(unittest.TestCase):
         spec=dict(requested_outcome='返品の全保存件数と期限超過数を表示',must_have=['対応期限が今日より前なら期限超過として数える'],acceptance=['未実行の100件を期待する入力例'])
         qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
         with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=events):
-            answer=qa.qa_reference_primary_expectation(actions,formats,spec,dict(_qa_reference_clock=dict(date='2026-10-29')),dict(controls=[dict(tag='input',type='date',selector='#deadline')]),Path(t),'case',generate)
+            answer=qa.qa_reference_primary_expectation(actions,formats,spec,dict(model='semantic',qa_oracle_model='independent',_qa_reference_clock=dict(date='2026-10-29')),dict(controls=[dict(tag='input',type='date',selector='#deadline')]),Path(t),'case',generate)
             self.assertEqual(answer['exact_check']['value'],'1件 / 超過0件')
             proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
             self.assertEqual(proof['values'],['1','0'])
             self.assertEqual(proof['rows'],[{'#deadline':'2035-12-31'}])
-            self.assertIn('primary-projection-audit-1',calls)
+            self.assertIn('primary-projection-blind-1',calls)
             def reject(name,prompt,schema,validate,dependency):return validate(dict(valid=False,reason='元要件には対応しない集計条件が提案されています'))
-            with self.assertRaises(ValueError):qa.qa_reference_primary_expectation(actions,formats,spec,{},dict(controls=[]),Path(t),'bad',reject)
+            with self.assertRaises(ValueError):qa.qa_reference_primary_expectation(actions,formats,spec,dict(model='semantic'),dict(controls=[]),Path(t),'bad',reject)
+
+    def test_blind_projection_disagreement_rejects_equal_current_numbers(self):
+        # With one overdue row both rules return 1; semantic disagreement must
+        # still fail instead of accidentally passing a weak input example.
+        rows=[{'#deadline':'2026-10-01'}]
+        candidates=qa.qa_projection_candidates([dict(selector='#deadline',type='date')],'{n0}件',0)
+        self.assertEqual(qa.qa_evaluate_projection(rows,candidates[0],dict(date='2026-10-30')),'1')
+        self.assertEqual(qa.qa_evaluate_projection(rows,candidates[1],dict(date='2026-10-30')),'1')
+        with self.assertRaises(ValueError):qa.qa_require_independent_agreement(candidates[0],candidates[1],'全件数')
+        self.assertTrue(qa.qa_require_independent_agreement(candidates[0],dict(candidates[0]),'全件数')['valid'])
+
+    def test_blind_event_auditor_has_no_proposed_event_assignments(self):
+        steps=[dict(op='click',selector='#save')]
+        proposed=[dict(step_index=0,effect='create',target=None)]
+        calls=[]
+        def independent(actual_steps,source,selector,cfg,folder,key):
+            calls.append(cfg)
+            self.assertTrue(cfg['_qa_blind_binding'])
+            self.assertEqual(cfg['qa_mapping_model'],'reviewer')
+            self.assertEqual(actual_steps,steps)
+            self.assertNotIn('events',cfg)
+            return [dict(step_index=0,effect='none',target=None)]
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',side_effect=independent):
+            with self.assertRaises(ValueError):qa.qa_blind_record_event_audit(steps,proposed,'保存は記録の追加','#count',dict(model='writer',qa_oracle_model='reviewer'),Path(t),'case')
+        self.assertEqual(len(calls),1)
 
     def test_indexed_repair_changes_only_the_second_identical_submit(self):
         inventory=qa.compact_qa_inventory('<form id="form"><input id="name" required><select id="status" required><option value="">選択</option><option value="open">未着手</option></select><button id="save" type="submit">保存</button></form>')

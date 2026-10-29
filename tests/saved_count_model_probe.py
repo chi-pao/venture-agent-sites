@@ -99,7 +99,7 @@ def main():
                         if not contract or contract.get('slots')!=2:raise AssertionError('Saved returns summary must expose its count and overdue count')
                         formats={'#summaryValue':contract}
                         year=tab.evaluate('new Date().getFullYear()')
-                        if year>=2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
+                        if not 2000<year<2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
                         component_context='空の保存領域から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。現在の実行年:'+str(year)+'。対象CSSは#summaryValue。'
                         def component(name,prompt,schema,check,dependency):
                             return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
@@ -117,7 +117,27 @@ def main():
                         proof['native_schema_browser'].append(dict(width=width,state=state,expected='1',actual=actual,expected_summary=bound_primary,actual_summary=summary))
                         if actual!='1':raise AssertionError('Native model operations failed independent one-record count')
                         if summary!=bound_primary:raise AssertionError('Bound primary oracle failed actual saved-page summary comparison')
-                    tab.screenshot(path=str(evidence/f'native-model-{width}.png'),full_page=True);context.close()
+                    tab.screenshot(path=str(evidence/f'native-model-{width}.png'),full_page=True)
+                    # Challenge the same independently agreed rules with a
+                    # different input, rather than another identical response.
+                    replacements={'#return_item':'独立検証商品2','#order_number':'ORDER-002','#response_deadline':'2000-01-01','#refund_amount':'2000'}
+                    second=[dict(operation,**({'value':replacements[operation['selector']]} if operation.get('selector') in replacements else {})) for operation in native['steps']]
+                    reference_rows=[{step['selector']:step['value'] for step in operations if step['op'] in ('fill','select','check')} for operations in (native['steps'],second)]
+                    reference_proof=json.loads((evidence/'one-record-summary-aggregate-proof.json').read_text(encoding='utf-8'))
+                    projected=[app.qa_evaluate_projection(reference_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
+                    if projected!=['2','1']:raise AssertionError('Agreed projection rules fail independent two-record overdue contrast')
+                    proof['alternate_projection']=dict(steps=second,reference_rows=reference_rows,values=projected,expected='2件 / 超過1件',method='same independently agreed rules; new declared inputs; no observed values used as oracle')
+                    for operation in second:
+                        control=tab.locator(operation['selector'])
+                        if operation['op']=='fill':control.fill(operation['value'])
+                        elif operation['op']=='select':control.select_option(operation['value'])
+                        else:control.click()
+                    for state in ('alternate_saved','alternate_reloaded'):
+                        if state=='alternate_reloaded':tab.reload()
+                        actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
+                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='2',actual=actual,expected_summary='2件 / 超過1件',actual_summary=summary))
+                        if actual!='2' or summary!='2件 / 超過1件':raise AssertionError('Actual saved page fails independent overdue input contrast')
+                    tab.screenshot(path=str(evidence/f'native-model-{width}-two.png'),full_page=True);context.close()
             finally:browser.close()
         # This existing independent Chromium probe uses precisely the same inputs.
         # Its expected values are fixed, never copied from the model or app.
