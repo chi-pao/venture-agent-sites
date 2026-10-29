@@ -41,6 +41,12 @@ def main():
     original=app.ai_json;calls=[]
     def recorded(prompt,config,tokens,**kw):
         start=time.monotonic();row=dict(model=config['model'],prompt=prompt,schema=kw.get('schema'))
+        validator=kw.get('validator')
+        if validator:
+            def capture(value):
+                row['raw_answer']=value
+                return validator(value)
+            kw['validator']=capture
         try:
             answer=original(prompt,config,tokens,**kw);row['answer']=answer;return answer
         except Exception as exc:
@@ -96,12 +102,12 @@ def main():
                         def validate_bound_primary(value):
                             # These two numbers come from this fixed fixture,
                             # not from the browser observation or app code.
-                            if value.get('exact_check',{}).get('expected_values')!=['1','0']:
+                            if [value.get('exact_check',{}).get('display_parts',{}).get('n'+str(i)) for i in range(2)]!=['1','0']:
                                 raise AssertionError('Primary oracle differs from one saved record with a future deadline')
                             return app.qa_compile_bound_primary(value,'#summaryValue',formats)
                         year=tab.evaluate('new Date().getFullYear()')
                         if year>=2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
-                        bound=app.ai_json('独立QA。空の保存から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。数値はこの操作と仕様から計算し、数値を除去した書式に沿ってexpected_valuesとexpected_literalsを返す。\nブラウザの実行年:'+str(year)+'\n数値を除去した書式:'+json.dumps(contract,ensure_ascii=False),
+                        bound=app.ai_json('独立QA。空の保存から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。数値はこの操作と仕様から計算し、数値を除去した書式に沿ってdisplay_partsを返す。n0とn1は表示順の数値だけ（単位・%・分数を含めない）、l0/l1/l2は数値の前・間・後の文字列だけ（数字を含めない）。\nブラウザの実行年:'+str(year)+'\n数値を除去した書式:'+json.dumps(contract,ensure_ascii=False),
                             dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),300,schema=primary_schema,max_attempts=1,request_timeout=300,validator=validate_bound_primary)
                         proof['bound_primary_model']=bound;bound_primary=bound['exact_check']['value']
                     for state in ('saved','reloaded'):

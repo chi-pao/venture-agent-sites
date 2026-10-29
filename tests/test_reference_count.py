@@ -17,11 +17,22 @@ class ReferenceCountTests(unittest.TestCase):
         schema=qa.qa_bound_primary_schema(original,'#summary',formats)
         props=schema['properties']['exact_check']['properties']
         self.assertNotIn('value',props)
-        self.assertEqual(props['expected_values']['minItems'],2)
+        self.assertEqual(set(props['display_parts']['required']),{'n0','n1','l0','l1','l2'})
+        self.assertEqual(props['display_parts']['properties']['l0']['enum'],[''])
         with self.assertRaises(ValueError):qa.qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector='#summary',value='1')),'#summary',formats)
         answer=dict(exact_check=dict(op='text_equals',selector='#summary',expected_values=['2','0'],expected_literals=['','件 / 超過','件']))
         result=qa.qa_compile_bound_primary(answer,'#summary',formats)
         self.assertEqual(result['exact_check']['value'],'2件 / 超過0件')
+
+    def test_named_display_slots_reject_units_and_fabricated_headings(self):
+        formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2)}
+        parts=dict(n0='1',n1='0',l0='',l1='件 / 超過',l2='件')
+        raw=dict(exact_check=dict(op='text_equals',selector='#summary',display_parts=parts))
+        self.assertEqual(qa.qa_compile_bound_primary(raw,'#summary',formats)['exact_check']['value'],'1件 / 超過0件')
+        for change in (dict(n0='1%'),dict(l0='集計:'),dict(l1='1件 / 超過'),dict(n2='9')):
+            bad=dict(exact_check=dict(raw['exact_check'],display_parts=dict(parts,**change)))
+            with self.assertRaises(ValueError):qa.qa_compile_bound_primary(bad,'#summary',formats)
+        self.assertNotIn('expected_values',raw['exact_check'])
 
     def test_split_oracle_receives_masked_format_contract(self):
         formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2),'#other':dict(template='{n0}円',slots=1)}

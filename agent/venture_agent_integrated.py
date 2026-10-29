@@ -4583,10 +4583,16 @@ def qa_bound_primary_schema(original,selector,formats):
     contract=formats.get(selector,{})
     count=contract.get('slots')
     if type(count)is int and 1<=count<=8:
+        parts={}
+        for index in range(count):
+            parts['n'+str(index)]=dict(type='string',pattern=r'^-?\d+(?:\.\d+)?$')
+        for index in range(count+1):
+            rule=dict(type='string',maxLength=180,pattern=r'^[^0-9]*$')
+            if index==0 and contract.get('template','').startswith('{n0}'):rule=dict(type='string',enum=[''])
+            parts['l'+str(index)]=rule
         exact=dict(type='object',properties=dict(op=dict(type='string',enum=['text_equals']),selector=dict(type='string',enum=[selector]),
-            expected_values=dict(type='array',minItems=count,maxItems=count,items=dict(type='string',pattern=r'^-?\d+(?:\.\d+)?$')),
-            expected_literals=dict(type='array',minItems=count+1,maxItems=count+1,items=dict(type='string',maxLength=180))),
-            required=['op','selector','expected_values','expected_literals'],additionalProperties=False)
+            display_parts=dict(type='object',properties=parts,required=list(parts),additionalProperties=False)),
+            required=['op','selector','display_parts'],additionalProperties=False)
     return dict(type='object',properties=dict(exact_check=exact),required=['exact_check'],additionalProperties=False)
 
 
@@ -4594,6 +4600,14 @@ def qa_compile_bound_primary(value,selector,formats):
     exact=value.get('exact_check') if isinstance(value,dict) else None
     if not isinstance(exact,dict) or exact.get('op')!='text_equals' or exact.get('selector')!=selector:raise AutoQAPlanError('主結果は指定したCSSだけを照合してください')
     contract=formats.get(selector,{})
+    if 'display_parts' in exact:
+        count=contract.get('slots',0);parts=exact['display_parts']
+        keys={'n'+str(i) for i in range(count)}|{'l'+str(i) for i in range(count+1)}
+        if not isinstance(parts,dict) or set(parts)!=keys:raise AutoQAPlanError('display_partsには表示位置ごとの数値nと前後文字列lを過不足なく指定してください')
+        exact=dict(exact,expected_values=[parts['n'+str(i)] for i in range(count)],expected_literals=[parts['l'+str(i)] for i in range(count+1)])
+        exact.pop('display_parts')
+        value=dict(value,exact_check=exact)
+
     if contract.get('template','').startswith('{n0}') and exact.get('expected_literals') and exact['expected_literals'][0]!='':
         raise AutoQAPlanError('数値から始まる結果要素に外側の見出しを追加できません')
     value=compile_qa_formatted_expectation(value,formats)
@@ -4677,7 +4691,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     primary_schema=qa_bound_primary_schema(properties['exact_check'],actions['result_selector'],formats)
     def validate_primary(value):
         return qa_compile_bound_primary(value,actions['result_selector'],formats)
-    primary_shape=('JSON {exact_check:{op:text_equals,selector:指定CSS,expected_values:[各数値の独立した正解],expected_literals:[数値の前後の全文字列]}}。' if 'expected_values' in primary_schema['properties']['exact_check']['properties'] else 'JSON {exact_check:{op:text_equals,selector:指定CSS,value:単位や補足まで含む完全な正解}}。')
+    primary_shape=('JSON {exact_check:{op:text_equals,selector:指定CSS,display_parts:{n0:最初の数値だけ,n1:次の数値だけ,l0:最初の数値の前の文字列,l1:数値の間の文字列,l2:最後の数値の後の文字列}}}。スキーマの全n/lキーを埋める。nには単位・%・分数を入れず数値だけ。lには数字を入れない。' if 'display_parts' in primary_schema['properties']['exact_check']['properties'] else 'JSON {exact_check:{op:text_equals,selector:指定CSS,value:単位や補足まで含む完全な正解}}。')
     primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
         primary_schema,oracle,300,validate_primary,actions)['exact_check']
     checks=[]

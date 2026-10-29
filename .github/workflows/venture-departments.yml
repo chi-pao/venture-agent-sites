@@ -116,11 +116,13 @@ jobs:
             fi
           done
       - name: Replay fixed count with real semantic models and saved Chromium page
+        id: saved_count
         if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
         env:
           VENTURE_LIVE_DATA_HOME: department-live-artifacts/returns
         run: python -u tests/saved_count_model_probe.py
       - name: Compile production code and live test
+        if: success() || (failure() && steps.saved_count.outcome == 'failure')
         env:
           PYTHONPATH: tests
           VENTURE_LIVE_MODEL: qwen2.5-coder:7b
