@@ -483,3 +483,84 @@ class ReferenceAggregateTests(unittest.TestCase):
         self.assertEqual(result['exact_check'],primary['exact_check'])
         self.assertEqual(result['checks'][0],dict(op='text_equals',selector='#recordCount',value='1'))
         self.assertEqual(calls,['actions-transport.json'])
+
+    def test_initial_survey_masks_numbers_and_resumes_before_any_failed_case(self):
+        import sys
+        import types
+        from contextlib import nullcontext
+        clock=dict(date=qa.qa_current_reference_clock(None)['date'],source='browser local clock')
+        calls=[]
+        tab=types.SimpleNamespace(goto=lambda *a,**k:calls.append('load'),evaluate=lambda script:clock)
+        context=types.SimpleNamespace(route=lambda *a:None,new_page=lambda:tab,close=lambda:None)
+        browser=types.SimpleNamespace(new_context=lambda **k:context,close=lambda:None)
+        sync=types.SimpleNamespace(sync_playwright=lambda:nullcontext(types.SimpleNamespace(chromium=types.SimpleNamespace(launch=lambda **k:browser))))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        def capture(page):return qa.qa_display_contracts_from_nodes([dict(selector='#summaryValue',text='999件 / 超過888件',label='未完了 / 期限超過')])
+        with tempfile.TemporaryDirectory() as t,patch.dict(sys.modules,{'playwright.sync_api':sync}),patch.object(qa,'ensure_product_preview',return_value=dict(local_url='http://local/app'),create=True),patch.object(qa,'capture_qa_display_contracts',side_effect=capture,create=True):
+            first=qa.qa_initial_display_context('商品','same source',Path(t))
+            second=qa.qa_initial_display_context('商品','same source',Path(t))
+            self.assertEqual(first,second)
+            self.assertEqual(json.dumps(first,ensure_ascii=False),json.dumps(second,ensure_ascii=False))
+            self.assertEqual(first['display_contracts']['#summaryValue']['template'],'{n0}件 / 超過{n1}件')
+            self.assertNotIn('999',json.dumps(first));self.assertNotIn('888',json.dumps(first))
+            self.assertEqual(calls,['load'])
+            qa.qa_initial_display_context('商品','changed source',Path(t))
+            self.assertEqual(calls,['load','load'])
+
+    def test_whole_unit_identity_cannot_reuse_legacy_or_changed_semantic_roles(self):
+        cfg=dict(qa_split_units=True,qa_reference_aggregates=True,qa_oracle_model='independent',qa_component_contract='native-record-create-v1')
+        identity=qa.qa_compilation_identity(cfg)
+        self.assertNotEqual(identity,qa.qa_compilation_identity(dict(cfg,qa_split_units=False)))
+        self.assertNotEqual(identity,qa.qa_compilation_identity(dict(cfg,qa_oracle_model='other')))
+        self.assertNotEqual(identity,qa.qa_compilation_identity(dict(cfg,qa_component_contract='unknown')))
+        self.assertIn('survey-before-plan',identity['policy'])
+
+    def test_aggregate_planner_does_not_fallback_to_free_text_without_format(self):
+        inventory=qa.compact_qa_inventory('<input id="title"><button id="save">保存</button><strong id="result">保存しました</strong>')
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=AssertionError('must survey first'),create=True):
+            with self.assertRaisesRegex(ValueError,'初期画面'):
+                qa.qa_split_unit_generation('元要件',dict(model='x',qa_reference_aggregates=True),Path(t),'base-workflow','input',qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+
+    def test_disputed_status_sets_can_recover_a_third_source_grounded_set(self):
+        controls=[dict(selector='#state',label='対応状況',options=[dict(value=s) for s in ['受付','返送待ち','確認中','返金済み','対象外']])]
+        left=dict(metric='count',where='in',field='#state',members=['返送待ち'],rounding='exact',places=0,basis='first wrong subset')
+        right=dict(left,members=['返送待ち','確認中'],basis='second wrong subset')
+        calls=[]
+        def judge(name,prompt,schema,validate,dependency):
+            calls.append(name)
+            self.assertNotIn('first wrong subset',prompt);self.assertNotIn('second wrong subset',prompt)
+            included=[int(s not in ('返金済み','対象外')) for s in dependency['ordered_statuses']]
+            return validate(dict(membership=included,evidence_id=0))
+        projection,audit=qa.qa_resolve_projection_binding(left,right,dict(outcome='未完了は返金済み・対象外を除く件数'),dict(selector='#summaryValue',target_label='未完了'),[{'#state':'確認中'}],controls,{},judge,'0')
+        self.assertEqual(projection['members'],['受付','返送待ち','確認中'])
+        self.assertNotEqual(projection['members'],left['members']);self.assertNotEqual(projection['members'],right['members'])
+        self.assertTrue(audit['valid']);self.assertEqual(len(calls),2)
+        self.assertEqual(qa.qa_evaluate_projection([{'#state':o['value']} for o in controls[0]['options']],projection,{}),'3')
+
+    def test_overdue_status_repair_preserves_independent_date_condition(self):
+        controls=[dict(selector='#state',options=[dict(value=s) for s in ['受付','返金済み']])]
+        base=dict(metric='count',where='before_date',field='#due',members=[],rounding='exact',places=0,basis='overdue')
+        left=dict(base,also=dict(field='#state',members=['受付']))
+        def judge(name,prompt,schema,validate,dependency):
+            self.assertEqual(dependency['fixed_condition'],dict(where='before_date',field='#due'))
+            return validate(dict(membership=[int(s=='受付') for s in dependency['ordered_statuses']],evidence_id=0))
+        projection,audit=qa.qa_resolve_status_partition(left,base,dict(outcome='期限が今日より前で未完了だけ。返金済みは除く'),dict(target_label='期限超過'),controls,judge,'1')
+        self.assertEqual(projection['where'],'before_date');self.assertEqual(projection['also'],dict(field='#state',members=['受付']))
+        rows=[{'#due':'2000-01-01','#state':'受付'},{'#due':'2000-01-01','#state':'返金済み'},{'#due':'2035-12-31','#state':'受付'}]
+        self.assertEqual(qa.qa_evaluate_projection(rows,projection,dict(date='2026-10-30')),'1')
+
+    def test_status_partition_unknown_or_order_biased_answers_stay_failed(self):
+        controls=[dict(selector='#state',options=[dict(value='open'),dict(value='closed')])]
+        a=dict(metric='count',where='in',field='#state',members=['open'])
+        b=dict(a,members=['closed'])
+        def unknown(name,prompt,schema,validate,dependency):return validate(dict(membership=[1,-1],evidence_id=0))
+        def positional(name,prompt,schema,validate,dependency):return validate(dict(membership=[1,0],evidence_id=0))
+        for judge in (unknown,positional):
+            with self.assertRaises(ValueError):qa.qa_resolve_status_partition(a,b,dict(outcome='openだけ数える'),dict(target_label='未完了'),controls,judge,'0')
+
+    def test_primary_browser_failure_discards_semantic_repair_receipts_only(self):
+        with tempfile.TemporaryDirectory() as t:
+            directory=Path(t)
+            for name in ('primary-projection-membership-0-forward.json','primary-projection-resolution-1-reverse.json','primary-projection-0.json','primary-projection-membership-0-forward-request.json','actions.json'):(directory/name).write_text('{}')
+            qa.qa_clear_primary_components(directory)
+            self.assertEqual(sorted(p.name for p in directory.iterdir()),['actions.json','primary-projection-membership-0-forward-request.json'])

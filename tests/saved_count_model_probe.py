@@ -84,7 +84,16 @@ def main():
                     dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),500,schema=native_schema,max_attempts=1,request_timeout=300,validator=validate_native)
         proof['native_schema_plan']=native
         proof['native_schema_browser']=[]
-        bound_primary=None
+        # Fixed independently declared outcomes run before semantic inference.
+        # A mapper failure must not erase evidence about the actual saved app.
+        proof['fixed_browser_passed']=False;proof['semantic_binding_passed']=False
+        contrasts=[];formats=None;aggregate_cfg=None
+        cases=((1,'返送待ち','2035-12-31',['1','0']),
+               (2,'返送待ち','2000-01-01',['2','1']),
+               (3,'返金済み','2000-01-01',['2','1']),
+               (4,'受付','2035-12-31',['3','1']),
+               (5,'確認中','2000-01-01',['4','2']),
+               (6,'対象外','2000-01-01',['4','2']))
         from playwright.sync_api import sync_playwright
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
@@ -92,100 +101,58 @@ def main():
                 for width in (1280,390):
                     context=browser.new_context(viewport=dict(width=width,height=900));tab=context.new_page()
                     tab.goto(page.as_uri(),wait_until='load');tab.evaluate('localStorage.clear()');tab.reload()
-                    for operation in native['steps']:
-                        control=tab.locator(operation['selector'])
-                        if operation['op']=='fill':control.fill(operation['value'])
-                        elif operation['op']=='select':control.select_option(operation['value'])
-                        else:control.click()
-                    if bound_primary is None:
-                        contract=app.capture_qa_display_contracts(tab).get('#summaryValue')
-                        if not contract or contract.get('slots')!=2:raise AssertionError('Saved returns summary must expose its count and overdue count')
-                        formats={'#summaryValue':contract}
-                        year=tab.evaluate('new Date().getFullYear()')
-                        if not 2000<year<2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
-                        def component(name,prompt,schema,check,dependency):
-                            return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
-                                _json_transport_evidence=str(evidence/(name+'-transport.json'))),180 if 'audit' in name else 100 if 'projection' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
-                        summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。'
-                        aggregate_cfg=dict(cfg,_qa_reference_clock=dict(date=tab.evaluate('new Date().toISOString().slice(0,10)')))
-                        bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
-                            dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)
-                        if bound['exact_check']['value']!='1件 / 超過0件':raise AssertionError('Primary oracle differs from fixed one-record future-deadline result')
-                        proof['bound_primary_model']=bound;bound_primary=bound['exact_check']['value']
-                    for state in ('saved','reloaded'):
-                        if state=='reloaded':tab.reload()
-                        actual=tab.locator('#recordCount').inner_text().strip()
-                        summary=tab.locator('#summaryValue').inner_text().strip()
-                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='1',actual=actual,expected_summary=bound_primary,actual_summary=summary))
-                        if actual!='1':raise AssertionError('Native model operations failed independent one-record count')
-                        if summary!=bound_primary:raise AssertionError('Bound primary oracle failed actual saved-page summary comparison')
-                    tab.screenshot(path=str(evidence/f'native-model-{width}.png'),full_page=True)
-                    # Challenge the same independently agreed rules with a
-                    # different input, rather than another identical response.
-                    replacements={'#return_item':'独立検証商品2','#order_number':'ORDER-002','#response_deadline':'2000-01-01','#refund_amount':'2000'}
-                    second=[dict(operation,**({'value':replacements[operation['selector']]} if operation.get('selector') in replacements else {})) for operation in native['steps']]
-                    reference_rows=[{step['selector']:step['value'] for step in operations if step['op'] in ('fill','select','check')} for operations in (native['steps'],second)]
-                    reference_proof=json.loads((evidence/'one-record-summary-aggregate-proof.json').read_text(encoding='utf-8'))
-                    projected=[app.qa_evaluate_projection(reference_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
-                    if projected!=['2','1']:raise AssertionError('Agreed projection rules fail independent two-record overdue contrast')
-                    proof['alternate_projection']=dict(steps=second,reference_rows=reference_rows,values=projected,expected='2件 / 超過1件',method='same independently agreed rules; new declared inputs; no observed values used as oracle')
-                    for operation in second:
-                        control=tab.locator(operation['selector'])
-                        if operation['op']=='fill':control.fill(operation['value'])
-                        elif operation['op']=='select':control.select_option(operation['value'])
-                        else:control.click()
-                    for state in ('alternate_saved','alternate_reloaded'):
-                        if state=='alternate_reloaded':tab.reload()
-                        actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
-                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='2',actual=actual,expected_summary='2件 / 超過1件',actual_summary=summary))
-                        if actual!='2' or summary!='2件 / 超過1件':raise AssertionError('Actual saved page fails independent overdue input contrast')
-                    tab.screenshot(path=str(evidence/f'native-model-{width}-two.png'),full_page=True)
-                    closed_values={'#return_item':'独立検証商品3','#order_number':'ORDER-003','#response_deadline':'2000-01-01','#refund_amount':'3000','#return_status':'返金済み'}
-                    closed=[dict(operation,**({'value':closed_values[operation['selector']]} if operation.get('selector') in closed_values else {})) for operation in native['steps']]
-                    closed_row={step['selector']:step['value'] for step in closed if step['op'] in ('fill','select','check')}
-                    closed_rows=reference_rows+[closed_row]
-                    closed_projection=[app.qa_evaluate_projection(closed_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
-                    if closed_projection!=['2','1']:raise AssertionError('Agreed rules confuse total/open counts or count an overdue closed return')
-                    proof['closed_projection']=dict(steps=closed,reference_rows=closed_rows,values=closed_projection,total_count='3',expected='2件 / 超過1件')
-                    for operation in closed:
-                        control=tab.locator(operation['selector'])
-                        if operation['op']=='fill':control.fill(operation['value'])
-                        elif operation['op']=='select':control.select_option(operation['value'])
-                        else:control.click()
-                    for state in ('closed_saved','closed_reloaded'):
-                        if state=='closed_reloaded':tab.reload()
-                        actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
-                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='3',actual=actual,expected_summary='2件 / 超過1件',actual_summary=summary))
-                        if actual!='3' or summary!='2件 / 超過1件':raise AssertionError('Actual saved page fails independent closed-status contrast')
-                    tab.screenshot(path=str(evidence/f'native-model-{width}-closed.png'),full_page=True)
-                    # Cover every remaining declared status without asking a
-                    # model to repeat the same binding for each test record.
-                    all_rows=list(closed_rows)
-                    for total,status,due,expected_values in ((4,'受付','2035-12-31',['3','1']),(5,'確認中','2000-01-01',['4','2']),(6,'対象外','2000-01-01',['4','2'])):
-                        changed={'#return_item':f'独立検証商品{total}','#order_number':f'ORDER-{total:03d}','#response_deadline':due,'#refund_amount':str(total*1000),'#return_status':status}
-                        additional=[dict(operation,**({'value':changed[operation['selector']]} if operation.get('selector') in changed else {})) for operation in native['steps']]
-                        all_rows.append({step['selector']:step['value'] for step in additional if step['op'] in ('fill','select','check')})
-                        values=[app.qa_evaluate_projection(all_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
-                        if values!=expected_values:raise AssertionError('Agreed rules fail independent native-status coverage: '+status)
+                    year=tab.evaluate('new Date().getFullYear()')
+                    if not 2000<year<2035:raise AssertionError('The fixed deadline contrasts must be refreshed')
+                    reference_rows=[]
+                    for total,status,due,expected_values in cases:
+                        changed={'#return_item':f'独立検証商品{total}','#order_number':f'ORDER-{total:03d}',
+                                 '#response_deadline':due,'#refund_amount':str(total*1000),'#return_status':status}
+                        operations=[dict(operation,**({'value':changed[operation['selector']]} if operation.get('selector') in changed else {})) for operation in native['steps']]
+                        reference_rows.append({step['selector']:step['value'] for step in operations if step['op'] in ('fill','select','check')})
                         expected_summary=expected_values[0]+'件 / 超過'+expected_values[1]+'件'
-                        for operation in additional:
+                        if width==1280:contrasts.append(dict(steps=operations,reference_rows=list(reference_rows),expected_values=expected_values,total_count=str(total)))
+                        for operation in operations:
                             control=tab.locator(operation['selector'])
                             if operation['op']=='fill':control.fill(operation['value'])
                             elif operation['op']=='select':control.select_option(operation['value'])
                             else:control.click()
-                        for state in ('status_saved','status_reloaded'):
-                            if state=='status_reloaded':tab.reload()
+                        if formats is None:
+                            contract=app.capture_qa_display_contracts(tab).get('#summaryValue')
+                            if not contract or contract.get('slots')!=2:raise AssertionError('Saved returns summary must expose pending and overdue counts')
+                            formats={'#summaryValue':contract}
+                            aggregate_cfg=dict(cfg,_qa_reference_clock=tab.evaluate("() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone};}"))
+                        for state in ('saved','reloaded'):
+                            if state=='reloaded':tab.reload()
                             actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
-                            proof['native_schema_browser'].append(dict(width=width,state=state,status=status,expected=str(total),actual=actual,expected_summary=expected_summary,actual_summary=summary))
-                            if actual!=str(total) or summary!=expected_summary:raise AssertionError('Actual page fails independent native-status coverage: '+status)
-                    tab.screenshot(path=str(evidence/f'native-model-{width}-all-statuses.png'),full_page=True);context.close()
+                            proof['native_schema_browser'].append(dict(width=width,state=state,status=status,expected=str(total),actual=actual,expected_summary=expected_summary,actual_summary=summary,
+                                oracle_basis='fixed independent fixture; not a model or observed-value oracle'))
+                            if actual!=str(total) or summary!=expected_summary:raise AssertionError('Actual saved page fails fixed status/save/reload contrast: '+status)
+                        tab.screenshot(path=str(evidence/f'native-model-{width}-records-{total}.png'),full_page=True)
+                    context.close()
             finally:browser.close()
-        # This existing independent Chromium probe uses precisely the same inputs.
-        # Its expected values are fixed, never copied from the model or app.
+        proof['fixed_browser_passed']=True
+        proof['fixed_contrasts']=contrasts
         runpy.run_path(str(Path(__file__).with_name('returns_oracle_probe.py')),run_name='__main__')
         browser=json.loads((root/'independent-count-probe.json').read_text(encoding='utf-8'))
         proof['browser']=browser
         if not browser['passed']:raise AssertionError('Saved real page failed independent Chromium probe')
+        # Retain the original semantic-model gate: fixed-browser success alone
+        # cannot pass this diagnostic, much less product acceptance.
+        def component(name,prompt,schema,check,dependency):
+            return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
+                _json_transport_evidence=str(evidence/(name+'-transport.json'))),180 if 'audit' in name else 100 if 'projection' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
+        summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。'
+        bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
+            dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)
+        if bound['exact_check']['value']!='1件 / 超過0件':raise AssertionError('Primary oracle differs from fixed one-record future-deadline result')
+        proof['bound_primary_model']=bound
+        reference_proof=json.loads((evidence/'one-record-summary-aggregate-proof.json').read_text(encoding='utf-8'))
+        projection_results=[]
+        for contrast in contrasts:
+            projected=[app.qa_evaluate_projection(contrast['reference_rows'],projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
+            projection_results.append(dict(total_count=contrast['total_count'],expected=contrast['expected_values'],computed=projected))
+            if projected!=contrast['expected_values']:raise AssertionError('Agreed semantic rules fail fixed native-status input contrast')
+        proof['semantic_contrasts']=projection_results;proof['semantic_binding_passed']=True
         proof['passed']=True
     except Exception as exc:
         proof['error']=type(exc).__name__+': '+str(exc);raise

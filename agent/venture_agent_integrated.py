@@ -4300,9 +4300,49 @@ def qa_projection_witnesses(rows,left,right,controls,clock):
     return result
 
 
+def qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key):
+    """Rebuild a disputed subset from every native status, not two bad sets."""
+    stable=('metric','where','field','reference_input','rounding','places')
+    if any(left.get(k)!=right.get(k) for k in stable):return None
+    if left.get('where')=='in':field=left.get('field');base=dict(left)
+    elif left.get('where')in ('before_date','on_reference_date','on_input_date'):
+        fields={p['also']['field'] for p in (left,right) if isinstance(p.get('also'),dict) and p['also'].get('field')}
+        if len(fields)!=1:return None
+        field=next(iter(fields));base=dict(left);base.pop('also',None)
+    else:return None
+    node=next((n for n in controls if n.get('selector')==field),{})
+    options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value') and not o.get('disabled')))
+    if not 2<=len(options)<=5:return None
+    clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
+    clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
+    schema=dict(type='object',properties=dict(membership=dict(type='array',items=dict(type='integer',enum=[-1,0,1]),minItems=len(options),maxItems=len(options)),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['membership','evidence_id'],additionalProperties=False)
+    mappings=[];responses=[]
+    for reverse in (False,True):
+        ordered=list(reversed(options)) if reverse else options
+        context=dict(output=descriptor,numbered_requirements=clauses,ordered_statuses=ordered,
+                     fixed_condition={k:base[k] for k in ('where','field','reference_input') if k in base} if base['where']!='in' else None)
+        def validate(value):
+            membership=value.get('membership') if isinstance(value,dict) else None
+            if not isinstance(membership,list) or len(membership)!=len(ordered) or any(type(v)is not int or v not in (0,1) for v in membership) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('状態ごとの集計対象を元要件から確定できません。未確定は合格にしません')
+            return value
+        prompt=('独立した意味判定。出力項目「'+descriptor['target_label']+'」の集計対象を、ordered_statusesの各状態について個別に決める。含める=1、除外=0、要件不足=-1。membershipは提示順と同じ長さ。固定の日付条件があれば変更せず、その条件を満たす記録の各状態を判定する。今回入力済みの状態だけに限定しない。前の候補は示さない。原文の根拠番号evidence_idも返す。JSON {membership:[1,0],evidence_id:0}。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
+        answer=generate('primary-projection-membership-'+key+('-reverse' if reverse else '-forward'),prompt,schema,validate,context)
+        mappings.append(dict(zip(ordered,answer['membership'])));responses.append(answer)
+    agreement=qa_require_independent_agreement(mappings[0],mappings[1],descriptor['target_label']+'の全状態の独立分類')
+    members=[v for v in options if mappings[0][v]]
+    if base['where']=='in':base['members']=members
+    elif set(members)!=set(options):base['also']=dict(field=field,members=members)
+    base['basis']=descriptor['target_label']+'の元要件に基づく全状態の独立分類'
+    return base,dict(agreement,method='independent complete native-status classification in reversed order; no prior subsets disclosed',original_proposed=left,original_independent=right,classified_states=mappings[0],responses=responses)
+
+
 def qa_resolve_projection_binding(left,right,requirements,descriptor,rows,controls,clock,generate,key):
     witnesses=qa_projection_witnesses(rows,left,right,controls,clock)
     if not witnesses:raise AutoQAPlanError('独立対応が不一致です。候補を区別する有効な入力例が未確定のため、合格にはできません')
+    partition=qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key)
+    if partition is not None:
+        selected,audit=partition
+        return selected,dict(audit,witnesses=witnesses)
     clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
     clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
     schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1,0,1]),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['choice','evidence_id'],additionalProperties=False)
@@ -5124,7 +5164,7 @@ def qa_component_saved_checks(actions,primary,inventory,cfg):
 def qa_clear_primary_components(directory):
     directory=Path(directory)
     for path in directory.glob('primary-*.json'):
-        if re.fullmatch(r'primary-(number|literal|projection|projection-audit|projection-blind)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
+        if re.fullmatch(r'primary-(?:(?:number|literal|projection|projection-audit|projection-blind)-[0-9]+|projection-(?:resolution|membership)-[0-9]+-(?:forward|reverse))\.json',path.name):path.unlink(missing_ok=True)
 
 
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
@@ -5178,7 +5218,8 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     output_selectors=[css for css in output_selectors if css not in parents]
     if kind in ('workflow','variant') and cfg.get('qa_reference_aggregates'):
         numeric=[css for css in output_selectors if 1<=(cfg.get('_qa_display_contracts') or {}).get(css,{}).get('slots',0)<=8 and re.search(r'summary|total|count|capacity|balance',css,re.I)]
-        if numeric:output_selectors=numeric
+        if not numeric:raise AutoQAPlanError('主集計の数値表示契約が未確定です。初期画面の書式取得が必要です')
+        output_selectors=numeric
     if target.get('enum'):
         permitted=[v for v in target['enum'] if v in output_selectors]
         if not permitted:raise AutoQAPlanError('主結果には一覧表以外の独立した結果要素が必要です')
@@ -5282,6 +5323,46 @@ def qa_invalidate_split_failure(folder,key,raw,observation):
         if check==fault:(directory/('secondary-'+str(i)+'.json')).unlink(missing_ok=True)
 
 
+def qa_initial_display_context(name,source,directory):
+    """Collect masked formats before planning, shared by every scenario.
+
+    Only interface format and the independent browser clock are returned.
+    Rendered numerical results never become expected values.
+    """
+    directory=Path(directory);path=directory/'initial-display-context.json'
+    digest=hashlib.sha256(source.encode()).hexdigest()
+    if path.exists():
+        try:
+            saved=json.loads(path.read_text(encoding='utf-8'))
+            if saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
+                return saved
+        except (ValueError,TypeError,KeyError):pass
+    from playwright.sync_api import sync_playwright
+    preview=ensure_product_preview(name,source,{})
+    url=preview.get('local_url') or preview['url']
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True)
+        try:
+            context=browser.new_context(viewport=dict(width=1280,height=900),service_workers='block')
+            context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
+            page=context.new_page();page.goto(url,wait_until='networkidle',timeout=15000)
+            clock=page.evaluate("() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'browser local clock'};}")
+            result=dict(source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
+                        method='numeric-stripped interface survey; no acceptance verdict or observed numeric expectations')
+            result=json.loads(json.dumps(result,sort_keys=True,ensure_ascii=False))
+            write_framework_json(path,result);context.close()
+            return result
+        finally:browser.close()
+
+
+def qa_compilation_identity(cfg):
+    """Whole-unit receipts must not bypass a newly selected compiler/role."""
+    return dict(policy='2026-10-30-survey-before-plan-1',split=bool(cfg.get('qa_split_units')),
+                reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
+                component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
+                action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -5289,6 +5370,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     signature=hashlib.sha256(json.dumps(dict(policy=CHECKPOINT_QA_POLICY,name=name,spec=spec,
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
+    initial_context=qa_initial_display_context(name,page,folder) if cfg.get('qa_split_units') and cfg.get('qa_reference_aggregates') and cfg.get('qa_probe_units') else {}
     acceptance=spec['acceptance'];count=len(acceptance)
     handoff=cfg.get('_department_documents') or {}
     design_plan=handoff.get('implementation_plan') or {}
@@ -5323,8 +5405,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
 
     def part(key,prompt,validate,tokens=1000,include_context=True,schema=None,supplied=None):
         path=folder/(key+'.json');error_path=folder/(key+'-error.json');error='';cached=None;failure={}
-        formats={}
-        reference_clock=qa_current_reference_clock(None)
+        formats=dict(initial_context.get('display_contracts',{}))
+        labels={n['selector']:n['label'] for n in full_inventory['outputs'] if n.get('label')}
+        formats={css:dict(contract,**({'label':labels[css]} if css in labels else {})) for css,contract in formats.items()}
+        reference_clock=qa_current_reference_clock(initial_context.get('reference_clock'))
         observation=folder/(key+'-browser')/'browser-observation-failure.json'
         if observation.exists():
             try:
@@ -5346,7 +5430,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             unit_context+='\nexact_checkは{op:text_equals,selector:書式一覧のCSS,value:その要素だけの完全な期待表示}。見出しや他の要素を含めない。書式の数値は入力・仕様から独立して計算し、状態も判断する。観測値を正解として採用しない。'
             schema=json.loads(json.dumps(schema))
             schema['properties']['exact_check']={'type':'object','properties':{'op':{'type':'string','enum':['text_equals']},'selector':{'type':'string','enum':list(formats)},'value':{'type':'string','minLength':1,'maxLength':250}},'required':['op','selector','value'],'additionalProperties':False}
-        input_sha=hashlib.sha256((prompt+unit_context if include_context else prompt).encode()).hexdigest()
+        compilation=qa_compilation_identity(cfg)
+        input_sha=hashlib.sha256(((prompt+unit_context if include_context else prompt)+json.dumps(compilation,sort_keys=True,ensure_ascii=False)).encode()).hexdigest()
         if path.exists():
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
@@ -5479,7 +5564,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                         try:qa_invalidate_split_failure(folder,key,json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),json.loads(observation.read_text(encoding='utf-8')))
                         except (ValueError,OSError,TypeError):pass
                     raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
-            write_framework_json(path,dict(input_sha=input_sha,value=value))
+            write_framework_json(path,dict(input_sha=input_sha,compilation=compilation,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout))
             error_path.unlink(missing_ok=True)
             return value
