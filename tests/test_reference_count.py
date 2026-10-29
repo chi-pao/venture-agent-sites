@@ -9,6 +9,13 @@ qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 qa.AutoQAPlanError=ValueError
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_wrapping_labels_feed_real_input_units_to_normalization(self):
+        inventory=qa.compact_qa_inventory('<label><span>休憩（分）</span><input id="break" type="number"></label><label>状態<select id="status"><option>選択</option></select></label>')
+        self.assertEqual(inventory['controls'][0]['label'],'休憩（分）')
+        self.assertEqual(inventory['controls'][1]['label'],'状態')
+        raw=dict(steps=[dict(op='fill',selector='#break',value='01:00')])
+        self.assertEqual(qa.qa_normalize_duration_inputs(raw,inventory)['steps'][0]['value'],'60')
+
     def test_explicit_duration_normalization_does_not_guess_units(self):
         raw=dict(steps=[dict(op='fill',selector='#break',value='01:00')],exact_check=dict(value='unchanged'))
         result=qa.qa_normalize_duration_inputs(raw,dict(controls=[dict(selector='#break',type='number',label='休憩時間（分）')]))

@@ -3456,10 +3456,12 @@ def compile_qa_invalid(value,count):
 
 class _QAInventory(HTMLParser):
     def __init__(self):
-        super().__init__();self.nodes=[];self.stack=[];self.labels={};self.label_for=None
+        super().__init__();self.nodes=[];self.stack=[];self.labels={};self.label_for=None;self.wrapped_label=None
     def handle_starttag(self,tag,attrs):
         a=dict(attrs);self.stack.append((tag,a));node=None
-        if tag=='label':self.label_for=a.get('for')
+        if tag=='label':
+            self.label_for=a.get('for')
+            self.wrapped_label=dict(start=len(self.nodes),text='') if not self.label_for else None
         if tag=='option':
             parent=next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='select'),None)
             select=next((n for n in reversed(self.nodes) if n['selector']=='#'+str(parent)),None)
@@ -3479,13 +3481,20 @@ class _QAInventory(HTMLParser):
         # Track text owners separately. Void controls do not own following text.
         if tag in ('input','br','meta','link','img','hr'):self.stack.pop()
     def handle_endtag(self,tag):
-        if tag=='label':self.label_for=None
+        if tag=='label':
+            if self.wrapped_label:
+                for node in self.nodes[self.wrapped_label['start']:]:
+                    if node['tag'] in ('input','select','textarea') and node['selector'].startswith('#') and ' ' not in node['selector']:
+                        self.labels[node['selector'][1:]]=self.wrapped_label['text'].strip()[:100]
+            self.label_for=None;self.wrapped_label=None
         for i in range(len(self.stack)-1,-1,-1):
             if self.stack[i][0]==tag:self.stack=self.stack[:i];break
     def handle_data(self,data):
         if any(t in ('script','style','head','template','svg') for t,a in self.stack):return
         value=' '.join(data.split())
         if not value:return
+        if self.wrapped_label is not None and not any(t in ('select','option','textarea','button') for t,a in self.stack):
+            self.wrapped_label['text']+=' '+value
         if self.label_for:self.labels[self.label_for]=(self.labels.get(self.label_for,'')+' '+value).strip()[:100]
         owner=next((a.get('id') for t,a in reversed(self.stack) if a.get('id')),None)
         if self.stack and self.stack[-1][0]=='button' and not self.stack[-1][1].get('id') and owner:
