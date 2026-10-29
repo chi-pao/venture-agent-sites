@@ -31,6 +31,8 @@ def main():
     pages=[p for p in sorted(root.glob('outputs/sectors/**/02_builds/**/*.html')) if all(x in p.read_text(encoding='utf-8') for x in required)]
     if not pages:raise RuntimeError('Saved real returns page is required')
     page=pages[-1];source=page.read_text(encoding='utf-8')
+    inventory=app.compact_qa_inventory(source)
+    cfg=dict(cfg,qa_component_contract='native-record-create-v1',_qa_binding_controls=inventory['controls'],_qa_binding_outputs=inventory['outputs'])
     intended_steps=steps
     steps=app.qa_normalize_select_inputs(dict(steps=steps),app.compact_qa_inventory(source))['steps']
     if [s['op'] for s in steps if s.get('selector')=='#return_status']!=['select','select']:raise AssertionError('Native select normalization failed on real saved page')
@@ -41,6 +43,7 @@ def main():
     original=app.ai_json;calls=[]
     def recorded(prompt,config,tokens,**kw):
         start=time.monotonic();row=dict(model=config['model'],prompt=prompt,schema=kw.get('schema'))
+        config=dict(config,_json_transport_evidence=config.get('_json_transport_evidence') or str(evidence/('call-'+str(len(calls)).zfill(3)+'-transport.json')))
         validator=kw.get('validator')
         if validator:
             def capture(value):
@@ -188,6 +191,8 @@ def main():
         proof['error']=type(exc).__name__+': '+str(exc);raise
     finally:
         app.ai_json=original
+        proof['actual_model_calls']={model:sum(1 for call in calls if call['model']==model) for model in sorted({call['model'] for call in calls})}
+        proof['component_contract']=cfg.get('qa_component_contract')
         (evidence/'result.json').write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding='utf-8')
         print('SAVED_COUNT_MODEL_RESULT',json.dumps(proof,ensure_ascii=False),flush=True)
 

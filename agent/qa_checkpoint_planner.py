@@ -913,13 +913,116 @@ def qa_reference_model_config(cfg):
     return dict(cfg,model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
 
 
+def qa_component_events(steps,cfg):
+    """Normative driver for an explicitly selected, versioned record component.
+
+    This is a test actor contract, not a claim about observed app behavior.
+    Unknown controls/lifecycles decline the driver and retain semantic QA.
+    """
+    if cfg.get('qa_component_contract')!='native-record-create-v1':return None
+    nodes={n['selector']:n for n in cfg.get('_qa_binding_controls',[])+cfg.get('_qa_binding_outputs',[])}
+    form=nodes.get('#recordForm',{});submit=nodes.get('#saveRecord',{})
+    if form.get('tag')!='form' or submit.get('form')!='#recordForm' or submit.get('tag')!='button' or submit.get('type','submit')!='submit':return None
+    if nodes.get('#recordCount',{}).get('tag')not in ('strong','output','span') or nodes.get('#recordRows',{}).get('tag')!='tbody':return None
+    extra=cfg.get('qa_component_passive_buttons') or []
+    if not isinstance(extra,(list,tuple)) or any(not isinstance(css,str) for css in extra):return None
+    passive={'#downloadCsv','#downloadJson','#clearForm'}|set(extra)
+    events=[]
+    for index,step in enumerate(steps):
+        op=step.get('op')
+        if op not in ('fill','select','check','click','wait','reload','download_csv','download_json'):return None
+        if op!='click':continue
+        css=step.get('selector')
+        if css=='#saveRecord':events.append(dict(step_index=index,effect='create',target=None))
+        elif css in passive and nodes.get(css,{}).get('tag')=='button' and nodes[css].get('type')=='button':
+            event=dict(step_index=index,effect='none',target=None)
+            if css=='#clearForm':event['reset_inputs']=True
+            events.append(event)
+        else:return None
+    return events
+
+
+def qa_normalize_component_inputs(value):
+    seen={};steps=[]
+    for step in value.get('steps',[]):
+        if step.get('op') in ('fill','select','check'):
+            identity={k:step.get(k) for k in ('op','value','label','nth') if k in step}
+            css=step.get('selector')
+            if css in seen and seen[css]==identity:continue
+            seen[css]=identity
+        else:seen={}
+        steps.append(step)
+    return dict(value,steps=steps)
+
+
+def qa_quantity_scope(contract,index):
+    template=contract.get('template','');label=contract.get('label','').strip()
+    groups=[part.strip() for part in re.split(r'\s*[/／]\s*',label)]
+    if len(groups)==contract.get('slots') and len(groups)>1 and all(groups):return groups[index]
+    before=template.split('{n'+str(index)+'}',1)[0]
+    suffix=re.split(r'[,、（(}/]',before)[-1].strip()
+    if index and suffix and not re.search(r'\{n\d+',suffix):return suffix
+    return label or contract.get('selector','') or '指定した数値項目'
+
+
+def qa_projection_witnesses(rows,left,right,controls,clock):
+    """Counterexamples are declared test inputs, never browser observations."""
+    datasets=[rows];seen=set();result=[]
+    if rows:
+        for node in controls:
+            css=node['selector']
+            if css not in rows[0]:continue
+            values=[o.get('value') for o in node.get('options',[]) if o.get('value')]
+            if node.get('type')=='date':
+                try:
+                    import datetime as witness_time
+                    reference=witness_time.date.fromisoformat(clock['date'])
+                    values += [(reference+witness_time.timedelta(days=offset)).isoformat() for offset in (-1,0,1)]
+                except (KeyError,ValueError,TypeError):pass
+            for value in values:
+                if node.get('min') and str(value)<str(node['min']) or node.get('max') and str(value)>str(node['max']):continue
+                changed=[dict(row) for row in rows];changed[0][css]=value;datasets.append(changed)
+    for dataset in datasets:
+        signature=json.dumps(dataset,sort_keys=True,ensure_ascii=False)
+        if signature in seen:continue
+        seen.add(signature)
+        try:a=qa_evaluate_projection(dataset,left,clock);b=qa_evaluate_projection(dataset,right,clock)
+        except (ValueError,TypeError,KeyError):continue
+        if a!=b:result.append(dict(declared_inputs=dataset,first_result=a,second_result=b))
+        if len(result)>=3:break
+    return result
+
+
+def qa_resolve_projection_binding(left,right,requirements,descriptor,rows,controls,clock,generate,key):
+    witnesses=qa_projection_witnesses(rows,left,right,controls,clock)
+    if not witnesses:raise AutoQAPlanError('独立対応が不一致です。候補を区別する有効な入力例が未確定のため、合格にはできません')
+    clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
+    clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
+    schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1,0,1]),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['choice','evidence_id'],additionalProperties=False)
+    answers=[]
+    for reverse in (False,True):
+        options=[right,left] if reverse else [left,right]
+        def validate(value):
+            if isinstance(value,dict) and set(value)=={'selected','evidence_id'}:
+                if value['selected'] in options and type(value.get('evidence_id'))is int and 0<=value['evidence_id']<len(clauses):return value
+            if not isinstance(value,dict) or set(value)!={'choice','evidence_id'} or type(value.get('choice'))is not int or value['choice']not in (0,1) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('候補間の意味を元要件で確定できません。第三の規則や仕様修正が必要です')
+            return dict(selected=options[value['choice']],evidence_id=value['evidence_id'])
+        examples=[dict(declared_inputs=w['declared_inputs'],candidate_results=[w['second_result'],w['first_result']] if reverse else [w['first_result'],w['second_result']]) for w in witnesses]
+        context=dict(output=descriptor,requirements=clauses,declared_settings_and_clock=clock,candidates=options,witnesses=examples)
+        prompt=('独立した対応の再診断。今回の対象は「'+descriptor['target_label']+'」1項目だけ。二つの計算規則のどちらが番号付き元要件とこの項目名に対応するか選ぶ。提示した数値は新しい宣言入力をコードで計算した比較例で、画面の実測値ではない。前の担当の選択は示さない。どちらも不適切・要件不足ならchoice=-1。原文の根拠をevidence_idで指定。JSON {choice:0または1または-1,evidence_id:原文番号}。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
+        answer=generate('primary-projection-resolution-'+key+('-reverse' if reverse else '-forward'),prompt,schema,validate,context)
+        answers.append(answer)
+    agreement=qa_require_independent_agreement(answers[0]['selected'],answers[1]['selected'],descriptor['target_label']+'の順序反転再診断')
+    return answers[0]['selected'],dict(agreement,method='two independent order-reversed source-grounded resolutions',original_proposed=left,original_independent=right,witnesses=witnesses,responses=answers)
+
+
 def qa_record_binding_context(steps,events,index,controls):
     """Supply reference inputs and control identity, never app output values."""
     prefix=steps[:index]
     reference=qa_evaluate_record_events(prefix,events)
     origins=reference['trace'][-1]['record_origins'] if reference['trace'] else []
     rows=qa_reference_rows(prefix,events)
-    last_commit=max((e['step_index'] for e in events if e['effect'] in ('create','update','delete')),default=-1)
+    last_commit=max((e['step_index'] for e in events if e['effect'] in ('create','update','delete') or e.get('reset_inputs')),default=-1)
     entered={step['selector']:step.get('value',step.get('label')) for step in prefix[last_commit+1:] if step.get('op') in ('fill','select','check')}
     nodes={n['selector']:n for n in controls}
     used=set(entered)|{css for row in rows for css in row}
@@ -933,9 +1036,17 @@ def qa_record_binding_context(steps,events,index,controls):
 def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     """The runner owns event enumeration; a model handles one click only."""
     cfg=qa_reference_model_config(cfg)
+    component=qa_component_events(steps,cfg)
+    if component is not None:
+        write_framework_json(Path(folder)/(key+'-component-contract.json'),dict(contract=cfg['qa_component_contract'],passive_buttons=cfg.get('qa_component_passive_buttons',[]),steps=steps,method='declared test actor transitions; browser checks still required',events=component))
+        return component
     events=[]
     for index,step in enumerate(steps):
         if step.get('op')!='click':continue
+        known_prefix=qa_component_events(steps[:index+1],cfg)
+        if known_prefix is not None:
+            write_framework_json(Path(folder)/(key+'-component-prefix-'+str(index)+'.json'),dict(contract=cfg['qa_component_contract'],events=known_prefix,method='declared component prefix; unknown actions remain semantic QA'))
+            events.append(known_prefix[-1]);continue
         facts=qa_record_binding_context(steps,events,index,cfg.get('_qa_binding_controls',[]))
         context=dict(policy='record-choice-2',blind=bool(cfg.get('_qa_blind_binding')),source=source,selector=selector,prefix=steps[:index+1],prior_events=events,facts=facts,model=cfg['model'])
         digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
@@ -1004,6 +1115,11 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     selector=raw['exact_check']['selector']
     if not re.search(r'count|件数|人数',selector+' '+str(contract.get('label','')),re.I):return None
     steps=[step for row in prior for step in row.get('steps',[])]+raw.get('steps',[])
+    component=qa_component_events(steps,cfg)
+    if component is not None and selector=='#recordCount':
+        reference=qa_evaluate_record_events(steps,component)
+        write_framework_json(Path(folder)/(key+'-reference-count-proof.json'),dict(contract=cfg['qa_component_contract'],steps=steps,events=component,reference=reference,method='declared registration-total component contract; actual browser still required'))
+        return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(reference['count'])),reference_count=reference,oracle_basis='宣言した記録コンポーネントの登録総数と独立参照計算')
     if any(step.get('op') not in ('fill','select','check','click','wait') for step in steps):return None
     source_items=[v for v in [spec.get('requested_outcome')]+list(spec.get('must_have') or [])+list(spec.get('acceptance') or []) if isinstance(v,str) and v.strip()]
     if not source_items:return None
@@ -1031,10 +1147,13 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
         if not isinstance(value,dict) or value.get('valid') is not True or not isinstance(value.get('reason'),str) or len(value['reason'].strip())<12:
             raise AutoQAPlanError('参照状態: 操作と仕様の独立監査が未合格: '+str(value))
         return value
-    audit=ai_json(qa_reference_mapping_audit_prompt(selector,steps,binding),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
+    if qa_component_events(steps,cfg) is not None:
+        audit=dict(valid=True,method='declared component transitions; independently evaluated count')
+    else:
+        audit=ai_json(qa_reference_mapping_audit_prompt(selector,steps,binding),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
     result=qa_evaluate_record_events(steps,binding['events'])
     write_framework_json(folder/(key+'-reference-count-proof.json'),dict(binding=binding,audit=audit,reference=result,steps=steps,source=source,method='independent state reducer; browser verification still required'))
-    return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis='仕様と操作の対応を独立監査し、参照状態遷移で件数を計算',reference_count=result)
+    return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis=('宣言したコンポーネント操作契約と独立参照計算' if qa_component_events(steps,cfg) is not None else '仕様と操作の対応を独立監査し、参照状態遷移で件数を計算'),reference_count=result)
 
 
 def qa_reference_composite_oracle(raw,formats,spec,cfg,folder,key,prior):
@@ -1447,6 +1566,7 @@ def qa_reference_rows(steps,events):
         event=events_by_index.get(index)
         if not event:continue
         effect=event['effect']
+        if event.get('reset_inputs'):pending={}
         if effect=='create':rows[index]=dict(pending);pending={}
         elif effect=='update':rows[event['target']].update(pending);pending={}
         elif effect=='delete':rows.pop(event['target'])
@@ -1542,6 +1662,10 @@ def qa_require_independent_agreement(proposed,independent,scope):
 
 
 def qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key):
+    component=qa_component_events(steps,cfg)
+    if component is not None:
+        if component!=events:raise AutoQAPlanError('操作計画が宣言した記録コンポーネント契約と一致しません')
+        return dict(valid=True,method='declared versioned component transition contract, not AI inference',contract=cfg['qa_component_contract'])
     # The second mapper never sees the first mapper's event assignments.
     independent_cfg=dict(cfg,qa_mapping_model=cfg.get('qa_oracle_model') or cfg.get('qa_mapping_model') or cfg['model'],_qa_blind_binding=True)
     independent=qa_bind_record_clicks(steps,source,selector,independent_cfg,Path(folder),key+'-independent')
@@ -1558,12 +1682,12 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     requirements=dict(outcome=spec.get('requested_outcome',''),must_have=spec.get('must_have',[]),workflow=spec.get('workflow',[]))
     source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
     steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
-    binding_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]))
+    binding_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
     events=qa_bind_record_clicks(steps,source,selector,binding_cfg,Path(folder),key)
     audit_schema=dict(type='object',properties=dict(valid=dict(type='boolean'),reason=dict(type='string',minLength=12,maxLength=300)),required=['valid','reason'],additionalProperties=False)
     event_audit=qa_blind_record_event_audit(steps,events,source,selector,binding_cfg,folder,key)
     rows=qa_reference_rows(steps,events)
-    controls=[{k:n[k] for k in ('selector','label','type','options','required','disabled') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
+    controls=[{k:n[k] for k in ('selector','label','type','options','required','disabled','min','max') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
     input_values={step['selector']:str(step.get('value','')) for step in steps if step.get('op') in ('fill','select')}
     evaluation_context=dict(cfg.get('_qa_reference_clock',{}),input_values=input_values)
@@ -1575,19 +1699,25 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='algebraic fraction identity from independently agreed percentage',derived_from=0))
             continue
         candidates=qa_projection_candidates(controls,template,index,contract,input_values,row_fields)
+        if selector=='#recordCount' and len(candidates)==1 and qa_component_events(steps,binding_cfg) is not None:
+            projection=candidates[0]
+            values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='declared component registration-total quantity, not AI inference'))
+            continue
         schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1]+list(range(len(candidates))))),required=['choice'],additionalProperties=False)
         def validate(value):
             if isinstance(value,dict) and type(value.get('choice'))is int and 0<=value['choice']<len(candidates):return candidates[value['choice']]
             if isinstance(value,dict) and value in candidates:return value
             raise AutoQAPlanError('参照集計: 対象位置に対応する選択肢が未確定です。未対応の規則を推測して採用できません')
         marked=template.replace('{n'+str(index)+'}','【今回の対象数値】')
-        output_descriptor=dict(selector=selector,label=contract.get('label',''),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
+        output_descriptor=dict(selector=selector,label=contract.get('label',''),target_label=qa_quantity_scope(contract,index),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
         context=dict(requirements=requirements,controls=controls,input_values=input_values,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
-        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n入力した日付等の条件:'+json.dumps(input_values,ensure_ascii=False)+'\n出力先と見出し:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        scoped_output={k:output_descriptor[k] for k in ('selector','target_label')}
+        prompt=('対象の数値項目「'+scoped_output['target_label']+'」だけの意味に対応する計算規則を選択肢から選ぶ。他の項目は今回扱わない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
-        blind_prompt=('別の担当による独立した対応付け。先行する提案は示さない。今回の対象は左から'+str(index+1)+'番目の【対象数値】1個だけ。この数値1個に対応する計算規則を選択肢から選ぶ。表示全体を1規則で網羅する必要はない。対象が不明なら-1。結果の数値や他の表示位置を回答しない。JSON {"choice":番号}のみ。\n出力先:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n表示:'+marked.replace('【今回の対象数値】','【対象数値】')+'\n元要件:'+source+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        blind_prompt=('別担当が独立して規則を選ぶ。先行する提案は示さない。対象は出力項目「'+scoped_output['target_label']+'」1個だけ。ほかの集計・表示形式の網羅性は判定しない。原文に対応する選択肢番号を選び、未確定は-1。JSON {"choice":番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         independent=generate('primary-projection-blind-'+str(index),blind_prompt,schema,validate,context)
-        audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
+        if projection==independent:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
+        else:projection,audit=qa_resolve_projection_binding(projection,independent,requirements,output_descriptor,rows,controls,evaluation_context,generate,str(index))
         values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
@@ -1720,7 +1850,10 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if any(not isinstance(step,dict) or step.get('op') not in allowed for step in value['steps']):raise AutoQAPlanError('操作計画には今回の検査に必要な実操作を指定してください')
         value=qa_normalize_duration_inputs(qa_normalize_select_inputs(value,inventory),inventory)
         qa_validate_step_choices(value,action_props['steps']['items'])
-        if kind=='workflow':qa_validate_workflow_overwrites(value)
+        if kind=='workflow':
+            component_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+            if qa_component_events(value['steps'],component_cfg) is not None:value=qa_normalize_component_inputs(value)
+            qa_validate_workflow_overwrites(value)
         for step in value['steps']:
             node=next((n for n in inventory.get('controls',[]) if n['selector']==step.get('selector')),None)
             if node and step.get('op')=='select' and node.get('options'):

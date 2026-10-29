@@ -266,6 +266,139 @@ class ReferenceAggregateTests(unittest.TestCase):
         self.assertEqual(result['steps'][0]['value'],'A')
         self.assertEqual(calls,['actions','secondary-0','secondary-1'])
 
+    def component_fixture(self):
+        inventory=qa.compact_qa_inventory('<form id="recordForm"><input id="title" required><button id="saveRecord" type="submit">保存</button><button id="clearForm" type="button">消去</button></form><strong id="recordCount">0</strong><tbody id="recordRows"></tbody><button id="downloadCsv" type="button">CSV出力</button><button id="saveCapacity" type="button">稼働枠を保存</button>')
+        return inventory,dict(model='mapper',qa_component_contract='native-record-create-v1',qa_component_passive_buttons=['#saveCapacity'],_qa_binding_controls=inventory['controls'],_qa_binding_outputs=inventory['outputs'])
+
+    def test_declared_component_commands_do_not_ask_ai_to_guess_clicks(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord'),dict(op='click',selector='#downloadCsv'),dict(op='fill',selector='#title',value='B'),dict(op='click',selector='#saveRecord'),dict(op='click',selector='#saveCapacity')]
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=AssertionError('AI must not infer a declared protocol'),create=True):
+            events=qa.qa_bind_record_clicks(steps,'記録の追加とCSV出力','#recordCount',cfg,Path(t),'case')
+            audit=qa.qa_blind_record_event_audit(steps,events,'同じ元要件','#recordCount',cfg,Path(t),'case')
+        self.assertEqual([e['effect'] for e in events],['create','none','create','none'])
+        self.assertEqual(qa.qa_evaluate_record_events(steps,events)['count'],2)
+        self.assertIn('not AI inference',audit['method'])
+
+    def test_component_driver_declines_unknown_lifecycle_and_unselected_contract(self):
+        inventory,cfg=self.component_fixture()
+        self.assertIsNone(qa.qa_component_events([dict(op='click',selector='#recordRows button')],cfg))
+        self.assertIsNone(qa.qa_component_events([dict(op='restore_file',selector='#file')],cfg))
+        self.assertIsNone(qa.qa_component_events([dict(op='click',selector='#saveRecord')],dict(cfg,qa_component_contract='unregistered')))
+        self.assertIsNone(qa.qa_component_events([dict(op='click',selector='#saveRecord')],dict(cfg,_qa_binding_outputs=[])))
+        self.assertIsNone(qa.qa_component_events([dict(op='click',selector='#saveCapacity')],dict(cfg,qa_component_passive_buttons=[])))
+
+    def test_component_clear_drops_draft_fields_without_deleting_records(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#notes',value='discard'),dict(op='click',selector='#clearForm'),dict(op='fill',selector='#title',value='B'),dict(op='click',selector='#saveRecord')]
+        events=qa.qa_component_events(steps,cfg)
+        self.assertTrue(events[0]['reset_inputs'])
+        self.assertEqual(qa.qa_reference_rows(steps,events),[{'#title':'B'}])
+        self.assertEqual(qa.qa_evaluate_record_events(steps,events)['count'],1)
+
+    def test_quantity_scope_separates_adjacent_metrics(self):
+        contract=dict(template='{n0}件 / 超過{n1}件',slots=2,label='未処理 / 期限超過')
+        self.assertEqual(qa.qa_quantity_scope(contract,0),'未処理')
+        self.assertEqual(qa.qa_quantity_scope(contract,1),'期限超過')
+        fraction=dict(template='{n0}%（出席扱い{n1}/{n2}、欠席{n3}）',slots=4,label='出席率')
+        self.assertEqual(qa.qa_quantity_scope(fraction,3),'欠席')
+
+    def test_counterexample_resolution_is_order_invariant_and_source_grounded(self):
+        left=dict(metric='count',where='in',field='#status',members=['pending'],rounding='exact',places=0,basis='未処理の件数')
+        right=dict(metric='count',where='before_date',field='#date',members=[],rounding='exact',places=0,basis='期限超過の件数')
+        rows=[{'#status':'pending','#date':'2035-12-31'}]
+        controls=[dict(selector='#status',options=[dict(value='pending'),dict(value='closed')]),dict(selector='#date',type='date')]
+        calls=[]
+        def generate(name,prompt,schema,validate,dependency):
+            calls.append(name)
+            self.assertTrue(dependency['witnesses'])
+            self.assertIn('未処理',dependency['output']['target_label'])
+            self.assertNotIn('actual',dependency)
+            return validate(dict(choice=1 if name.endswith('reverse') else 0,evidence_id=0))
+        selected,audit=qa.qa_resolve_projection_binding(left,right,dict(outcome='未処理はpendingの記録件数'),dict(selector='#summary',target_label='未処理'),rows,controls,dict(date='2026-10-30'),generate,'0')
+        self.assertEqual(selected,left)
+        self.assertTrue(audit['valid'])
+        self.assertEqual(len(calls),2)
+        self.assertEqual(audit['witnesses'][0]['first_result'],'1')
+        self.assertEqual(audit['witnesses'][0]['second_result'],'0')
+        def biased(name,prompt,schema,validate,dependency):return validate(dict(choice=0,evidence_id=0))
+        with self.assertRaises(ValueError):qa.qa_resolve_projection_binding(left,right,dict(outcome='未処理を表示'),dict(target_label='未処理'),rows,controls,dict(date='2026-10-30'),biased,'0')
+        def undecided(name,prompt,schema,validate,dependency):return validate(dict(choice=-1,evidence_id=0))
+        with self.assertRaises(ValueError):qa.qa_resolve_projection_binding(left,right,dict(outcome='未処理を表示'),dict(target_label='未処理'),rows,controls,dict(date='2026-10-30'),undecided,'0')
+
+    def test_disagreement_without_a_valid_distinguishing_input_stays_failed(self):
+        a=dict(metric='count',where='all',field='',members=[],rounding='exact',places=0,basis='全件')
+        b=dict(a,where='in',field='#status',members=['pending'])
+        def no_call(*args):raise AssertionError('No valid witness: do not guess')
+        with self.assertRaises(ValueError):qa.qa_resolve_projection_binding(a,b,dict(outcome='件数'),dict(target_label='件数'),[],[],{},no_call,'0')
+
+    def test_duplicate_input_normalization_preserves_differences_and_submit_boundaries(self):
+        fill=dict(op='fill',selector='#field',value='A');save=dict(op='click',selector='#saveRecord')
+        raw=dict(steps=[fill,dict(fill),save,dict(fill),dict(fill,value='B')],exact_check=dict(value='unchanged'))
+        normalized=qa.qa_normalize_component_inputs(raw)
+        self.assertEqual(normalized['steps'],[fill,save,fill,dict(fill,value='B')])
+        self.assertEqual(normalized['exact_check'],raw['exact_check'])
+        self.assertEqual(len(raw['steps']),5)
+
+    def test_unknown_edit_uses_semantic_mapping_after_preserved_component_prefix(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord'),dict(op='click',selector='#recordRows button',nth=0),dict(op='fill',selector='#title',value='B'),dict(op='click',selector='#saveRecord')]
+        calls=[]
+        def model(prompt,cfg,tokens,**kw):
+            calls.append(prompt)
+            return kw['validator'](dict(choice=1 if len(calls)==1 else 2))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True):
+            events=qa.qa_bind_record_clicks(steps,'既存記録を選択して編集保存する','#recordCount',cfg,Path(t),'case')
+        self.assertEqual(len(calls),2)
+        self.assertEqual([e['effect'] for e in events],['create','none','update'])
+        self.assertEqual(events[-1]['target'],1)
+        self.assertEqual(qa.qa_evaluate_record_events(steps,events)['count'],1)
+
+    def test_primary_disagreement_is_repaired_only_after_order_reversed_agreement(self):
+        steps=[dict(op='select',selector='#status',value='pending'),dict(op='fill',selector='#date',value='2035-12-31'),dict(op='click',selector='#save')]
+        events=[dict(step_index=2,effect='create',target=None)]
+        controls=[dict(tag='select',selector='#status',options=[dict(value='pending'),dict(value='closed')]),dict(tag='input',selector='#date',type='date')]
+        formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2,label='未処理 / 期限超過')}
+        calls=[]
+        def generate(name,prompt,schema,validate,dependency):
+            calls.append(name)
+            if '-resolution-' in name:return validate(dict(choice=1 if name.endswith('reverse') else 0,evidence_id=0))
+            index=int(name.rsplit('-',1)[1]);candidates=dependency['candidates']
+            if index==0 and '-blind-' not in name:wanted=lambda c:c['where']=='in' and c['members']==['pending']
+            elif index==0:wanted=lambda c:c['where']=='before_date' and not c.get('also')
+            else:wanted=lambda c:c['where']=='before_date' and c.get('also',{}).get('members')==['pending']
+            return validate(dict(choice=next(i for i,c in enumerate(candidates) if wanted(c))))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=events):
+            result=qa.qa_reference_primary_expectation(dict(steps=steps,result_selector='#summary'),formats,dict(outcome='未完了はpending。期限超過は未完了かつ期限が今日より前。',requested_outcome='未完了はpending。期限超過は未完了かつ期限が今日より前。'),dict(model='x',_qa_reference_clock=dict(date='2026-10-30')),dict(controls=controls),Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'1件 / 超過0件')
+        self.assertEqual(proof['projections'][0]['where'],'in')
+        self.assertEqual(proof['projection_audits'][0]['original_independent']['where'],'before_date')
+        self.assertEqual(len([name for name in calls if '-resolution-' in name]),2)
+
+    def test_declared_registration_total_is_computed_before_model_mapping(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord'),dict(op='click',selector='#downloadCsv'),dict(op='fill',selector='#title',value='B'),dict(op='click',selector='#saveRecord')]
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=AssertionError('Counter protocol is declared'),create=True):
+            result=qa.qa_reference_count_oracle(dict(steps=steps,exact_check=dict(selector='#recordCount',value='incorrect')),{},dict(must_have=['登録と出力']),cfg,Path(t),'case',[])
+        self.assertEqual(result['exact_check']['value'],'2')
+        self.assertEqual([v['count'] for v in result['reference_count']['trace']],[1,1,2])
+
+    def test_declared_total_component_keeps_business_metrics_separate(self):
+        inventory,cfg=self.component_fixture()
+        steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord')]
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        def no_model(*args,**kwargs):raise AssertionError('Declared total does not need a model opinion')
+        with tempfile.TemporaryDirectory() as t:
+            result=qa.qa_reference_primary_expectation(dict(steps=steps,result_selector='#recordCount'),{'#recordCount':dict(template='{n0}',slots=1,label='登録数')},dict(must_have=['保存した記録の総数を表示']),cfg,inventory,Path(t),'case',no_model)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'1')
+        self.assertIn('not AI inference',proof['projection_audits'][0]['method'])
+
     def test_second_submit_requires_required_select_again(self):
         inventory=qa.compact_qa_inventory('<form id="form"><input id="name" required><select id="status" required><option value="">選択</option><option value="open">未着手</option></select><button id="save" type="submit">保存</button></form>')
         steps=[dict(op='fill',selector='#name',value='A'),dict(op='select',selector='#status',value='open'),dict(op='click',selector='#save'),dict(op='fill',selector='#name',value='B'),dict(op='click',selector='#save')]

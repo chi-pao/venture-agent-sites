@@ -28,7 +28,7 @@ def main():
     app.execute('INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)',
         (name,json.dumps(products[name],ensure_ascii=False),1,app.now(),app.now()))
     cfg=dict(app.DEFAULT,model='qwen2.5-coder:7b',code_model='qwen2.5-coder:7b',qa_vision_model='qwen2.5vl:3b',
-        url=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11435'),ai_context=8192,autoqa_setup=False,qa_split_units=True,qa_reference_aggregates=True,max_revisions=2,publish=False)
+        url=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11435'),ai_context=8192,autoqa_setup=False,qa_split_units=True,qa_reference_aggregates=True,qa_component_contract="native-record-create-v1",qa_component_passive_buttons=["#saveWorkday"],max_revisions=2,publish=False)
     proposal_model=os.environ.get('VENTURE_LIVE_PROPOSAL_MODEL','').strip()
     qa_model=os.environ.get('VENTURE_LIVE_QA_MODEL','').strip()
     cfg['department_models']={role:model for role,model in (('proposal',proposal_model),('verification',qa_model)) if model}
