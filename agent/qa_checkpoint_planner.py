@@ -1187,6 +1187,96 @@ def qa_variant_repeats_workflow(value, scenarios):
     return bool(current) and current == relevant(prior.get('steps', []))
 
 
+def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
+    """Cache action planning and each independent assertion separately."""
+    directory=Path(folder)/(key+'-split');directory.mkdir(parents=True,exist_ok=True)
+    properties=schema['properties']
+    semantic=cfg.get('qa_action_model') or cfg.get('qa_mapping_model') or cfg['model']
+    oracle=cfg.get('qa_oracle_model') or semantic
+    kind='workflow' if key=='base-workflow' else 'variant' if key=='base-variant' else 'feature'
+    def stage(name,prompt,stage_schema,model,tokens,check,dependency=None):
+        digest=hashlib.sha256(json.dumps(dict(policy='split-unit-1',input_sha=input_sha,model=model,dependency=dependency),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        path=directory/(name+'.json')
+        if path.exists():
+            try:
+                receipt=json.loads(path.read_text(encoding='utf-8'))
+                if receipt.get('input_sha')==digest:return check(receipt['value'])
+            except (ValueError,TypeError,KeyError):pass
+        def capture(value):
+            write_framework_json(directory/(name+'-last-response.json'),value)
+            return check(value)
+        try:
+            answer=ai_json(prompt,dict(cfg,model=model,_schema_in_prompt=False,_bounded_json_retry=True,
+                _json_transport_evidence=str(directory/(name+'-transport.json'))),tokens,schema=stage_schema,max_attempts=1,
+                request_timeout=int(cfg.get('qa_part_timeout',180)),validator=capture)
+        except Exception as exc:
+            write_framework_json(directory/(name+'-error.json'),dict(error=type(exc).__name__+': '+str(exc),model=model,tokens=tokens))
+            raise
+        write_framework_json(path,dict(input_sha=digest,value=answer))
+        (directory/(name+'-error.json')).unlink(missing_ok=True)
+        return answer
+    action_props={k:properties[k] for k in ('steps','acceptance','rationale')}
+    action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
+    target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
+    if target.get('enum'):action_props['result_selector']=target
+    action_schema=dict(type='object',properties=action_props,required=list(action_props),additionalProperties=False)
+    def validate_actions(value):
+        if not isinstance(value,dict) or not isinstance(value.get('steps'),list) or not value['steps']:raise AutoQAPlanError('操作計画には入力と実行が必要です')
+        covers=value.get('acceptance')
+        maximum=properties['acceptance']['items']['maximum']
+        if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<=maximum for i in covers):raise AutoQAPlanError('操作計画の完成条件番号が不正です')
+        if not isinstance(value.get('result_selector'),str) or not value['result_selector']:raise AutoQAPlanError('操作計画の主結果CSSが必要です')
+        allowed=properties['steps']['items']['properties']['op']['enum'] if kind=='feature' else ('fill','select','check','click','wait')
+        if any(not isinstance(step,dict) or step.get('op') not in allowed for step in value['steps']):raise AutoQAPlanError('操作計画には今回の検査に必要な実操作を指定してください')
+        value=qa_normalize_duration_inputs(qa_normalize_select_inputs(value,inventory),inventory)
+        if kind=='workflow' and qa_missing_initial_required_inputs(value,inventory):
+            repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
+            if repaired is not None:value=repaired
+        return validate_qa_inventory_actions(value,inventory,kind)
+    actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
+        action_schema,semantic,700,validate_actions)
+    action_context=json.dumps(actions,ensure_ascii=False,separators=(',',':'))
+    primary_schema=dict(type='object',properties={'exact_check':properties['exact_check']},required=['exact_check'],additionalProperties=False)
+    def validate_primary(value):
+        exact=value.get('exact_check') if isinstance(value,dict) else None
+        if not isinstance(exact,dict) or exact.get('op')!='text_equals' or exact.get('selector')!=actions['result_selector'] or not isinstance(exact.get('value'),str) or not exact['value']:raise AutoQAPlanError('主結果は選択したCSSの完全な独立期待値だけを指定してください')
+        return value
+    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。JSON {exact_check:{op:text_equals,selector:指定した主結果CSS,value:単位や補足まで含む完全な正解}}。\n'+context+'\n確定済み操作:'+action_context,
+        primary_schema,oracle,300,validate_primary,actions)['exact_check']
+    checks=[]
+    check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
+    for index in range(2):
+        def validate_check(value):
+            check=value.get('check') if isinstance(value,dict) else None
+            if not isinstance(check,dict) or check.get('op') not in ('text_equals','text_contains','value_equals','count','invalid','visible') or not isinstance(check.get('selector'),str):raise AutoQAPlanError('補助検査1個の具体的な照合が必要です')
+            if check==primary or check in checks:raise AutoQAPlanError('補助検査は主結果や前の検査と同一にしないでください')
+            return value
+        dependency=dict(actions=actions,primary=primary,earlier=checks)
+        value=stage('secondary-'+str(index),'独立QA。補助検査を1個だけ返す。主結果とは別の表示先で、入力内容または処理後の保存状態を具体的に照合する。画面にない通知文や見出しを創作しない。操作・主結果は変更しない。JSON {check:{op,selector,value}}。\n'+context+'\n確定済みの操作と検査:'+json.dumps(dependency,ensure_ascii=False,separators=(',',':')),
+            check_schema,oracle,220,validate_check,dependency)
+        checks.append(value['check'])
+    raw=dict(actions,checks=checks,exact_check=primary)
+    try:return validator(raw)
+    except Exception:
+        # Actions already passed structural validation. A combined oracle
+        # error must not discard the completed action plan.
+        for name in ('primary','secondary-0','secondary-1'):(directory/(name+'.json')).unlink(missing_ok=True)
+        raise
+
+
+def qa_invalidate_split_failure(folder,key,raw,observation):
+    """Only invalidate the stage implicated by real browser evidence."""
+    directory=Path(folder)/(key+'-split')
+    if not directory.exists() or not isinstance(raw,dict):return
+    fault=observation.get('check') or {}
+    if observation.get('invalid_fields') or not fault:
+        (directory/'actions.json').unlink(missing_ok=True);return
+    if fault==raw.get('exact_check'):
+        (directory/'primary.json').unlink(missing_ok=True);return
+    for i,check in enumerate(raw.get('checks',[])):
+        if check==fault:(directory/('secondary-'+str(i)+'.json')).unlink(missing_ok=True)
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -1308,7 +1398,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 if key=='base-variant' and qa_variant_repeats_workflow(validated,scenarios):raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
                 qa_validate_declared_calculations(validated,spec,key.removeprefix('base-'))
                 return validate_qa_inventory_actions(validated,full_inventory,key.removeprefix('base-'))
+            split_mode=bool(cfg.get('qa_split_units') and (key in ('base-workflow','base-variant') or key.startswith('feature-')))
             repaired=None
+            if split_mode:previous=''
             if cached is None and previous and cfg.get('qa_probe_units'):
                 try:raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
                 except (ValueError,OSError):raw=None
@@ -1355,6 +1447,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 # checks, not ask another model to invent a new oracle.
                 value=capture_and_validate(supplied)
             elif repaired is not None:value=capture_and_validate(repaired)
+            elif cached is None and split_mode:
+                value=qa_split_unit_generation(unit_context+'\n'+prompt,dict(attempt_cfg,_qa_spec=spec),folder,key,input_sha,schema,capture_and_validate,full_inventory,qa_independent_failure_hint(error))
             else:
                 value=cached if cached is not None else ai_json(request,dict(attempt_cfg,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(folder/(key+'-transport.json'))),tokens,schema=schema,max_attempts=1,
                     request_timeout=attempt_timeout,validator=capture_and_validate)
@@ -1374,6 +1468,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     write_framework_json(probe/'partial-proof.json',proof)
                 except Exception as exc:
                     path.unlink(missing_ok=True)
+                    if split_mode and observation.exists():
+                        try:qa_invalidate_split_failure(folder,key,json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),json.loads(observation.read_text(encoding='utf-8')))
+                        except (ValueError,OSError,TypeError):pass
                     raise AutoQAPlanError('実ブラウザ事前検査は未合格。実装と検査期待値を独立に再診断: '+str(exc)[:1500]) from exc
             write_framework_json(path,dict(input_sha=input_sha,value=value))
             write_framework_json(folder/(key+'-usage.json'),dict(prompt_chars=len(request),seconds=round(qa_time.monotonic()-started,2),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout))

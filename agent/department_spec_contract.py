@@ -112,8 +112,8 @@ def ensure_department_product_spec(name,cfg):
                     raise AutoQAPlanError('完成条件の独立監査: '+reasons)
                 return result
             audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'issues':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':200}}},'required':['valid','issues'],'additionalProperties':False}
-            audit=ai_json('完成条件の独立監査。元要件にない制約を追加しない（予定と実績が異なること自体は不具合ではない）。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
-                +'\n元の必須機能:'+str(requirement)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
+            audit=ai_json('完成条件の独立監査。元要件にない制約を追加しない（予定と実績が異なること自体は不具合ではない）。主検証は今回の必須機能を扱うこと。保存確認の再読込や製品の必須入力など必要な前提操作を、元要件外の新機能と混同しない。別機能だけの検証へ置換は不合格とする。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
+                +'\n元の必須機能:'+str(requirement)+'\n承認された製品全体の範囲:'+json.dumps(dict(must_have=spec.get('must_have',[]),mvp_scope=rationale.get('mvp_scope','')),ensure_ascii=False)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
                 dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('spec_contract_timeout',300)),validator=validate_audit)
             write_framework_json(audit_path,dict(audit,input_sha=audit_sha))
         conditions.append('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected'])

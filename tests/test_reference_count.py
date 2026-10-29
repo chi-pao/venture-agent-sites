@@ -11,6 +11,35 @@ contract_spec=importlib.util.spec_from_file_location('spec_contract',Path(__file
 contract=importlib.util.module_from_spec(contract_spec);contract_spec.loader.exec_module(contract)
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_split_generation_resumes_only_timed_out_assertion(self):
+        inventory=qa.compact_qa_inventory('<form id="f"><input id="title"><button id="save" type="submit">保存</button></form><strong id="count">0</strong><tbody id="rows"></tbody>')
+        calls=[];timeout=[True]
+        def model(prompt,cfg,tokens,**kw):
+            name=Path(cfg['_json_transport_evidence']).stem.removesuffix('-transport');calls.append(name)
+            if name=='actions':answer=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#save')],acceptance=[0],rationale='入力した記録を保存して件数を照合',result_selector='#count')
+            elif name=='primary':answer=dict(exact_check=dict(op='text_equals',selector='#count',value='1'))
+            elif name=='secondary-0':answer=dict(check=dict(op='value_equals',selector='#title',value='A'))
+            else:
+                if timeout[0]:timeout[0]=False;raise TimeoutError('fixed failed assertion')
+                answer=dict(check=dict(op='text_contains',selector='#rows',value='A'))
+            return kw['validator'](answer)
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t:
+            args=('固定の元仕様',dict(model='planner',qa_mapping_model='semantic',qa_oracle_model='auditor'),Path(t),'base-workflow','fixed-sha',qa.qa_unit_schema(1,'workflow'),lambda raw:qa.validate_qa_unit(raw,'workflow',1),inventory)
+            with self.assertRaises(TimeoutError):qa.qa_split_unit_generation(*args)
+            result=qa.qa_split_unit_generation(*args,hint='時間切れの項目だけ再開')
+            self.assertEqual(result['checks'][0],dict(op='text_equals',selector='#count',value='1'))
+        self.assertEqual(calls,['actions','primary','secondary-0','secondary-1','secondary-1'])
+
+    def test_browser_fault_invalidates_only_its_split_checkpoint(self):
+        raw=dict(exact_check=dict(op='text_equals',selector='#count',value='1'),checks=[dict(op='text_contains',selector='#rows',value='A'),dict(op='visible',selector='#save')])
+        with tempfile.TemporaryDirectory() as t:
+            directory=Path(t)/'base-workflow-split';directory.mkdir()
+            for name in ('actions','primary','secondary-0','secondary-1'):(directory/(name+'.json')).write_text('{}')
+            qa.qa_invalidate_split_failure(Path(t),'base-workflow',raw,dict(check=raw['checks'][0]))
+            self.assertFalse((directory/'secondary-0.json').exists())
+            for name in ('actions','primary','secondary-1'):self.assertTrue((directory/(name+'.json')).exists())
+
     def test_vague_saved_acceptance_is_returned_to_spec_owner(self):
         source=dict(must_have=['出欠を保存'],acceptance=['出席率集計が完了し、出席率が表示される','CSV出力が完了し、CSVファイルがダウンロードされる'])
         self.assertTrue(contract.department_spec_contract_issue(source,{}))
