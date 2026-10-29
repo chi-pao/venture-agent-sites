@@ -317,9 +317,10 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
     clicks=[i for i,s in enumerate(steps) if s==operation]
     if len(clicks)!=1 or len(steps)+len(targets)>24:return None
     schema={'type':'object','properties':{'inputs':{'type':'array','minItems':len(targets),'maxItems':len(targets),'items':{'type':'object','properties':{'selector':{'type':'string','enum':targets},'value':{'type':'string','minLength':1,'maxLength':100}},'required':['selector','value'],'additionalProperties':False}}},'required':['inputs'],'additionalProperties':False}
-    prompt=('独立QA。ブラウザが送信を拒否した必須項目だけを埋める。既存の操作・期待値は変更しない。'
+    prompt=('独立QA。'+('実画面のHTMLに基づく事前検査で不足した' if observation.get('source')=='static_preflight' else 'ブラウザが送信を拒否した')+'必須項目だけを埋める。既存の操作・期待値は変更しない。'
         '入力済みの値と整合する具体値を決め、selectは提示されたoptionのvalueを使う。JSON {"inputs":[{"selector":"CSS","value":"値"}]}のみ返す。'
-        '\n拒否された項目:'+json.dumps([nodes[t] for t in targets],ensure_ascii=False)
+        '\n元仕様:'+json.dumps(cfg.get('_qa_spec',{}),ensure_ascii=False)[:2500]
+        +'\n不足・拒否された項目:'+json.dumps([nodes[t] for t in targets],ensure_ascii=False)
         +'\n既存操作:'+json.dumps(steps,ensure_ascii=False,separators=(',',':')))
     def validate(answer):
         items=answer.get('inputs') if isinstance(answer,dict) else None
@@ -359,6 +360,18 @@ def qa_missing_initial_required_inputs(value,inventory):
             required=[n for n in controls if n.get('form')==node['form'] and 'required' in n and 'disabled' not in n and 'readonly' not in n and n.get('tag') in ('input','select') and n.get('type') not in ('checkbox','radio','file','hidden')]
             return [n['selector'] for n in required if values.get(n['selector']) is None or str(values.get(n['selector'],'')).strip()=='']
     return []
+
+
+def repair_qa_missing_initial_inputs(raw,inventory,cfg,spec):
+    missing=qa_missing_initial_required_inputs(raw,inventory)
+    if not missing:return None
+    controls={n['selector']:n for n in inventory.get('controls',[])}
+    for step in raw.get('steps',[]):
+        node=controls.get(step.get('selector'),{})
+        if step.get('op')=='click' and node.get('form') and (node.get('type')=='submit' or node.get('tag')=='button' and not node.get('type')):
+            observation=dict(source='static_preflight',steps=raw['steps'],operation=step,invalid_fields=[dict(selector=x) for x in missing])
+            return repair_qa_invalid_submission(raw,observation,inventory,dict(cfg,_qa_spec=spec))
+    return None
 
 
 def validate_qa_inventory_actions(value,inventory,kind):
@@ -660,20 +673,22 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     if not re.search(r'count|件数|人数',selector+' '+str(contract.get('label','')),re.I):return None
     steps=[step for row in prior for step in row.get('steps',[])]+raw.get('steps',[])
     if any(step.get('op') not in ('fill','select','check','click','wait') for step in steps):return None
-    source=json.dumps(dict(outcome=spec.get('requested_outcome'),must_have=spec.get('must_have'),acceptance=spec.get('acceptance')),ensure_ascii=False)
+    source_items=[v for v in [spec.get('requested_outcome')]+list(spec.get('must_have') or [])+list(spec.get('acceptance') or []) if isinstance(v,str) and v.strip()]
+    if not source_items:return None
+    source=json.dumps(list(enumerate(source_items)),ensure_ascii=False)
     event_schema={'type':'object','properties':{'step_index':{'type':'integer','minimum':0},'effect':{'type':'string','enum':['create','update','delete','none']},'target':{'type':['integer','null']}},'required':['step_index','effect','target'],'additionalProperties':False}
-    schema={'type':'object','properties':{'quantity':{'type':'string','enum':['record_count','other']},'source_quote':{'type':'string','minLength':2,'maxLength':300},'events':{'type':'array','maxItems':48,'items':event_schema}},'required':['quantity','source_quote','events'],'additionalProperties':False}
+    schema={'type':'object','properties':{'quantity':{'type':'string','enum':['record_count','other']},'source_index':{'type':'integer','enum':list(range(len(source_items)))},'events':{'type':'array','maxItems':48,'items':event_schema}},'required':['quantity','source_index','events'],'additionalProperties':False}
     prompt=('仕様の状態遷移を操作へ対応付ける担当。件数の計算や最終件数の回答は禁止。対象が全保存記録の件数ならquantity=record_count、それ以外や不明ならother。'
         '状態は空から開始。すべてのclickを添字順に列挙しcreate/update/delete/noneへ分類。入力・表示切替だけはnone。編集対象や削除対象targetはその記録を作成したclickの添字、新規とnoneはnull。'
-        'フィルタ後件数・出席人数等の部分集合はother。source_quoteは元仕様のそのままの引用。JSON {quantity,source_quote,events:[{step_index,effect,target}]}。'
+        'フィルタ後件数・出席人数等の部分集合はother。source_indexは対応する元仕様の番号。引用文はプログラムが取り出す。JSON {quantity,source_index,events:[{step_index,effect,target}]}。'
         +'\n元仕様:'+source+'\n対象:'+selector+' '+str(contract.get('label',''))
         +'\n全操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False,separators=(',',':')))
     def validate(value):
         write_framework_json(folder/(key+'-reference-binding-response.json'),value)
-        if not isinstance(value,dict) or value.get('quantity') not in ('record_count','other') or not isinstance(value.get('source_quote'),str) or len(value['source_quote'])<2 or value['source_quote'] not in source:
+        if not isinstance(value,dict) or value.get('quantity') not in ('record_count','other') or type(value.get('source_index'))is not int or not 0<=value['source_index']<len(source_items):
             raise AutoQAPlanError('参照状態: 元仕様からの引用と集計対象の対応が必要です')
         if value['quantity']=='record_count':qa_evaluate_record_events(steps,value.get('events'))
-        return value
+        return dict(value,source_quote=source_items[value['source_index']])
     binding=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),550,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
     if binding['quantity']=='other':return None
     audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':12,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
@@ -1086,6 +1101,9 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                             repaired=repair_qa_secondary_oracle(name,raw,fault,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
                     else:
                         repaired=repair_qa_exact_oracle(name,raw,formats,spec,dict(attempt_cfg,_qa_reference_clock=reference_clock,_qa_prior_scenarios=scenarios if key=='base-variant' else []),folder,key,error)
+            if repaired is None and cached is None and previous and key=='base-workflow' and '検査計画の必須入力が不足' in error:
+                raw=json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8'))
+                repaired=repair_qa_missing_initial_inputs(raw,full_inventory,attempt_cfg,spec)
             # The browser can identify exact required controls even when a
             # bounded prompt omitted them. Fix only those inputs, then rerun
             # the unchanged independent assertions on the real browser.

@@ -32,7 +32,7 @@ class ReferenceCountTests(unittest.TestCase):
         calls=[]
         def model(prompt,cfg,tokens,**kwargs):
             calls.append(prompt)
-            answer=(dict(quantity='record_count',source_quote='返品記録を追加',events=[dict(step_index=1,effect='create',target=None),dict(step_index=3,effect='create',target=None)]) if len(calls)==1 else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
+            answer=(dict(quantity='record_count',source_index=0,events=[dict(step_index=1,effect='create',target=None),dict(step_index=3,effect='create',target=None)]) if len(calls)==1 else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
             return kwargs['validator'](answer)
         qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
         prior=[dict(steps=[dict(op='fill',selector='#name',value='A'),dict(op='click',selector='#save')])]
@@ -70,5 +70,30 @@ class ReferenceCountTests(unittest.TestCase):
         controls[0]['disabled']=True;value['steps']=value['steps'][1:]
         self.assertEqual(qa.qa_missing_initial_required_inputs(value,dict(controls=controls)),[])
 
+
+    def test_missing_input_repair_changes_only_missing_control(self):
+        inventory=dict(controls=[dict(tag='input',selector='#title',form='#f',required=True),dict(tag='input',selector='#minutes',form='#f'),dict(tag='button',selector='#save',form='#f')],outputs=[])
+        raw=dict(steps=[dict(op='fill',selector='#minutes',value='30'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#total',value='30')])
+        def model(prompt,cfg,tokens,**kw):
+            self.assertIn('事前検査',prompt)
+            self.assertIn('元仕様',prompt)
+            self.assertNotIn('ブラウザが送信を拒否した',prompt)
+            return kw['validator'](dict(inputs=[dict(selector='#title',value='仕事A')]))
+        qa.ai_json=model
+        fixed=qa.repair_qa_missing_initial_inputs(raw,inventory,dict(model='x'),dict(must_have=['仕事を登録']))
+        self.assertEqual(fixed['checks'],raw['checks'])
+        self.assertEqual(fixed['steps'][0],raw['steps'][0])
+        self.assertEqual(fixed['steps'][1],dict(op='fill',selector='#title',value='仕事A'))
+        self.assertEqual(fixed['steps'][2],raw['steps'][1])
+        self.assertEqual(len(raw['steps']),2)
+
+    def test_source_number_cannot_select_nonexistent_requirement(self):
+        def model(prompt,cfg,tokens,**kw):
+            return kw['validator'](dict(quantity='record_count',source_index=99,events=[]))
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t, self.assertRaises(ValueError):
+            qa.qa_reference_count_oracle(dict(steps=[],exact_check=dict(selector='#recordCount')),{},dict(must_have=['記録を登録']),dict(model='x'),Path(t),'base-workflow',[])
+
 if __name__=='__main__':unittest.main()
+
 
