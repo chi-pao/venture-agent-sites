@@ -172,6 +172,100 @@ class ReferenceAggregateTests(unittest.TestCase):
         self.assertEqual(exported['current_control']['text'],'CSV出力')
         self.assertNotIn('effect',exported['current_control'])
 
+    def test_output_labels_use_local_quantity_names_not_section_or_numbers(self):
+        html='<section><h2>返品案件一覧</h2><div><span>登録数</span><strong id="count">999</strong></div><div id="summary"><span>未処理 / 期限超過</span><strong id="summaryValue">2件 / 超過1件</strong></div><span id="external">対象日の作業数</span><output id="day" aria-labelledby="external">123</output></section>'
+        labels=qa.qa_output_labels_from_html(html)
+        self.assertEqual(labels['#count'],'登録数')
+        self.assertEqual(labels['#summaryValue'],'未処理 / 期限超過')
+        self.assertEqual(labels['#day'],'対象日の作業数')
+        self.assertNotIn('999',str(labels))
+        inventory=qa.compact_qa_inventory(html)
+        child=next(n for n in inventory['outputs'] if n['selector']=='#summaryValue')
+        self.assertEqual(child['label'],'未処理 / 期限超過')
+        self.assertIn('#summary',child['ancestor_selectors'])
+
+    def test_explicit_total_label_does_not_offer_state_filtered_totals(self):
+        controls=[dict(selector='#status',options=[dict(value='open'),dict(value='done')])]
+        total=qa.qa_projection_candidates(controls,'{n0}',0,dict(label='登録数'))
+        self.assertEqual(len(total),1)
+        self.assertEqual(total[0]['where'],'all')
+        pending=qa.qa_projection_candidates(controls,'{n0}',0,dict(label='未処理'))
+        self.assertTrue(any(c['where']=='in' for c in pending))
+
+    def test_closed_overdue_record_distinguishes_total_open_and_overdue(self):
+        controls=[dict(selector='#deadline',type='date',label='対応期限'),dict(selector='#status',label='対応状態',required=True,options=[dict(value='pending'),dict(value='closed')])]
+        candidates=qa.qa_projection_candidates(controls,'{n0}件 / 超過{n1}件',1)
+        combined=next(c for c in candidates if c['where']=='before_date' and c.get('also',{}).get('members')==['pending'])
+        rows=[{'#deadline':'2035-12-31','#status':'pending'},{'#deadline':'2000-01-01','#status':'pending'},{'#deadline':'2000-01-01','#status':'closed'}]
+        clock=dict(date='2026-10-30')
+        self.assertEqual(qa.qa_evaluate_projection(rows,combined,clock),'1')
+        naive=next(c for c in candidates if c['where']=='before_date' and not c.get('also'))
+        self.assertEqual(qa.qa_evaluate_projection(rows,naive,clock),'2')
+        open_count=next(c for c in candidates if c['where']=='in' and c['members']==['pending'])
+        self.assertEqual(qa.qa_evaluate_projection(rows,open_count,clock),'2')
+        self.assertEqual(qa.qa_evaluate_projection(rows,candidates[0],clock),'3')
+
+    def test_selected_date_uses_declared_input_and_missing_reference_fails(self):
+        controls=[dict(selector='#recordDate',type='date',label='作業日'),dict(selector='#selectedDate',type='date',label='対象日')]
+        candidates=qa.qa_projection_candidates(controls,'{n0}件',0,input_values={'#selectedDate':'2026-10-29'},row_fields={'#recordDate'})
+        rule=next(c for c in candidates if c['where']=='on_input_date')
+        rows=[{'#recordDate':'2026-10-29'},{'#recordDate':'2026-10-30'}]
+        self.assertEqual(qa.qa_evaluate_projection(rows,rule,dict(input_values={'#selectedDate':'2026-10-29'})),'1')
+        self.assertEqual(qa.qa_evaluate_projection(rows,rule,dict(input_values={'#selectedDate':'2026-10-30'})),'1')
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection(rows,rule,{})
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection(rows,rule,dict(input_values={'#selectedDate':'invalid'}))
+
+    def test_fraction_numerator_and_denominator_derive_from_agreed_rule(self):
+        steps=[dict(op='select',selector='#status',value='present'),dict(op='click',selector='#save'),dict(op='select',selector='#status',value='absent'),dict(op='click',selector='#save')]
+        events=[dict(step_index=1,effect='create',target=None),dict(step_index=3,effect='create',target=None)]
+        inventory=dict(controls=[dict(tag='select',selector='#status',required=True,options=[dict(value='present'),dict(value='absent')])])
+        formats={'#summary':dict(template='{n0}%（出席扱い{n1}/{n2}、欠席{n3}）',slots=4,label='出席率')}
+        calls=[]
+        def generate(name,prompt,schema,validate,dependency):
+            calls.append(name)
+            self.assertTrue(name.startswith('primary-projection-'))
+            wanted='present' if name.endswith('0') else 'absent'
+            self.assertIn(name.rsplit('-',1)[-1],('0','3'))
+            choice=next(i for i,c in enumerate(dependency['candidates']) if c['where']=='in' and c['members']==[wanted])
+            return validate(dict(choice=choice))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=events):
+            result=qa.qa_reference_primary_expectation(dict(steps=steps,result_selector='#summary'),formats,dict(must_have=['出席扱いの数を全体で割った割合と欠席数']),dict(model='mapper',qa_oracle_model='reviewer'),inventory,Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+        self.assertEqual(len(calls),4)
+        self.assertEqual(proof['projection_audits'][1]['derived_from'],0)
+        self.assertEqual(proof['projection_audits'][2]['derived_from'],0)
+
+    def test_quantity_format_grammar_does_not_adopt_business_verdicts(self):
+        base=dict(metric='percent',where='in',field='#status',members=['present'],rounding='exact',places=0,basis='出席')
+        projections=[base,dict(base,metric='count'),dict(base,metric='count',where='all',field='',members=[]),dict(base,metric='count',members=['absent'])]
+        self.assertTrue(qa.qa_fixed_quantity_format('{n0}%（出席扱い{n1}/{n2}、欠席{n3}）','出席率',projections))
+        self.assertFalse(qa.qa_fixed_quantity_format('合格{n0}%（正解{n1}/{n2}、不正解{n3}）','合格',projections))
+        self.assertFalse(qa.qa_fixed_quantity_format('{n0}件 / 稼働枠内','今日の状況',[dict(base,metric='count')]))
+
+    def test_primary_container_resolves_to_unique_numeric_child(self):
+        inventory=qa.compact_qa_inventory('<input id="name"><button id="save">保存</button><div id="summary"><span>出席率</span><strong id="summaryValue">0</strong></div><tbody id="rows"></tbody>')
+        formats={'#summary':dict(template='出席率{n0}%',slots=1,label='出席率'),'#summaryValue':dict(template='{n0}%',slots=1,label='出席率')}
+        calls=[]
+        def model(prompt,cfg,tokens,**kw):
+            name=Path(cfg['_json_transport_evidence']).stem.removesuffix('-transport');calls.append(name)
+            if name=='actions':
+                self.assertEqual(kw['schema']['properties']['result_selector']['enum'],['#summaryValue'])
+                answer=dict(steps=[dict(op='fill',selector='#name',value='A'),dict(op='click',selector='#save')],acceptance=[0],rationale='入力した記録を保存して独立した結果を検査する',result_selector='#summary')
+            elif name=='secondary-0':answer=dict(check=dict(op='value_equals',selector='#name',value='A'))
+            else:answer=dict(check=dict(op='text_contains',selector='#rows',value='A'))
+            return kw['validator'](answer)
+        def primary(actions,*args):
+            self.assertEqual(actions['result_selector'],'#summaryValue')
+            return dict(exact_check=dict(op='text_equals',selector='#summaryValue',value='100%'))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True),patch.object(qa,'qa_reference_primary_expectation',side_effect=primary):
+            result=qa.qa_split_unit_generation('元要件',dict(model='x',qa_reference_aggregates=True,_qa_display_contracts=formats),Path(t),'base-workflow','input',qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+        self.assertEqual(result['result_selector'],'#summaryValue')
+        self.assertEqual(result['steps'][0]['value'],'A')
+        self.assertEqual(calls,['actions','secondary-0','secondary-1'])
+
     def test_second_submit_requires_required_select_again(self):
         inventory=qa.compact_qa_inventory('<form id="form"><input id="name" required><select id="status" required><option value="">選択</option><option value="open">未着手</option></select><button id="save" type="submit">保存</button></form>')
         steps=[dict(op='fill',selector='#name',value='A'),dict(op='select',selector='#status',value='open'),dict(op='click',selector='#save'),dict(op='fill',selector='#name',value='B'),dict(op='click',selector='#save')]

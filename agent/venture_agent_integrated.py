@@ -3493,6 +3493,8 @@ class _QAInventory(HTMLParser):
                 if ancestor:selector='#'+ancestor+' '+tag
             if selector:
                 node=dict(tag=tag,selector=selector)
+                if tag not in ('input','select','textarea','button'):
+                    node['ancestor_selectors']=['#'+v['id'] for t,v in self.stack[:-1] if v.get('id')]
                 form_id=a.get('form') or next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='form' and v.get('id')),None)
                 if form_id:node['form']='#'+form_id
                 for key in ('type','value','placeholder','min','max','required','name','disabled','readonly','role'):
@@ -3536,6 +3538,9 @@ def compact_qa_inventory(page):
     # Keep controls first and reserve space for concrete result/container IDs.
     controls=[n for n in parser.nodes if n['tag'] in ('input','select','textarea','button')]
     outputs=[n for n in parser.nodes if n not in controls]
+    output_labels=qa_output_labels_from_html(page)
+    for node in outputs:
+        if node['selector'] in output_labels:node['label']=output_labels[node['selector']]
     # Prefer inner nodes over a giant main/root that repeats the entire screen.
     outputs.sort(key=lambda n:(not bool(re.search(r'result|summary|total|count|message|rows|balance|actual|planned|capacity',n['selector'],re.I)),n['tag'] not in ('output','span','strong','p','tbody','div')))
     return dict(controls=controls[:32],outputs=outputs[:20])
@@ -3901,6 +3906,59 @@ def validate_qa_inventory_actions(value,inventory,kind):
     return value
 
 
+def qa_output_labels_from_html(source):
+    """Read visible/accessible quantity names, excluding numeric output text."""
+    class LabelTree(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True);self.root=dict(tag='root',attrs={},children=[]);self.stack=[self.root];self.ids={}
+        def handle_starttag(self,tag,attrs):
+            node=dict(tag=tag,attrs=dict(attrs),children=[],parent=self.stack[-1]);self.stack[-1]['children'].append(node)
+            if node['attrs'].get('id'):self.ids[node['attrs']['id']]=node
+            if tag not in ('input','br','hr','img','meta','link','source','area','base','embed','param','wbr'):self.stack.append(node)
+        def handle_endtag(self,tag):
+            for i in range(len(self.stack)-1,0,-1):
+                if self.stack[i]['tag']==tag:self.stack=self.stack[:i];break
+        def handle_data(self,text):
+            if not any(n['tag'] in ('script','style') for n in self.stack):self.stack[-1]['children'].append(text)
+    tree=LabelTree();tree.feed(source);tree.close()
+    def text(node):
+        if isinstance(node,str):return node
+        return ''.join(text(c) for c in node['children'])
+    result={}
+    for key,node in tree.ids.items():
+        if node['tag'] in ('input','select','textarea','button','script','style'):continue
+        attrs=node['attrs'];label=''
+        if attrs.get('aria-labelledby'):
+            label=' '.join(text(tree.ids[i]) for i in attrs['aria-labelledby'].split() if i in tree.ids)
+        if not label:label=attrs.get('aria-label','')
+        if not label:
+            candidates=[n for n in node['children'] if isinstance(n,dict) and n['tag'] in ('span','label') and not n['attrs'].get('id')]
+            if not candidates:
+                candidates=[n for n in node.get('parent',{}).get('children',[]) if isinstance(n,dict) and n is not node and n['tag'] in ('span','label') and not n['attrs'].get('id')]
+            label=' '.join(text(n) for n in candidates)
+        label=' '.join(label.split())
+        if label and len(label)<=100:result['#'+key]=label
+    return result
+
+
+def qa_ratio_display(template):
+    return bool(re.search(r'\{n0\}\s*[%％][^{}]*\{n1\}\s*/\s*\{n2\}',template))
+
+
+def qa_fixed_quantity_format(template,label,projections):
+    """Recognize units and linked measurement labels, never dynamic verdicts."""
+    prefix=template.split('{n0}',1)[0]
+    if prefix and (prefix.strip()!=label.strip() or not re.search(r'(?:率|数|合計|比率)$',label.strip())):return False
+    body=template[len(prefix):]
+    if re.fullmatch(r'\{n0\}\s*(?:件|人|名|円|問|分|時間)?',body):return True
+    if len(projections)==2 and all(p['metric']=='count' for p in projections) and re.fullmatch(r'\{n0\}件\s*[/／]\s*[^{}0-9]{1,30}\{n1\}件',body):return True
+    if len(projections) in (3,4) and projections[0]['metric']=='percent' and projections[1]['metric']=='count' and projections[2]['where']=='all':
+        same={k:v for k,v in projections[0].items() if k not in ('metric','basis')}=={k:v for k,v in projections[1].items() if k not in ('metric','basis')}
+        pattern=r'\{n0\}[%％][（(][^{}0-9()（）]{1,30}\{n1\}/\{n2\}(?:[、,][^{}0-9()（）]{1,30}\{n3\})?[）)]'
+        if same and re.fullmatch(pattern,body):return True
+    return False
+
+
 def qa_display_contracts_from_nodes(nodes):
     contracts={}
     for node in nodes:
@@ -3918,7 +3976,7 @@ def qa_display_contracts_from_nodes(nodes):
 
 
 def capture_qa_display_contracts(page):
-    nodes=page.evaluate("""() => [...document.querySelectorAll('[id]')].filter(e=>!['INPUT','SELECT','TEXTAREA','BUTTON','SCRIPT','STYLE'].includes(e.tagName)).map(e=>({selector:'#'+e.id,text:e.innerText||'',label:e.closest('section')?.querySelector('h2,h3')?.innerText||e.getAttribute('aria-label')||''})).filter(e=>e.text.length<=180)""")
+    nodes=page.evaluate(r"""() => [...document.querySelectorAll('[id]')].filter(e=>!['INPUT','SELECT','TEXTAREA','BUTTON','SCRIPT','STYLE'].includes(e.tagName)).map(e=>{const labelled=(e.getAttribute('aria-labelledby')||'').split(/\s+/).map(id=>document.getElementById(id)?.innerText||'').join(' ').trim();const own=e.querySelector(':scope > span,:scope > label');const sibling=[...(e.parentElement?.children||[])].find(x=>x!==e&&['SPAN','LABEL'].includes(x.tagName));const label=labelled||e.getAttribute('aria-label')||own?.innerText||sibling?.innerText||e.closest('section')?.querySelector('h2,h3')?.innerText||'';return {selector:'#'+e.id,text:e.innerText||'',label};}).filter(e=>e.text.length<=180)""")
     return qa_display_contracts_from_nodes(nodes)
 
 
@@ -4705,19 +4763,27 @@ def qa_reference_rows(steps,events):
 def qa_evaluate_projection(rows,projection,reference_clock):
     """Small explicit aggregate language, with no eval or model arithmetic."""
     metric=projection.get('metric');where=projection.get('where');field=projection.get('field');members=projection.get('members',[])
-    if metric not in ('count','percent','sum') or where not in ('all','in','before_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
+    if metric not in ('count','percent','sum') or where not in ('all','in','before_date','on_input_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
     if not isinstance(members,list) or any(not isinstance(v,str) for v in members):raise AutoQAPlanError('参照集計: 条件値が不正です')
     selected=[]
     for row in rows:
-        if where=='all':selected.append(row);continue
-        if field not in row:raise AutoQAPlanError('参照集計: 保存操作に集計項目がありません: '+str(field))
-        if where=='in' and str(row[field]) in members:selected.append(row)
-        if where=='before_date':
-            try:
-                import datetime as projection_time
-                deadline=projection_time.date.fromisoformat(str(row[field]));today=projection_time.date.fromisoformat(reference_clock['date'])
-            except (KeyError,TypeError,ValueError):raise AutoQAPlanError('参照集計: 正しい期限入力と基準日が必要です')
-            if deadline<today:selected.append(row)
+        if where=='all':matched=True
+        else:
+            if field not in row:raise AutoQAPlanError('参照集計: 保存操作に集計項目がありません: '+str(field))
+            if where=='in':matched=str(row[field]) in members
+            else:
+                try:
+                    import datetime as projection_time
+                    actual=projection_time.date.fromisoformat(str(row[field]))
+                    if where=='before_date':reference=projection_time.date.fromisoformat(reference_clock['date']);matched=actual<reference
+                    else:reference=projection_time.date.fromisoformat(reference_clock['input_values'][projection['reference_input']]);matched=actual==reference
+                except (KeyError,TypeError,ValueError):raise AutoQAPlanError('参照集計: 正しい日付入力と独立した基準値が必要です')
+        also=projection.get('also')
+        if also:
+            if not isinstance(also,dict) or set(also)!={'field','members'} or not isinstance(also['members'],list):raise AutoQAPlanError('参照集計: 追加の状態条件が不正です')
+            if also['field'] not in row:raise AutoQAPlanError('参照集計: 追加条件の保存入力がありません')
+            matched=matched and str(row[also['field']]) in also['members']
+        if matched:selected.append(row)
     import decimal as projection_decimal
     D=projection_decimal.Decimal
     if metric=='count':result=D(len(selected))
@@ -4738,7 +4804,7 @@ def qa_evaluate_projection(rows,projection,reference_clock):
     return format(result,'f').rstrip('0').rstrip('.') if '.' in format(result,'f') else format(result,'f')
 
 
-def qa_projection_candidates(controls,template,index):
+def qa_projection_candidates(controls,template,index,output=None,input_values=None,row_fields=None):
     import itertools as projection_itertools
     after=template.split('{n'+str(index)+'}',1)[-1]
     percent=after.startswith(('%','％'))
@@ -4746,8 +4812,11 @@ def qa_projection_candidates(controls,template,index):
     def rule(where='all',field='',members=None,label='全保存記録'):
         return dict(metric=metric,where=where,field=field,members=members or [],rounding='exact',places=0,basis=label+('の割合（全保存記録を分母）' if percent else 'の件数'))
     candidates=[rule()]
+    if not percent and re.fullmatch(r'登録数|総件数|全件数|総登録数',str((output or {}).get('label','')).strip()) and re.fullmatch(r'\{n0\}\s*(?:件)?',template):return candidates
+
     for node in sorted(controls,key=lambda n:n['selector']):
         field=node['selector'];label=node.get('label') or field
+        if row_fields is not None and field not in row_fields:continue
         if node.get('type')=='date':candidates.append(rule('before_date',field,label=label+'が実行基準日より前の保存記録'))
         options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value')))
         if 0<len(options)<=5:
@@ -4759,6 +4828,18 @@ def qa_projection_candidates(controls,template,index):
                     if length==len(options) and 'required' in node and node['required']is not False and 'disabled' not in node:continue
                     candidates.append(rule('in',field,list(members),label+'が'+('または'.join(members))+'の保存記録'))
         if not percent and node.get('type')=='number':candidates.append(dict(metric='sum',where='all',field=field,members=[],rounding='exact',places=0,basis=label+'の全保存記録の合計'))
+    date_rules=[p for p in candidates if p['where']=='before_date']
+    state_rules=[p for p in candidates if p['where']=='in']
+    for date_rule in date_rules:
+        for state_rule in state_rules:
+            candidates.append(dict(date_rule,also=dict(field=state_rule['field'],members=state_rule['members']),basis=date_rule['basis']+'、かつ'+state_rule['basis']))
+    for node in controls:
+        if node.get('type')!='date' or row_fields is not None and node['selector']not in row_fields:continue
+        for reference in controls:
+            css=reference['selector']
+            if reference.get('type')=='date' and css!=node['selector'] and isinstance((input_values or {}).get(css),str):
+                candidates.append(dict(rule('on_input_date',node['selector'],label=(node.get('label')or node['selector'])+'が入力済みの'+(reference.get('label')or css)+'と同じ日付の保存記録'),reference_input=css))
+
     return candidates
 
 
@@ -4791,9 +4872,16 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     rows=qa_reference_rows(steps,events)
     controls=[{k:n[k] for k in ('selector','label','type','options','required','disabled') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
+    input_values={step['selector']:str(step.get('value','')) for step in steps if step.get('op') in ('fill','select')}
+    evaluation_context=dict(cfg.get('_qa_reference_clock',{}),input_values=input_values)
+    row_fields=set.intersection(*(set(row) for row in rows)) if rows else set()
     values=[];projections=[];audits=[]
     for index in range(count):
-        candidates=qa_projection_candidates(controls,template,index)
+        if qa_ratio_display(template) and index in (1,2) and projections and projections[0]['metric']=='percent':
+            projection=dict(projections[0],metric='count') if index==1 else dict(metric='count',where='all',field='',members=[],rounding='exact',places=0,basis='割合の全保存記録の分母')
+            values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='algebraic fraction identity from independently agreed percentage',derived_from=0))
+            continue
+        candidates=qa_projection_candidates(controls,template,index,contract,input_values,row_fields)
         schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1]+list(range(len(candidates))))),required=['choice'],additionalProperties=False)
         def validate(value):
             if isinstance(value,dict) and type(value.get('choice'))is int and 0<=value['choice']<len(candidates):return candidates[value['choice']]
@@ -4801,13 +4889,13 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             raise AutoQAPlanError('参照集計: 対象位置に対応する選択肢が未確定です。未対応の規則を推測して採用できません')
         marked=template.replace('{n'+str(index)+'}','【今回の対象数値】')
         output_descriptor=dict(selector=selector,label=contract.get('label',''),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
-        context=dict(requirements=requirements,controls=controls,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
-        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n出力先と見出し:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
+        context=dict(requirements=requirements,controls=controls,input_values=input_values,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
+        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n入力した日付等の条件:'+json.dumps(input_values,ensure_ascii=False)+'\n出力先と見出し:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
         blind_prompt=('別の担当による独立した対応付け。先行する提案は示さない。今回の対象は左から'+str(index+1)+'番目の【対象数値】1個だけ。この数値1個に対応する計算規則を選択肢から選ぶ。表示全体を1規則で網羅する必要はない。対象が不明なら-1。結果の数値や他の表示位置を回答しない。JSON {"choice":番号}のみ。\n出力先:'+json.dumps(output_descriptor,ensure_ascii=False)+'\n表示:'+marked.replace('【今回の対象数値】','【対象数値】')+'\n元要件:'+source+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         independent=generate('primary-projection-blind-'+str(index),blind_prompt,schema,validate,context)
         audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
-        values.append(qa_evaluate_projection(rows,projection,cfg.get('_qa_reference_clock',{})));projections.append(projection);audits.append(audit)
+        values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
     static_context=dict(requirements=requirements,template=template,projections=projections)
@@ -4815,14 +4903,15 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     def static_validate(value):
         if not isinstance(value,dict) or type(value.get('valid'))is not bool or not isinstance(value.get('reason'),str) or len(value['reason'])<12:raise AutoQAPlanError('参照集計: 表示文言の分類が必要です')
         return value
-    fixed=generate('primary-affix-audit',static_prompt,audit_schema,static_validate,static_context)
+    if qa_fixed_quantity_format(template,contract.get('label',''),projections):fixed=dict(valid=True,method='checked quantity-format grammar; no business verdict text adopted')
+    else:fixed=generate('primary-affix-audit',static_prompt,audit_schema,static_validate,static_context)
     if not fixed['valid']:
         def reuse_numbers(name,prompt,part_schema,check,dependency):
             if name.startswith('primary-number-'):return check(dict(value=values[int(name.rsplit('-',1)[1])]))
             return generate(name,prompt,part_schema,check,dependency)
         result=qa_primary_component_expectation(selector,formats,json.dumps(dict(requirements=requirements,steps=steps,reference_rows=rows,reference_values=values),ensure_ascii=False),reuse_numbers)
     else:result=qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
-    write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=cfg.get('_qa_reference_clock',{}),method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
+    write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=evaluation_context,method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
     return result
 
 
@@ -4899,6 +4988,18 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
     target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
     output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style','tbody','table','thead','tr')]
+    # Prefer an actual numeric leaf over its container, which also contains
+    # headings and can confuse quantity names with business-state text.
+    available_formats=cfg.get('_qa_display_contracts') or {}
+    parents=set();leaf_replacements={}
+    for node in inventory.get('outputs',[]):
+        child=available_formats.get(node['selector'],{})
+        if not child:continue
+        for parent in node.get('ancestor_selectors',[]):
+            outer=available_formats.get(parent,{})
+            if child.get('slots')==outer.get('slots') and child.get('template','') in outer.get('template','') and child.get('label')==outer.get('label'):
+                parents.add(parent);leaf_replacements.setdefault(parent,set()).add(node['selector'])
+    output_selectors=[css for css in output_selectors if css not in parents]
     if kind in ('workflow','variant') and cfg.get('qa_reference_aggregates'):
         numeric=[css for css in output_selectors if 1<=(cfg.get('_qa_display_contracts') or {}).get(css,{}).get('slots',0)<=8 and re.search(r'summary|total|count|capacity|balance',css,re.I)]
         if numeric:output_selectors=numeric
@@ -4918,6 +5019,8 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if not isinstance(covers,list) or any(type(i)is not int or not 0<=i<=maximum for i in covers):raise AutoQAPlanError('操作計画の完成条件番号が不正です')
         if kind=='feature' and covers!=[int(key.split('-')[1])]:raise AutoQAPlanError('今回の完成条件だけを検査してください')
         if not isinstance(value.get('result_selector'),str) or not value['result_selector']:raise AutoQAPlanError('操作計画の主結果CSSが必要です')
+        replacements=leaf_replacements.get(value['result_selector'],set())
+        if len(replacements)==1:value=dict(value,result_selector=next(iter(replacements)))
         permitted=action_props['result_selector'].get('enum')
         if permitted and value['result_selector'] not in permitted:raise AutoQAPlanError('保存された操作計画の表示先は現在の表示契約に含まれていません')
         allowed=properties['steps']['items']['properties']['op']['enum'] if kind=='feature' else ('fill','select','check','click','wait')
@@ -5043,6 +5146,8 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 observed=json.loads(observation.read_text(encoding='utf-8'))
                 if observed.get('reference_clock'):reference_clock=qa_current_reference_clock(observed['reference_clock'])
                 available=observed.get('display_contracts',{})
+                labels={n['selector']:n['label'] for n in full_inventory['outputs'] if n.get('label')}
+                available={css:dict(contract,**({'label':labels[css]} if css in labels else {})) for css,contract in available.items()}
                 primary=observed.get('check',{}).get('selector')
                 ordered=sorted(available,key=lambda k:(k!=primary,not bool(re.search(r'summary|total|count|capacity|planned|actual|balance',k,re.I))))
                 for selector in ordered:

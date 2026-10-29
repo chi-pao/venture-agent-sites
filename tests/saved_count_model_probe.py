@@ -100,11 +100,10 @@ def main():
                         formats={'#summaryValue':contract}
                         year=tab.evaluate('new Date().getFullYear()')
                         if not 2000<year<2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
-                        component_context='空の保存領域から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。現在の実行年:'+str(year)+'。対象CSSは#summaryValue。'
                         def component(name,prompt,schema,check,dependency):
                             return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
                                 _json_transport_evidence=str(evidence/(name+'-transport.json'))),180 if 'audit' in name else 100 if 'projection' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
-                        summary_rule=rule+' summaryValueは全保存記録件数と、対応期限が今日より前の期限超過件数を表示する。'
+                        summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。'
                         aggregate_cfg=dict(cfg,_qa_reference_clock=dict(date=tab.evaluate('new Date().toISOString().slice(0,10)')))
                         bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
                             dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)
@@ -137,7 +136,46 @@ def main():
                         actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
                         proof['native_schema_browser'].append(dict(width=width,state=state,expected='2',actual=actual,expected_summary='2件 / 超過1件',actual_summary=summary))
                         if actual!='2' or summary!='2件 / 超過1件':raise AssertionError('Actual saved page fails independent overdue input contrast')
-                    tab.screenshot(path=str(evidence/f'native-model-{width}-two.png'),full_page=True);context.close()
+                    tab.screenshot(path=str(evidence/f'native-model-{width}-two.png'),full_page=True)
+                    closed_values={'#return_item':'独立検証商品3','#order_number':'ORDER-003','#response_deadline':'2000-01-01','#refund_amount':'3000','#return_status':'返金済み'}
+                    closed=[dict(operation,**({'value':closed_values[operation['selector']]} if operation.get('selector') in closed_values else {})) for operation in native['steps']]
+                    closed_row={step['selector']:step['value'] for step in closed if step['op'] in ('fill','select','check')}
+                    closed_rows=reference_rows+[closed_row]
+                    closed_projection=[app.qa_evaluate_projection(closed_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
+                    if closed_projection!=['2','1']:raise AssertionError('Agreed rules confuse total/open counts or count an overdue closed return')
+                    proof['closed_projection']=dict(steps=closed,reference_rows=closed_rows,values=closed_projection,total_count='3',expected='2件 / 超過1件')
+                    for operation in closed:
+                        control=tab.locator(operation['selector'])
+                        if operation['op']=='fill':control.fill(operation['value'])
+                        elif operation['op']=='select':control.select_option(operation['value'])
+                        else:control.click()
+                    for state in ('closed_saved','closed_reloaded'):
+                        if state=='closed_reloaded':tab.reload()
+                        actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
+                        proof['native_schema_browser'].append(dict(width=width,state=state,expected='3',actual=actual,expected_summary='2件 / 超過1件',actual_summary=summary))
+                        if actual!='3' or summary!='2件 / 超過1件':raise AssertionError('Actual saved page fails independent closed-status contrast')
+                    tab.screenshot(path=str(evidence/f'native-model-{width}-closed.png'),full_page=True)
+                    # Cover every remaining declared status without asking a
+                    # model to repeat the same binding for each test record.
+                    all_rows=list(closed_rows)
+                    for total,status,due,expected_values in ((4,'受付','2035-12-31',['3','1']),(5,'確認中','2000-01-01',['4','2']),(6,'対象外','2000-01-01',['4','2'])):
+                        changed={'#return_item':f'独立検証商品{total}','#order_number':f'ORDER-{total:03d}','#response_deadline':due,'#refund_amount':str(total*1000),'#return_status':status}
+                        additional=[dict(operation,**({'value':changed[operation['selector']]} if operation.get('selector') in changed else {})) for operation in native['steps']]
+                        all_rows.append({step['selector']:step['value'] for step in additional if step['op'] in ('fill','select','check')})
+                        values=[app.qa_evaluate_projection(all_rows,projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
+                        if values!=expected_values:raise AssertionError('Agreed rules fail independent native-status coverage: '+status)
+                        expected_summary=expected_values[0]+'件 / 超過'+expected_values[1]+'件'
+                        for operation in additional:
+                            control=tab.locator(operation['selector'])
+                            if operation['op']=='fill':control.fill(operation['value'])
+                            elif operation['op']=='select':control.select_option(operation['value'])
+                            else:control.click()
+                        for state in ('status_saved','status_reloaded'):
+                            if state=='status_reloaded':tab.reload()
+                            actual=tab.locator('#recordCount').inner_text().strip();summary=tab.locator('#summaryValue').inner_text().strip()
+                            proof['native_schema_browser'].append(dict(width=width,state=state,status=status,expected=str(total),actual=actual,expected_summary=expected_summary,actual_summary=summary))
+                            if actual!=str(total) or summary!=expected_summary:raise AssertionError('Actual page fails independent native-status coverage: '+status)
+                    tab.screenshot(path=str(evidence/f'native-model-{width}-all-statuses.png'),full_page=True);context.close()
             finally:browser.close()
         # This existing independent Chromium probe uses precisely the same inputs.
         # Its expected values are fixed, never copied from the model or app.
