@@ -127,7 +127,7 @@ jobs:
           VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
           VENTURE_LIVE_QA_MODEL: qwen2.5:14b
           VENTURE_LIVE_ORACLE_MODEL: qwen2.5:14b
-          VENTURE_LIVE_PROPOSAL_MODEL: ${{ matrix.product == 'workday' && 'qwen2.5:7b' || '' }}
+          VENTURE_LIVE_PROPOSAL_MODEL: qwen2.5:14b
           VENTURE_LIVE_DATA_HOME: department-live-artifacts/${{ matrix.product }}
           VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
           OLLAMA_HOST: http://127.0.0.1:11435

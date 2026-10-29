@@ -313,6 +313,43 @@ def qa_unsubmitted_forms(value, inventory):
     return missing
 
 
+def repair_qa_required_selects(raw,observation,inventory,cfg):
+    """One missing native choice per bounded model call; no invented options."""
+    targets=[x.get('selector') for x in observation.get('invalid_fields',[])]
+    nodes={n['selector']:n for n in inventory.get('controls',[])}
+    if not targets or any(nodes.get(t,{}).get('tag')!='select' for t in targets):return None
+    steps=raw.get('steps',[]);operation=observation.get('operation',{})
+    clicks=[i for i,s in enumerate(steps) if s==operation]
+    if operation.get('op')!='click' or steps!=observation.get('steps') or len(clicks)!=1 or len(steps)+len(targets)>24:return None
+    additions=[]
+    for target in targets:
+        node=nodes[target];options=[o for o in node.get('options',[]) if o.get('value')]
+        values=list(dict.fromkeys(o['value'] for o in options))
+        if not values:return None
+        context=dict(control=node,steps=steps,spec=cfg.get('_qa_spec',{}),model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
+        digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        directory=cfg.get('_qa_input_repair_directory');path=None
+        if directory:
+            directory=Path(directory)/'required-selects';directory.mkdir(parents=True,exist_ok=True);path=directory/(digest+'.json')
+        def validate(answer):
+            if not isinstance(answer,dict) or answer.get('value') not in values:raise AutoQAPlanError('必須選択欄には提示された実在のvalueが必要です')
+            return answer
+        answer=None
+        if path and path.exists():
+            try:answer=validate(json.loads(path.read_text(encoding='utf-8')))
+            except (ValueError,TypeError,KeyError):pass
+        if answer is None:
+            schema={'type':'object','properties':{'value':{'type':'string','enum':values}},'required':['value'],'additionalProperties':False}
+            prompt=('独立QA。今回の必須選択欄1個だけを、元仕様と入力済みの例に整合するoptionで補完する。既存の操作・期待値は変えない。JSON {value:optionのvalue}。'
+                +'\n選択欄:'+json.dumps(node,ensure_ascii=False)+'\n元仕様:'+json.dumps(context['spec'],ensure_ascii=False)[:1800]
+                +'\n入力済みの操作:'+json.dumps(steps[:clicks[0]],ensure_ascii=False,separators=(',',':'))[:1800])
+            answer=ai_json(prompt,dict(cfg,model=context['model'],_schema_in_prompt=False,_bounded_json_retry=True),100,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+            if path:write_framework_json(path,answer)
+        additions.append(dict(op='select',selector=target,value=answer['value']))
+    i=clicks[0]
+    return dict(raw,steps=steps[:i]+additions+steps[i:])
+
+
 def repair_qa_invalid_submission(raw, observation, inventory, cfg):
     """Repair only controls rejected by Chromium, preserving the oracle."""
     steps=raw.get('steps',[]) if isinstance(raw,dict) else []
@@ -325,6 +362,8 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
     if any(t not in nodes or nodes[t].get('tag') not in ('input','select','textarea') for t in targets):return None
     clicks=[i for i,s in enumerate(steps) if s==operation]
     if len(clicks)!=1 or len(steps)+len(targets)>24:return None
+    selected=repair_qa_required_selects(raw,observation,inventory,cfg)
+    if selected is not None:return selected
     schema={'type':'object','properties':{'inputs':{'type':'array','minItems':len(targets),'maxItems':len(targets),'items':{'type':'object','properties':{'selector':{'type':'string','enum':targets},'value':{'type':'string','minLength':1,'maxLength':100}},'required':['selector','value'],'additionalProperties':False}}},'required':['inputs'],'additionalProperties':False}
     prompt=('独立QA。'+('実画面のHTMLに基づく事前検査で不足した' if observation.get('source')=='static_preflight' else 'ブラウザが送信を拒否した')+'必須項目だけを埋める。既存の操作・期待値は変更しない。'
         '入力済みの値と整合する具体値を決め、selectは提示されたoptionのvalueを使う。JSON {"inputs":[{"selector":"CSS","value":"値"}]}のみ返す。'
@@ -1228,7 +1267,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             except (ValueError,OSError):pass
         retry_model,retry_oracle=qa_retry_models(cfg,failure)
         attempt_timeout=qa_retry_timeout(cfg,failure)
-        attempt_cfg=dict(cfg,model=retry_model,qa_mapping_model=cfg.get('qa_mapping_model') or cfg['model'],qa_oracle_model=retry_oracle,qa_part_timeout=attempt_timeout)
+        attempt_cfg=dict(cfg,_qa_input_repair_directory=str(folder),model=retry_model,qa_mapping_model=cfg.get('qa_mapping_model') or cfg['model'],qa_oracle_model=retry_oracle,qa_part_timeout=attempt_timeout)
         previous=''
         if error and (folder/(key+'-last-response.json')).exists():
             try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]

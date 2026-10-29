@@ -1,6 +1,8 @@
 """Repair demonstrably contaminated model acceptance criteria from original scope."""
 
-DEPARTMENT_SPEC_POLICY='2026-10-26-source-grounded-acceptance-2'
+import re
+
+DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
 def department_spec_contract_issue(spec,rationale):
@@ -14,7 +16,23 @@ def department_spec_contract_issue(spec,rationale):
     generic=('入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')
     if any(x in criteria for x in generic):
         return '具体値・利用操作・正解がない抽象的な完成条件です'
+    vague=[str(c) for c in spec.get('acceptance',[]) if re.search(r'完了し[、,て].*(?:表示される|ダウンロードされる|保存・復元される)$',str(c)) and not re.search(r'[0-9０-９=＝「」]',str(c))]
+    if vague:return '具体入力と照合値がなく、機能名を完了・表示と言い換えた完成条件です'
     return ''
+
+
+def department_spec_source_requirements(spec,rationale=None):
+    # Preserve original acceptance coverage as well as must-have scope.
+    original=spec.get('acceptance_original_criteria')
+    if original is None:original=[] if spec.get('acceptance_contract_policy') else spec.get('acceptance',[])
+    requirements=list(spec.get('acceptance_source_requirements') or spec.get('must_have') or [])
+    source=' '.join(map(str,spec.get('must_have',[])))+' '+str(spec.get('requested_outcome',''))+' '+str(rationale or {})
+    for requirement in original:
+        if not isinstance(requirement,str):continue
+        if any(x in requirement for x in ('実装済みとは書かない','外部リンクやコピーに縮小しない','入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')):continue
+        if '共同編集' in requirement and '共同編集' not in source:continue
+        if isinstance(requirement,str) and requirement.strip() and requirement not in requirements:requirements.append(requirement)
+    return requirements
 
 
 def ensure_department_product_spec(name,cfg):
@@ -30,7 +48,7 @@ def ensure_department_product_spec(name,cfg):
     signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,spec=spec,
         rationale=rationale,model=cfg['model']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'spec-contracts'/signature;folder.mkdir(parents=True,exist_ok=True)
-    requirements=spec.get('must_have') or []
+    requirements=department_spec_source_requirements(spec,rationale)
     conditions=[]
     for index,requirement in enumerate(requirements):
         path=folder/(str(index)+'.json')
@@ -67,7 +85,7 @@ def ensure_department_product_spec(name,cfg):
                 '\n対象者:'+str(spec.get('audience',''))+'\n達成する目的:'+str(spec.get('requested_outcome',''))
                 +'\n今回の必須機能:'+str(requirement)+'\n元の事業範囲:'+str(rationale.get('mvp_scope') or rationale.get('hypothesis') or '')[:2000]+'\n修正すべき前回の候補:'+previous+'\n前回の不備（この箇所を具体的に修復）:'+error[:1200])
             schema={'type':'object','properties':{k:{'type':'string','minLength':8,'maxLength':400} for k in ('input','action','expected')},'required':['input','action','expected'],'additionalProperties':False}
-            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),1100,schema=schema,max_attempts=1,request_timeout=180,validator=validate)
+            try:value=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),800,schema=schema,max_attempts=1,request_timeout=int(cfg.get('spec_contract_timeout',300)),validator=validate)
             except Exception as exc:
                 write_framework_json(error_path,dict(error=type(exc).__name__+': '+str(exc)[:1500],checked=now()))
                 raise
@@ -96,10 +114,11 @@ def ensure_department_product_spec(name,cfg):
             audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'issues':{'type':'array','maxItems':4,'items':{'type':'string','maxLength':200}}},'required':['valid','issues'],'additionalProperties':False}
             audit=ai_json('完成条件の独立監査。元要件にない制約を追加しない（予定と実績が異なること自体は不具合ではない）。元の必須機能の各操作を条件が全て扱うか、入力の単位と型は一貫するか、計算結果を独立に再計算して正しいか、文章が途中で切れず具体値で検査できるかを確認。機能の削除・別機能への置換・曖昧な正解を合格にしない。JSON {valid:true/false,issues:[具体的な不備]}。'
                 +'\n元の必須機能:'+str(requirement)+'\n製品の目的:'+str(spec.get('requested_outcome',''))+'\n候補:'+json.dumps(value,ensure_ascii=False),
-                dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=180,validator=validate_audit)
+                dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('spec_contract_timeout',300)),validator=validate_audit)
             write_framework_json(audit_path,dict(audit,input_sha=audit_sha))
         conditions.append('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected'])
     if len(conditions)<3:raise AutoQAPlanError('元の必須機能が3件未満のため完成条件を再設計する必要があります')
     repaired=dict(spec,acceptance=conditions,acceptance_contract_policy=DEPARTMENT_SPEC_POLICY,
-                  acceptance_repair_reason=issue,acceptance_source_requirements=list(requirements))
+                  acceptance_repair_reason=issue,acceptance_source_requirements=list(requirements),
+                  acceptance_original_criteria=spec.get('acceptance_original_criteria') or ([] if spec.get('acceptance_contract_policy') else list(spec.get('acceptance',[]))))
     return store_product_spec(name,repaired,source='AI設計・元要件から完成条件を修復')

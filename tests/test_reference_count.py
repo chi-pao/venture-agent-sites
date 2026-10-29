@@ -7,8 +7,42 @@ import unittest
 spec=importlib.util.spec_from_file_location('reference_module',Path(__file__).resolve().parents[1]/'agent'/'qa_checkpoint_planner.py')
 qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 qa.AutoQAPlanError=ValueError
+contract_spec=importlib.util.spec_from_file_location('spec_contract',Path(__file__).resolve().parents[1]/'agent'/'department_spec_contract.py')
+contract=importlib.util.module_from_spec(contract_spec);contract_spec.loader.exec_module(contract)
 
 class ReferenceCountTests(unittest.TestCase):
+    def test_vague_saved_acceptance_is_returned_to_spec_owner(self):
+        source=dict(must_have=['出欠を保存'],acceptance=['出席率集計が完了し、出席率が表示される','CSV出力が完了し、CSVファイルがダウンロードされる'])
+        self.assertTrue(contract.department_spec_contract_issue(source,{}))
+        self.assertEqual(contract.department_spec_source_requirements(source),source['must_have']+source['acceptance'])
+        concrete=dict(acceptance=['出席1人、総数2人を保存すると出席率50%を表示する'])
+        self.assertFalse(contract.department_spec_contract_issue(concrete,{}))
+
+    def test_repaired_spec_does_not_recursively_add_its_own_examples(self):
+        source=dict(must_have=['保存'],acceptance=['入力: A / 操作: 保存 / 期待結果: 1件'],acceptance_contract_policy='old',acceptance_source_requirements=['保存','CSV出力'],acceptance_original_criteria=['CSV出力'])
+        self.assertEqual(contract.department_spec_source_requirements(source),['保存','CSV出力'])
+
+    def test_missing_select_is_bounded_and_cached_without_changing_oracle(self):
+        inventory=qa.compact_qa_inventory('<form id="f"><select id="status" required><option value="">選択</option><option value="open">未着手</option></select><button id="save" type="submit">保存</button></form>')
+        raw=dict(steps=[dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#count',value='1')])
+        observation=dict(steps=raw['steps'],operation=raw['steps'][0],invalid_fields=[dict(selector='#status')])
+        calls=[]
+        def model(prompt,cfg,tokens,**kw):
+            calls.append(prompt)
+            self.assertEqual(tokens,100)
+            self.assertEqual(kw['schema']['properties']['value']['enum'],['open'])
+            return kw['validator'](dict(value='open'))
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t:
+            cfg=dict(model='x',_qa_input_repair_directory=t)
+            fixed=qa.repair_qa_required_selects(raw,observation,inventory,cfg)
+            again=qa.repair_qa_required_selects(raw,observation,inventory,cfg)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(fixed,again)
+        self.assertEqual(fixed['steps'][0],dict(op='select',selector='#status',value='open'))
+        self.assertEqual(fixed['checks'],raw['checks'])
+        self.assertEqual(raw['steps'],[dict(op='click',selector='#save')])
+
     def test_select_normalization_preserves_intent_and_assertions(self):
         inventory=qa.compact_qa_inventory('<label>状態<select id="status"><option value="open">未着手</option><option value="done">完了</option></select></label>')
         for entered in ('完了','done'):
