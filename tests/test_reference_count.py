@@ -272,7 +272,7 @@ class ReferenceCountTests(unittest.TestCase):
         calls=[];models=[]
         def model(prompt,cfg,tokens,**kwargs):
             calls.append(prompt);models.append(cfg['model'])
-            answer=(dict(quantity='record_count',source_index=0,events=[]) if len(calls)==1 else dict(effect='create',target=None) if prompt.startswith('一つのclick') else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
+            answer=(dict(quantity='record_count',source_index=0,events=[]) if len(calls)==1 else dict(choice=0) if prompt.startswith('今回のクリック1個') else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
             return kwargs['validator'](answer)
         qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
         prior=[dict(steps=[dict(op='fill',selector='#name',value='A'),dict(op='click',selector='#save')])]

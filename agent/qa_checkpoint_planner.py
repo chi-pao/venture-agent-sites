@@ -313,20 +313,29 @@ def qa_unsubmitted_forms(value, inventory):
     return missing
 
 
+def qa_submission_index(steps,observation):
+    operation=observation.get('operation',{})
+    explicit=observation.get('operation_index')
+    if explicit is not None:
+        return explicit if type(explicit)is int and 0<=explicit<len(steps) and steps[explicit]==operation else None
+    indexes=[i for i,step in enumerate(steps) if step==operation]
+    return indexes[0] if len(indexes)==1 else None
+
+
 def repair_qa_required_selects(raw,observation,inventory,cfg):
     """One missing native choice per bounded model call; no invented options."""
     targets=[x.get('selector') for x in observation.get('invalid_fields',[])]
     nodes={n['selector']:n for n in inventory.get('controls',[])}
     if not targets or any(nodes.get(t,{}).get('tag')!='select' for t in targets):return None
     steps=raw.get('steps',[]);operation=observation.get('operation',{})
-    clicks=[i for i,s in enumerate(steps) if s==operation]
-    if operation.get('op')!='click' or steps!=observation.get('steps') or len(clicks)!=1 or len(steps)+len(targets)>24:return None
+    index=qa_submission_index(steps,observation)
+    if operation.get('op')!='click' or steps!=observation.get('steps') or index is None or len(steps)+len(targets)>24:return None
     additions=[]
     for target in targets:
         node=nodes[target];options=[o for o in node.get('options',[]) if o.get('value')]
         values=list(dict.fromkeys(o['value'] for o in options))
         if not values:return None
-        context=dict(control=node,steps=steps,spec=cfg.get('_qa_spec',{}),model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
+        context=dict(control=node,steps=steps,operation_index=index,spec=cfg.get('_qa_spec',{}),model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
         digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         directory=cfg.get('_qa_input_repair_directory');path=None
         if directory:
@@ -342,11 +351,11 @@ def repair_qa_required_selects(raw,observation,inventory,cfg):
             schema={'type':'object','properties':{'value':{'type':'string','enum':values}},'required':['value'],'additionalProperties':False}
             prompt=('独立QA。今回の必須選択欄1個だけを、元仕様と入力済みの例に整合するoptionで補完する。既存の操作・期待値は変えない。JSON {value:optionのvalue}。'
                 +'\n選択欄:'+json.dumps(node,ensure_ascii=False)+'\n元仕様:'+json.dumps(context['spec'],ensure_ascii=False)[:1800]
-                +'\n入力済みの操作:'+json.dumps(steps[:clicks[0]],ensure_ascii=False,separators=(',',':'))[:1800])
+                +'\n入力済みの操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))[:1800])
             answer=ai_json(prompt,dict(cfg,model=context['model'],_schema_in_prompt=False,_bounded_json_retry=True),100,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
             if path:write_framework_json(path,answer)
         additions.append(dict(op='select',selector=target,value=answer['value']))
-    i=clicks[0]
+    i=index
     return dict(raw,steps=steps[:i]+additions+steps[i:])
 
 
@@ -360,8 +369,8 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
     if len(targets)!=len(failed) or len(set(targets))!=len(targets):return None
     nodes={n['selector']:n for n in inventory['controls']}
     if any(t not in nodes or nodes[t].get('tag') not in ('input','select','textarea') for t in targets):return None
-    clicks=[i for i,s in enumerate(steps) if s==operation]
-    if len(clicks)!=1 or len(steps)+len(targets)>24:return None
+    index=qa_submission_index(steps,observation)
+    if index is None or len(steps)+len(targets)>24:return None
     selected=repair_qa_required_selects(raw,observation,inventory,cfg)
     if selected is not None:return selected
     schema={'type':'object','properties':{'inputs':{'type':'array','minItems':len(targets),'maxItems':len(targets),'items':{'type':'object','properties':{'selector':{'type':'string','enum':targets},'value':{'type':'string','minLength':1,'maxLength':100}},'required':['selector','value'],'additionalProperties':False}}},'required':['inputs'],'additionalProperties':False}
@@ -369,7 +378,7 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
         '入力済みの値と整合する具体値を決め、selectは提示されたoptionのvalueを使う。JSON {"inputs":[{"selector":"CSS","value":"値"}]}のみ返す。'
         '\n元仕様:'+json.dumps(cfg.get('_qa_spec',{}),ensure_ascii=False)[:2500]
         +'\n不足・拒否された項目:'+json.dumps([nodes[t] for t in targets],ensure_ascii=False)
-        +'\n既存操作:'+json.dumps(steps,ensure_ascii=False,separators=(',',':')))
+        +'\n補完する保存操作の位置:'+str(index)+'\nその保存より前の操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':')))
     def validate(answer):
         items=answer.get('inputs') if isinstance(answer,dict) else None
         if not isinstance(items,list) or len(items)!=len(targets) or any(not isinstance(i,dict) for i in items) or {i.get('selector') for i in items}!=set(targets):raise AutoQAPlanError('拒否された項目それぞれに値が必要です')
@@ -383,7 +392,7 @@ def repair_qa_invalid_submission(raw, observation, inventory, cfg):
             elif node.get('type') in ('file','checkbox','radio','button','submit'):raise AutoQAPlanError('自動で補えない必須項目です')
             else:op='fill'
             additions.append(dict(op=op,selector=item['selector'],value=v))
-        i=clicks[0]
+        i=index
         return dict(raw,steps=steps[:i]+additions+steps[i:])
     return ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),450,schema=schema,max_attempts=2,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
 
@@ -410,7 +419,7 @@ def qa_missing_initial_required_inputs(value,inventory):
     return []
 
 
-def qa_validate_repeated_form_inputs(value,inventory):
+def qa_repeated_form_issue(value,inventory):
     """Do not assume a saved form retains required fields for the next record."""
     controls=inventory.get('controls',[]);known={n['selector']:n for n in controls}
     submitted=set();entered={}
@@ -422,20 +431,36 @@ def qa_validate_repeated_form_inputs(value,inventory):
         required=[n['selector'] for n in controls if n.get('form')==form and 'required' in n and 'disabled' not in n and 'readonly' not in n and n.get('tag') in ('input','select','textarea') and n.get('type')not in ('hidden','file','radio','checkbox')]
         if form in submitted:
             missing=[css for css in required if css not in entered or entered[css]is None or str(entered[css]).strip()=='']
-            if missing:raise AutoQAPlanError('次の記録の保存前に同じformの必須欄を再入力してください。送信後の値の残存は仮定しません。操作'+str(index)+': '+json.dumps(missing,ensure_ascii=False))
+            if missing:return dict(source='static_preflight',steps=value['steps'],operation=step,operation_index=index,invalid_fields=[dict(selector=css) for css in missing])
         submitted.add(form)
         for css in required:entered.pop(css,None)
+    return None
+
+
+def qa_validate_repeated_form_inputs(value,inventory):
+    issue=qa_repeated_form_issue(value,inventory)
+    if issue:raise AutoQAPlanError('次の保存操作'+str(issue['operation_index'])+'の必須欄を再入力してください: '+json.dumps(issue['invalid_fields'],ensure_ascii=False))
     return value
+
+
+def repair_qa_repeated_form_inputs(value,inventory,cfg):
+    for attempt in range(8):
+        issue=qa_repeated_form_issue(value,inventory)
+        if not issue:return value
+        repaired=repair_qa_invalid_submission(value,issue,inventory,cfg)
+        if repaired is None or repaired==value:break
+        value=repaired
+    return qa_validate_repeated_form_inputs(value,inventory)
 
 
 def repair_qa_missing_initial_inputs(raw,inventory,cfg,spec):
     missing=qa_missing_initial_required_inputs(raw,inventory)
     if not missing:return None
     controls={n['selector']:n for n in inventory.get('controls',[])}
-    for step in raw.get('steps',[]):
+    for operation_index,step in enumerate(raw.get('steps',[])):
         node=controls.get(step.get('selector'),{})
         if step.get('op')=='click' and node.get('form') and (node.get('type')=='submit' or node.get('tag')=='button' and not node.get('type')):
-            observation=dict(source='static_preflight',steps=raw['steps'],operation=step,invalid_fields=[dict(selector=x) for x in missing])
+            observation=dict(source='static_preflight',steps=raw['steps'],operation=step,operation_index=operation_index,invalid_fields=[dict(selector=x) for x in missing])
             return repair_qa_invalid_submission(raw,observation,inventory,dict(cfg,_qa_spec=spec))
     return None
 
@@ -836,7 +861,7 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     events=[]
     for index,step in enumerate(steps):
         if step.get('op')!='click':continue
-        context=dict(source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
+        context=dict(policy='record-choice-1',source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
         digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         directory=folder/(key+'-reference-events');directory.mkdir(exist_ok=True)
         path=directory/(digest+'.json')
@@ -852,12 +877,18 @@ def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
         if event is None:
             previous_state=qa_evaluate_record_events(steps[:index],events)
             active=previous_state['trace'][-1]['record_origins'] if previous_state['trace'] else []
-            schema=qa_record_event_schema(active)
-            prompt=('一つのclickだけを仕様へ対応付ける。操作番号や件数は回答しない。今回のclickが保存記録の新規追加ならcreate、既存の変更保存ならupdate、削除確定ならdelete、編集画面を開く・表示切替など保存変更なしならnone。'
-                'update/deleteのtargetは作成click番号、それ以外はnull。入力操作を追加と数えない。JSON {effect,target}。'
-                +'\n元仕様:'+source+'\n対象集計:'+selector+'\n先行の分類:'+json.dumps(events,ensure_ascii=False)
-                +'\n入力と先行操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))+'\n今回のclick:'+json.dumps(step,ensure_ascii=False))
-            event=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),150,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+            choices=[dict(effect='create',target=None),dict(effect='none',target=None)]+[dict(effect=effect,target=origin) for origin in active for effect in ('update','delete')]
+            schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=list(range(len(choices))))),required=['choice'],additionalProperties=False)
+            prompt=('今回のクリック1個を元要件に対応付け、提示された選択肢番号だけをJSON {"choice":整数}で回答する。createは新しい保存記録を追加。noneはCSV/JSON出力、画面表示、編集画面を開く等の保存記録を変えない操作。update/deleteは表示済みの作成操作を起源とする既存記録だけ。targetを作ったり操作番号を件数と解釈しない。'
+                +'\n元要件:'+source+'\n対象集計:'+selector+'\n選択肢:'+json.dumps(list(enumerate(choices)),ensure_ascii=False)
+                +'\n確定した先行分類:'+json.dumps(events,ensure_ascii=False)+'\n先行入力・操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))+'\n今回のクリック:'+json.dumps(step,ensure_ascii=False))
+            def choose(value):
+                write_framework_json(directory/(digest+'-response.json'),value)
+                if isinstance(value,dict) and type(value.get('choice'))is int and 0<=value['choice']<len(choices):return validate(choices[value['choice']])
+                # Valid legacy receipts remain readable; no unknown target can pass.
+                if isinstance(value,dict) and value in choices:return validate(value)
+                raise AutoQAPlanError('参照状態: 提示された操作対応の選択肢を1個指定してください')
+            event=ai_json(prompt,dict(cfg,_schema_in_prompt=True,_bounded_json_retry=True,_json_transport_evidence=str(directory/(digest+'-transport.json'))),100,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=choose)
             write_framework_json(path,event)
         events.append(event)
     return events
@@ -1381,6 +1412,25 @@ def qa_evaluate_projection(rows,projection,reference_clock):
     return format(result,'f').rstrip('0').rstrip('.') if '.' in format(result,'f') else format(result,'f')
 
 
+def qa_projection_candidates(controls,template,index):
+    import itertools as projection_itertools
+    after=template.split('{n'+str(index)+'}',1)[-1]
+    percent=after.startswith(('%','％'))
+    metric='percent' if percent else 'count'
+    def rule(where='all',field='',members=None,label='全保存記録'):
+        return dict(metric=metric,where=where,field=field,members=members or [],rounding='exact',places=0,basis=label+('の割合（全保存記録を分母）' if percent else 'の件数'))
+    candidates=[rule()]
+    for node in sorted(controls,key=lambda n:n['selector']):
+        field=node['selector'];label=node.get('label') or field
+        if node.get('type')=='date':candidates.append(rule('before_date',field,label=label+'が実行基準日より前の保存記録'))
+        options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value')))
+        if 0<len(options)<=5:
+            for length in range(1,len(options)+1):
+                for members in projection_itertools.combinations(options,length):candidates.append(rule('in',field,list(members),label+'が'+('または'.join(members))+'の保存記録'))
+        if not percent and node.get('type')=='number':candidates.append(dict(metric='sum',where='all',field=field,members=[],rounding='exact',places=0,basis=label+'の全保存記録の合計'))
+    return candidates
+
+
 def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,key,generate):
     """Bind requirements to a checked projection; compute instead of guessing."""
     selector=actions['result_selector'];contract=formats.get(selector,{})
@@ -1401,23 +1451,21 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     rows=qa_reference_rows(steps,events)
     controls=[{k:n[k] for k in ('selector','label','type','options') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
-    properties=dict(metric=dict(type='string',enum=['count','percent','sum','unsupported']),where=dict(type='string',enum=['all','in','before_date']),field=dict(type='string',enum=fields),members=dict(type='array',maxItems=12,items=dict(type='string',maxLength=100)),rounding=dict(type='string',enum=['exact','nearest']),places=dict(type='integer',minimum=0,maximum=4),basis=dict(type='string',minLength=12,maxLength=300))
-    schema=dict(type='object',properties=properties,required=list(properties),additionalProperties=False)
     values=[];projections=[];audits=[]
     for index in range(count):
+        candidates=qa_projection_candidates(controls,template,index)
+        schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1]+list(range(len(candidates))))),required=['choice'],additionalProperties=False)
         def validate(value):
-            if not isinstance(value,dict) or set(value)!=set(properties) or value.get('metric')not in ('count','percent','sum') or value.get('where')not in ('all','in','before_date') or value.get('field')not in fields or not isinstance(value.get('basis'),str) or len(value['basis'])<12:raise AutoQAPlanError('参照集計: 対応が不明な計算を完成扱いにできません')
-            if value['where']!='all' and not value['field']:raise AutoQAPlanError('参照集計: 条件の入力項目が未対応です')
-            if value['where']=='in' and not value.get('members'):raise AutoQAPlanError('参照集計: 条件値が必要です')
-            if value['metric']=='sum' and not value['field']:raise AutoQAPlanError('参照集計: 合計対象の入力項目が必要です')
-            if value['where']=='before_date' and next((c.get('type') for c in controls if c['selector']==value['field']),None)!='date':raise AutoQAPlanError('参照集計: 期限条件には日付入力を対応付けてください')
-            if value.get('rounding')=='nearest' and not re.search(r'四捨五入|丸め|小数第',source):raise AutoQAPlanError('参照集計: 元要件に明記されない丸め規則は採用できません')
-            return value
-        context=dict(requirements=requirements,controls=controls,display_template=template,slot='n'+str(index))
-        prompt=('独立した仕様対応。対象の数値位置の計算規則だけを選び、計算結果は回答しない。metric=countは条件に合う保存記録数、percentは条件に合う数/全保存記録数*100、sumはfieldの数値合計。where=allは全記録、inはfieldがmembersのいずれか、before_dateはfieldの日付が実行基準日より前。最終入力欄ではなく保存記録が母集団。明示されない四捨五入を作らずrounding=exactにする。未対応の計算はunsupported。JSONはmetric,where,field,members,rounding,places,basisのみ。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
+            if isinstance(value,dict) and type(value.get('choice'))is int and 0<=value['choice']<len(candidates):return candidates[value['choice']]
+            if isinstance(value,dict) and value in candidates:return value
+            raise AutoQAPlanError('参照集計: 対象位置に対応する選択肢が未確定です。未対応の規則を推測して採用できません')
+        marked=template.replace('{n'+str(index)+'}','【今回の対象数値】')
+        context=dict(requirements=requirements,controls=controls,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
+        prompt=('対象表示の【今回の対象数値】1個の意味に対応する計算規則を選択肢から選ぶ。前後や他の数値の規則を選ばない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。数値の保存データは別途プログラムが集計する。\n元要件:'+source+'\n対象位置（左から'+str(index+1)+'番目）:'+marked+'\n選択肢:'+json.dumps([dict(choice=i,meaning=c['basis']) for i,c in enumerate(candidates)],ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
-        audit_prompt=('独立監査。数値結果は採点しない。提案した集計規則が元要件と対象表示位置の意味に対応するか確認。要求外の条件・状態・丸め・期限の扱いを足した場合false。仕様中の入力例を保存データと数えてはいけない。表示の数値・アプリ内部の計算式は根拠にしない。JSON {valid,reason}。\n'+json.dumps(dict(context,projection=projection),ensure_ascii=False,separators=(',',':')))
-        audit=generate('primary-projection-audit-'+str(index),audit_prompt,audit_schema,audit_value,dict(context,projection=projection))
+        audit_context={k:v for k,v in context.items() if k!='candidates'}
+        audit_prompt=('独立監査。今回の対象は左からtarget_position番目の数値1個だけ。主結果全体の全項目を1個の規則で網羅する必要はない。数値結果は採点しない。提案した集計規則が元要件と【今回の対象数値】の意味に対応するか確認。要求外の条件・状態・丸め・期限の扱いを足した場合false。仕様中の入力例を保存データと数えてはいけない。表示の数値・アプリ内部の計算式は根拠にしない。JSON {valid,reason}。\n'+json.dumps(dict(audit_context,projection=projection),ensure_ascii=False,separators=(',',':')))
+        audit=generate('primary-projection-audit-'+str(index),audit_prompt,audit_schema,audit_value,dict(audit_context,projection=projection))
         values.append(qa_evaluate_projection(rows,projection,cfg.get('_qa_reference_clock',{})));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
@@ -1510,6 +1558,9 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
     target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
     output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style','tbody','table','thead','tr')]
+    if kind in ('workflow','variant') and cfg.get('qa_reference_aggregates'):
+        numeric=[css for css in output_selectors if 1<=(cfg.get('_qa_display_contracts') or {}).get(css,{}).get('slots',0)<=8 and re.search(r'summary|total|count|capacity|balance',css,re.I)]
+        if numeric:output_selectors=numeric
     if target.get('enum'):
         permitted=[v for v in target['enum'] if v in output_selectors]
         if not permitted:raise AutoQAPlanError('主結果には一覧表以外の独立した結果要素が必要です')
@@ -1541,7 +1592,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if kind=='workflow' and qa_missing_initial_required_inputs(value,inventory):
             repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
             if repaired is not None:value=repaired
-        if kind=='workflow':qa_validate_repeated_form_inputs(value,inventory)
+        if kind=='workflow':value=repair_qa_repeated_form_inputs(value,inventory,cfg)
         return validate_qa_inventory_actions(value,inventory,kind)
     actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
         action_schema,semantic,700,validate_actions)
@@ -1555,7 +1606,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     component_context=oracle_context+'\n確定済み操作:'+action_context
     if type(formats.get(actions['result_selector'],{}).get('slots'))is int and 1<=formats[actions['result_selector']]['slots']<=8:
         def component(name,prompt,part_schema,check,dependency):
-            return stage(name,prompt,part_schema,oracle,280 if 'projection' in name else 180 if 'audit' in name else 120,check,dependency)
+            return stage(name,prompt,part_schema,oracle,180 if 'audit' in name else 100 if 'projection' in name else 120,check,dependency)
         if cfg.get('qa_reference_aggregates'):
             primary=qa_reference_primary_expectation(actions,formats,cfg.get('_qa_spec',{}),cfg,inventory,folder,key,component)['exact_check']
         else:primary=qa_primary_component_expectation(actions['result_selector'],formats,component_context,component)['exact_check']
