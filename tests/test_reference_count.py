@@ -34,6 +34,51 @@ class ReferenceCountTests(unittest.TestCase):
             with self.assertRaises(ValueError):qa.qa_compile_bound_primary(bad,'#summary',formats)
         self.assertNotIn('expected_values',raw['exact_check'])
 
+    def test_primary_components_use_independent_scalar_values(self):
+        formats={'#summary':dict(template='{n0}%（出席扱い{n1}/{n2}、欠席{n3}）',slots=4)}
+        answers={'primary-number-0':'50','primary-number-1':'1','primary-number-2':'2','primary-number-3':'1','primary-literal-1':'%（出席扱い','primary-literal-2':'/','primary-literal-3':'、欠席','primary-literal-4':'）'}
+        calls=[]
+        def generate(name,prompt,schema,check,dependency):
+            calls.append(name)
+            self.assertEqual(set(schema['properties']),{'value'})
+            self.assertNotIn('999',prompt)
+            return check(dict(value=answers[name]))
+        result=qa.qa_primary_component_expectation('#summary',formats,'独立仕様と2件の操作だけ',generate)
+        self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
+        self.assertNotIn('primary-literal-0',calls)
+        answers['primary-number-0']='1'
+        with self.assertRaises(ValueError):qa.qa_primary_component_expectation('#summary',formats,'同じ独立仕様',generate)
+
+    def test_primary_component_resume_keeps_finished_scalar_receipts(self):
+        inventory=qa.compact_qa_inventory('<input id="title"><button id="save">保存</button><strong id="count">0</strong><tbody id="rows"></tbody>')
+        calls=[];fail=[True]
+        def model(prompt,cfg,tokens,**kw):
+            name=Path(cfg['_json_transport_evidence']).stem.removesuffix('-transport');calls.append(name)
+            if name=='actions':
+                self.assertNotIn('#rows',kw['schema']['properties']['result_selector']['enum'])
+                answer=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#save')],acceptance=[0],rationale='記録を保存して件数を独立照合する',result_selector='#count')
+            elif name=='primary-number-0':answer=dict(value='1')
+            elif name=='primary-literal-1':
+                if fail[0]:fail[0]=False;raise TimeoutError('literal only')
+                answer=dict(value='件')
+            elif name=='secondary-0':answer=dict(check=dict(op='value_equals',selector='#title',value='A'))
+            else:answer=dict(check=dict(op='text_contains',selector='#rows',value='A'))
+            return kw['validator'](answer)
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t:
+            args=('元仕様',dict(model='planner',qa_oracle_model='oracle',_qa_display_contracts={'#count':dict(template='{n0}件',slots=1)}),Path(t),'base-workflow','fixed',qa.qa_unit_schema(1,'workflow'),lambda raw:(qa.validate_qa_unit(raw,'workflow',1),raw)[1],inventory)
+            with self.assertRaises(TimeoutError):qa.qa_split_unit_generation(*args)
+            result=qa.qa_split_unit_generation(*args)
+            self.assertEqual(result['exact_check']['value'],'1件')
+            self.assertEqual(calls.count('actions'),1)
+            self.assertEqual(calls.count('primary-number-0'),1)
+            self.assertEqual(calls.count('primary-literal-1'),2)
+            directory=Path(t)/'base-workflow-split'
+            qa.qa_invalidate_split_failure(Path(t),'base-workflow',result,dict(check=result['exact_check']))
+            self.assertFalse((directory/'primary-number-0.json').exists())
+            self.assertTrue((directory/'actions.json').exists())
+            self.assertTrue((directory/'primary-number-0-request.json').exists())
+
     def test_split_oracle_receives_masked_format_contract(self):
         formats={'#summary':dict(template='{n0}件 / 超過{n1}件',slots=2),'#other':dict(template='{n0}円',slots=1)}
         spec=dict(acceptance=['登録して件数と超過を確認する'])

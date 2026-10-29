@@ -1311,6 +1311,42 @@ def qa_compile_bound_primary(value,selector,formats):
     return qa_validate_display_boundary(value,formats)
 
 
+def qa_primary_component_expectation(selector,formats,context,generate):
+    """Predict one scalar per request; retain independent business-value checks."""
+    contract=formats.get(selector,{})
+    count=contract.get('slots')
+    if type(count)is not int or not 1<=count<=8:raise AutoQAPlanError('主結果の数値書式を確定できません')
+    values=[];literals=[]
+    template=contract.get('template','')
+    for index in range(count):
+        schema=dict(type='object',properties=dict(value=dict(type='string',pattern=r'^-?\d+(?:\.\d+)?$')),required=['value'],additionalProperties=False)
+        def validate(value):
+            if not isinstance(value,dict) or set(value)!={'value'} or not isinstance(value['value'],str) or not re.fullmatch(r'-?\d+(?:\.\d+)?',value['value']):raise AutoQAPlanError('主結果の数値1個だけをvalueに指定してください。単位・分数・全文は不可です')
+            return value
+        prompt=('独立QA。確定した全操作後の表示位置 {n'+str(index)+'} の正しい数値1個だけを元仕様と入力から計算する。他の数値・単位・見出しは返さない。JSON {"value":"数値だけ"}。表示書式:'+template+'\n'+context)
+        answer=generate('primary-number-'+str(index),prompt,schema,validate,dict(context=context,selector=selector,index=index))
+        values.append(validate(answer)['value'])
+    for index in range(count+1):
+        # Empty leading text is a structural boundary, not a business outcome.
+        if index==0 and template.startswith('{n0}'):
+            literals.append('');continue
+        schema=dict(type='object',properties=dict(value=dict(type='string',maxLength=180,pattern=r'^[^0-9]*$')),required=['value'],additionalProperties=False)
+        def validate(value):
+            if not isinstance(value,dict) or set(value)!={'value'} or not isinstance(value['value'],str) or len(value['value'])>180 or re.search(r'\d|\{n\d+\}',value['value']):raise AutoQAPlanError('数値の前後に表示する文字列1個だけをvalueに指定してください。数字や書式変数は不可です')
+            return value
+        location=('最初の数値の前' if index==0 else '最後の数値の後' if index==count else '{n'+str(index-1)+'}と{n'+str(index)+'}の間')
+        prompt=('独立QA。確定操作後の主結果のうち '+location+' の文字列だけを元仕様から求める。数値・周囲の見出し・他の位置の文字列を含めない。業務状態の文言は書式を正解としてコピーせず、入力と仕様から判定する。JSON {"value":"対象位置の文字列だけ"}。表示書式:'+template+'\n独立計算済み数値:'+json.dumps(values,ensure_ascii=False)+'\n'+context)
+        answer=generate('primary-literal-'+str(index),prompt,schema,validate,dict(context=context,selector=selector,index=index,values=values))
+        literals.append(validate(answer)['value'])
+    return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+
+
+def qa_clear_primary_components(directory):
+    directory=Path(directory)
+    for path in directory.glob('primary-*.json'):
+        if re.fullmatch(r'primary-(number|literal)-[0-9]+\.json',path.name):path.unlink(missing_ok=True)
+
+
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
     """Cache action planning and each independent assertion separately."""
     import time as qa_stage_time
@@ -1347,7 +1383,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     context=qa_split_stage_context(context,cfg,inventory,key)
     action_props['result_selector']=properties.get('result_selector',dict(type='string',minLength=1,maxLength=180))
     target=properties.get('exact_check',{}).get('properties',{}).get('selector',{})
-    output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')]
+    output_selectors=[n['selector'] for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style','tbody','table','thead','tr')]
     if target.get('enum'):action_props['result_selector']=target
     elif output_selectors:action_props['result_selector']=dict(type='string',enum=output_selectors)
     if kind=='feature':
@@ -1386,8 +1422,14 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     def validate_primary(value):
         return qa_compile_bound_primary(value,actions['result_selector'],formats)
     primary_shape=('JSON {exact_check:{op:text_equals,selector:指定CSS,display_parts:{n0:最初の数値だけ,n1:次の数値だけ,l0:最初の数値の前の文字列,l1:数値の間の文字列,l2:最後の数値の後の文字列}}}。スキーマの全n/lキーを埋める。nには単位・%・分数を入れず数値だけ。lには数字を入れない。' if 'display_parts' in primary_schema['properties']['exact_check']['properties'] else 'JSON {exact_check:{op:text_equals,selector:指定CSS,value:単位や補足まで含む完全な正解}}。')
-    primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
-        primary_schema,oracle,300,validate_primary,actions)['exact_check']
+    component_context=oracle_context+'\n確定済み操作:'+action_context
+    if type(formats.get(actions['result_selector'],{}).get('slots'))is int and 1<=formats[actions['result_selector']]['slots']<=8:
+        def component(name,prompt,part_schema,check,dependency):
+            return stage(name,prompt+'\n出力キーはvalue一つだけ。',part_schema,oracle,120,check,dependency)
+        primary=qa_primary_component_expectation(actions['result_selector'],formats,component_context,component)['exact_check']
+    else:
+        primary=stage('primary','独立QA。今回は主結果の期待値1個だけ。操作は変更せず、全操作後の結果を元仕様から計算。対象要素全体の表示を返し、周囲の見出しを混ぜない。'+primary_shape+'数値や業務状態は元仕様と確定操作から独立に求め、表示書式を正解として採用しない。仕様中の入力例の人数ではなく、確定済み操作で実際に保存した記録を集計する。\n'+oracle_context+'\n確定済み操作:'+action_context,
+            primary_schema,oracle,300,validate_primary,actions)['exact_check']
     checks=[]
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
     for index in range(2):
@@ -1411,6 +1453,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         # Actions already passed structural validation. A combined oracle
         # error must not discard the completed action plan.
         for name in ('primary','secondary-0','secondary-1'):(directory/(name+'.json')).unlink(missing_ok=True)
+        qa_clear_primary_components(directory)
         raise
 
 
@@ -1422,7 +1465,7 @@ def qa_invalidate_split_failure(folder,key,raw,observation):
     if observation.get('invalid_fields') or not fault:
         (directory/'actions.json').unlink(missing_ok=True);return
     if fault==raw.get('exact_check'):
-        (directory/'primary.json').unlink(missing_ok=True);return
+        (directory/'primary.json').unlink(missing_ok=True);qa_clear_primary_components(directory);return
     for i,check in enumerate(raw.get('checks',[])):
         if check==fault:(directory/('secondary-'+str(i)+'.json')).unlink(missing_ok=True)
 

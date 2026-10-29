@@ -98,17 +98,14 @@ def main():
                         contract=app.capture_qa_display_contracts(tab).get('#summaryValue')
                         if not contract or contract.get('slots')!=2:raise AssertionError('Saved returns summary must expose its count and overdue count')
                         formats={'#summaryValue':contract}
-                        primary_schema=app.qa_bound_primary_schema(app.qa_unit_schema(1,'workflow')['properties']['exact_check'],'#summaryValue',formats)
-                        def validate_bound_primary(value):
-                            # These two numbers come from this fixed fixture,
-                            # not from the browser observation or app code.
-                            if [value.get('exact_check',{}).get('display_parts',{}).get('n'+str(i)) for i in range(2)]!=['1','0']:
-                                raise AssertionError('Primary oracle differs from one saved record with a future deadline')
-                            return app.qa_compile_bound_primary(value,'#summaryValue',formats)
                         year=tab.evaluate('new Date().getFullYear()')
                         if year>=2035:raise AssertionError('The fixed future-deadline fixture must be refreshed')
-                        bound=app.ai_json('独立QA。空の保存から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。数値はこの操作と仕様から計算し、数値を除去した書式に沿ってdisplay_partsを返す。n0とn1は表示順の数値だけ（単位・%・分数を含めない）、l0/l1/l2は数値の前・間・後の文字列だけ（数字を含めない）。\nブラウザの実行年:'+str(year)+'\n数値を除去した書式:'+json.dumps(contract,ensure_ascii=False),
-                            dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=False,_bounded_json_retry=True),300,schema=primary_schema,max_attempts=1,request_timeout=300,validator=validate_bound_primary)
+                        component_context='空の保存領域から指定の返品記録1件を保存した。集計は全保存件数と期限超過件数。期限2035-12-31、状態は返送待ち。現在の実行年:'+str(year)+'。対象CSSは#summaryValue。'
+                        def component(name,prompt,schema,check,dependency):
+                            return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
+                                _json_transport_evidence=str(evidence/(name+'-transport.json'))),120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
+                        bound=app.qa_primary_component_expectation('#summaryValue',formats,component_context,component)
+                        if bound['exact_check']['value']!='1件 / 超過0件':raise AssertionError('Primary oracle differs from fixed one-record future-deadline result')
                         proof['bound_primary_model']=bound;bound_primary=bound['exact_check']['value']
                     for state in ('saved','reloaded'):
                         if state=='reloaded':tab.reload()
