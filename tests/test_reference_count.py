@@ -32,7 +32,7 @@ class ReferenceCountTests(unittest.TestCase):
         calls=[]
         def model(prompt,cfg,tokens,**kwargs):
             calls.append(prompt)
-            answer=(dict(quantity='record_count',source_index=0,events=[dict(step_index=1,effect='create',target=None),dict(step_index=3,effect='create',target=None)]) if len(calls)==1 else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
+            answer=(dict(quantity='record_count',source_index=0,events=[]) if len(calls)==1 else dict(effect='create',target=None) if prompt.startswith('一つのclick') else dict(valid=True,reason='二つの保存操作は元仕様に基づく別記録の追加である'))
             return kwargs['validator'](answer)
         qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
         prior=[dict(steps=[dict(op='fill',selector='#name',value='A'),dict(op='click',selector='#save')])]
@@ -42,7 +42,7 @@ class ReferenceCountTests(unittest.TestCase):
             self.assertEqual(result['exact_check']['value'],'2')
             self.assertEqual(result['steps'],raw['steps'])
             self.assertTrue((Path(t)/'base-variant-reference-count-proof.json').exists())
-        self.assertEqual(len(calls),2)
+        self.assertEqual(len(calls),4)
         self.assertNotIn('999',''.join(calls))
 
 
@@ -114,7 +114,25 @@ class ReferenceCountTests(unittest.TestCase):
             self.assertEqual(len(qa.qa_bad_typed_inputs(dict(steps=[dict(op='fill',selector='#date',value=value)]),inventory)),1)
         self.assertEqual(qa.qa_bad_typed_inputs(dict(steps=[dict(op='fill',selector='#date',value='2028-02-29')]),inventory),[])
 
+
+    def test_click_enumeration_excludes_fill_and_reuses_completed_binding(self):
+        steps=[dict(op='fill',selector='#field'+str(i),value=str(i)) for i in range(10)]+[dict(op='click',selector='#save')]
+        calls=[]
+        def model(prompt,cfg,tokens,**kw):
+            calls.append(prompt)
+            self.assertNotIn('step_index',kw['schema']['properties'])
+            return kw['validator'](dict(effect='create',target=None))
+        qa.ai_json=model;qa.write_framework_json=lambda p,v:p.write_text(qa.json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t:
+            first=qa.qa_bind_record_clicks(steps,'元仕様','#recordCount',dict(model='x'),Path(t),'workflow')
+            second=qa.qa_bind_record_clicks(steps,'元仕様','#recordCount',dict(model='x'),Path(t),'workflow')
+        self.assertEqual(first,[dict(step_index=10,effect='create',target=None)])
+        self.assertEqual(second,first)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(qa.qa_evaluate_record_events(steps,first)['count'],1)
+
 if __name__=='__main__':unittest.main()
+
 
 
 

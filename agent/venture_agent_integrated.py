@@ -3985,6 +3985,36 @@ def qa_evaluate_record_events(steps,events):
     return dict(count=len(records),trace=trace)
 
 
+def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
+    """The runner owns event enumeration; a model handles one click only."""
+    events=[]
+    for index,step in enumerate(steps):
+        if step.get('op')!='click':continue
+        context=dict(source=source,selector=selector,prefix=steps[:index+1],prior_events=events,model=cfg['model'])
+        digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        directory=folder/(key+'-reference-events');directory.mkdir(exist_ok=True)
+        path=directory/(digest+'.json')
+        def validate(value):
+            if not isinstance(value,dict) or value.get('effect') not in ('create','update','delete','none'):raise AutoQAPlanError('参照状態: 一つのクリックの分類が必要です')
+            event=dict(step_index=index,effect=value['effect'],target=value.get('target'))
+            qa_evaluate_record_events(steps[:index+1],events+[event])
+            return event
+        event=None
+        if path.exists():
+            try:event=validate(json.loads(path.read_text(encoding='utf-8')))
+            except (ValueError,KeyError,TypeError):pass
+        if event is None:
+            schema={'type':'object','properties':{'effect':{'type':'string','enum':['create','update','delete','none']},'target':{'type':['integer','null']}},'required':['effect','target'],'additionalProperties':False}
+            prompt=('一つのclickだけを仕様へ対応付ける。操作番号や件数は回答しない。今回のclickが保存記録の新規追加ならcreate、既存の変更保存ならupdate、削除確定ならdelete、編集画面を開く・表示切替など保存変更なしならnone。'
+                'update/deleteのtargetは作成click番号、それ以外はnull。入力操作を追加と数えない。JSON {effect,target}。'
+                +'\n元仕様:'+source+'\n対象集計:'+selector+'\n先行の分類:'+json.dumps(events,ensure_ascii=False)
+                +'\n入力と先行操作:'+json.dumps(steps[:index],ensure_ascii=False,separators=(',',':'))+'\n今回のclick:'+json.dumps(step,ensure_ascii=False))
+            event=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),150,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+            write_framework_json(path,event)
+        events.append(event)
+    return events
+
+
 def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     """Pilot reference semantics for explicit record-count outputs only.
 
@@ -4000,9 +4030,9 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
     if not source_items:return None
     source=json.dumps(list(enumerate(source_items)),ensure_ascii=False)
     event_schema={'type':'object','properties':{'step_index':{'type':'integer','minimum':0},'effect':{'type':'string','enum':['create','update','delete','none']},'target':{'type':['integer','null']}},'required':['step_index','effect','target'],'additionalProperties':False}
-    schema={'type':'object','properties':{'quantity':{'type':'string','enum':['record_count','other']},'source_index':{'type':'integer','enum':list(range(len(source_items)))},'events':{'type':'array','maxItems':48,'items':event_schema}},'required':['quantity','source_index','events'],'additionalProperties':False}
+    schema={'type':'object','properties':{'quantity':{'type':'string','enum':['record_count','other']},'source_index':{'type':'integer','enum':list(range(len(source_items)))},'events':{'type':'array','maxItems':0,'items':event_schema}},'required':['quantity','source_index','events'],'additionalProperties':False}
     prompt=('仕様の状態遷移を操作へ対応付ける担当。件数の計算や最終件数の回答は禁止。対象が全保存記録の件数ならquantity=record_count、それ以外や不明ならother。'
-        '状態は空から開始。すべてのclickを添字順に列挙しcreate/update/delete/noneへ分類。入力・表示切替だけはnone。編集対象や削除対象targetはその記録を作成したclickの添字、新規とnoneはnull。'
+        'この呼出しでは対象の集計種類と仕様番号だけを判断。操作分類は別の呼出しで行うためeventsは必ず空配列。操作や件数を列挙しない。'
         'フィルタ後件数・出席人数等の部分集合はother。source_indexは対応する元仕様の番号。引用文はプログラムが取り出す。JSON {quantity,source_index,events:[{step_index,effect,target}]}。'
         +'\n元仕様:'+source+'\n対象:'+selector+' '+str(contract.get('label',''))
         +'\n全操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False,separators=(',',':')))
@@ -4010,17 +4040,18 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
         write_framework_json(folder/(key+'-reference-binding-response.json'),value)
         if not isinstance(value,dict) or value.get('quantity') not in ('record_count','other') or type(value.get('source_index'))is not int or not 0<=value['source_index']<len(source_items):
             raise AutoQAPlanError('参照状態: 元仕様からの引用と集計対象の対応が必要です')
-        if value['quantity']=='record_count':qa_evaluate_record_events(steps,value.get('events'))
+        if value.get('events')!=[]:raise AutoQAPlanError('参照状態: 集計対象の選択ではeventsは空配列です')
         return dict(value,source_quote=source_items[value['source_index']])
-    binding=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),550,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    binding=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),200,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
     if binding['quantity']=='other':return None
+    binding['events']=qa_bind_record_clicks(steps,source,selector,cfg,folder,key)
     audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':12,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
     def audit_validate(value):
         write_framework_json(folder/(key+'-reference-audit-response.json'),value)
         if not isinstance(value,dict) or value.get('valid') is not True or not isinstance(value.get('reason'),str) or len(value['reason'].strip())<12:
             raise AutoQAPlanError('参照状態: 操作と仕様の独立監査が未合格: '+str(value))
         return value
-    audit=ai_json('独立監査。件数は計算しない。対象が全記録件数か、各クリックの新規・編集・削除・不変が元仕様と入力操作に整合し、対象記録も正しいか確認。引用があるだけで合格にしない。未確定ならvalid:false。JSON {valid,reason}。\n'+prompt+'\n対応案:'+json.dumps(binding,ensure_ascii=False),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
+    audit=ai_json('独立監査。件数は計算しない。対象が全記録件数か、各クリックの新規・編集・削除・不変が元仕様と入力操作に整合し、対象記録も正しいか確認。引用があるだけで合格にしない。未確定ならvalid:false。JSON {valid,reason}。\n元仕様:'+source+'\n対象:'+selector+'\n全操作:'+json.dumps(list(enumerate(steps)),ensure_ascii=False)+'\n対応案:'+json.dumps(binding,ensure_ascii=False),dict(cfg,model=cfg.get('qa_oracle_model') or cfg['model'],_schema_in_prompt=False,_bounded_json_retry=True),250,schema=audit_schema,max_attempts=1,request_timeout=int(cfg.get('qa_oracle_timeout',cfg.get('qa_part_timeout',180))),validator=audit_validate)
     result=qa_evaluate_record_events(steps,binding['events'])
     write_framework_json(folder/(key+'-reference-count-proof.json'),dict(binding=binding,audit=audit,reference=result,steps=steps,source=source,method='independent state reducer; browser verification still required'))
     return dict(raw,exact_check=dict(op='text_equals',selector=selector,value=str(result['count'])),oracle_basis='仕様と操作の対応を独立監査し、参照状態遷移で件数を計算',reference_count=result)
