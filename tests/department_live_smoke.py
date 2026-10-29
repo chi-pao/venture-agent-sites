@@ -34,6 +34,7 @@ def main():
     cfg['department_models']={role:model for role,model in (('proposal',proposal_model),('verification',qa_model)) if model}
     oracle_model=os.environ.get('VENTURE_LIVE_ORACLE_MODEL','').strip()
     if oracle_model:cfg.update(qa_oracle_model=oracle_model,qa_oracle_timeout=300)
+    cfg['qa_mapping_model']=qa_model or oracle_model or cfg['model']
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):
@@ -54,4 +55,3 @@ def main():
 
 
 if __name__=='__main__':main()
-

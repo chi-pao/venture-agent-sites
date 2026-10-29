@@ -6,6 +6,7 @@ on:
       - 'agent/**'
       - 'tests/department_live_smoke.py'
       - 'tests/returns_oracle_probe.py'
+      - 'tests/saved_count_model_probe.py'
       - 'tests/saved_repair_replay.py'
       - '.github/workflows/venture-repair-replay.yml'
       - '.github/workflows/venture-departments.yml'
@@ -107,6 +108,11 @@ jobs:
           ollama pull qwen2.5vl:3b
           ollama pull qwen2.5:7b
           ollama pull qwen2.5:14b
+      - name: Replay fixed count with real semantic models and saved Chromium page
+        if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
+        env:
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/returns
+        run: python -u tests/saved_count_model_probe.py
       - name: Compile production code and live test
         env:
           PYTHONPATH: tests
@@ -129,4 +135,3 @@ jobs:
           path: department-live-artifacts/
           if-no-files-found: warn
           retention-days: 14
-

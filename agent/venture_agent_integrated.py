@@ -3992,8 +3992,14 @@ def qa_record_event_schema(active):
     return {'type':'object','properties':{'effect':{'type':'string','enum':effects},'target':{'enum':[None]+active}},'required':['effect','target'],'additionalProperties':False}
 
 
+def qa_reference_model_config(cfg):
+    """Keep semantic mapping separate from a retried code/planning model."""
+    return dict(cfg,model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model'])
+
+
 def qa_bind_record_clicks(steps,source,selector,cfg,folder,key):
     """The runner owns event enumeration; a model handles one click only."""
+    cfg=qa_reference_model_config(cfg)
     events=[]
     for index,step in enumerate(steps):
         if step.get('op')!='click':continue
@@ -4074,7 +4080,8 @@ def qa_reference_count_oracle(raw,contract,spec,cfg,folder,key,prior):
             raise AutoQAPlanError('参照状態: 元仕様からの引用と集計対象の対応が必要です')
         if value.get('events')!=[]:raise AutoQAPlanError('参照状態: 集計対象の選択ではeventsは空配列です')
         return dict(value,source_quote=source_items[value['source_index']])
-    binding=ai_json(prompt,dict(cfg,_schema_in_prompt=False,_bounded_json_retry=True),200,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+    mapping_cfg=qa_reference_model_config(cfg)
+    binding=ai_json(prompt,dict(mapping_cfg,_schema_in_prompt=False,_bounded_json_retry=True),200,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
     if binding['quantity']=='other':return None
     binding['events']=qa_bind_record_clicks(steps,source,selector,cfg,folder,key)
     audit_schema={'type':'object','properties':{'valid':{'type':'boolean'},'reason':{'type':'string','minLength':12,'maxLength':300}},'required':['valid','reason'],'additionalProperties':False}
@@ -4426,7 +4433,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             except (ValueError,OSError):pass
         retry_model,retry_oracle=qa_retry_models(cfg,failure)
         attempt_timeout=qa_retry_timeout(cfg,failure)
-        attempt_cfg=dict(cfg,model=retry_model,qa_oracle_model=retry_oracle,qa_part_timeout=attempt_timeout)
+        attempt_cfg=dict(cfg,model=retry_model,qa_mapping_model=cfg.get('qa_mapping_model') or cfg['model'],qa_oracle_model=retry_oracle,qa_part_timeout=attempt_timeout)
         previous=''
         if error and (folder/(key+'-last-response.json')).exists():
             try:previous=json.dumps(json.loads((folder/(key+'-last-response.json')).read_text(encoding='utf-8')),ensure_ascii=False,separators=(',',':'))[:2000]

@@ -36,6 +36,7 @@ try:
                 page.reload();actual=page.locator('#recordCount').inner_text().strip()
                 proof['cases'].append({'width':width,'operation':'再読込','expected':'2','actual':actual})
                 if actual!='2':raise AssertionError(f'{width}px 再読込: expected=2 actual={actual}')
+                page.screenshot(path=str(root/f'independent-count-{width}.png'),full_page=True)
                 if errors:raise AssertionError('JavaScript: '+str(errors[:3]))
                 context.close()
             proof['passed']=True
