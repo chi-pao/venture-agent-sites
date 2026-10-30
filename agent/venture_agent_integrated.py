@@ -5549,6 +5549,18 @@ def qa_secondary_saved_literal(check,actions,inventory,cfg):
     return dict(op='text_contains',selector='#recordRows',value=value)
 
 
+def qa_cleared_draft_selectors(actions,inventory,cfg):
+    """Known native create resets the form; do not assert saved values on it."""
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions.get('steps',[])
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(steps,binding)
+    if events is None:return set()
+    creates=[e['step_index'] for e in events if e.get('effect')=='create']
+    if not creates:return set()
+    edited={step.get('selector') for step in steps[max(creates)+1:] if step.get('op') in ('fill','select','check')}
+    return {n['selector'] for n in inventory.get('controls',[]) if n.get('form')=='#recordForm' and n.get('tag') in ('input','textarea','select') and n['selector'] not in edited}
+
+
 def qa_saved_literal_exclusions(actions,inventory,cfg,checks):
     """Exclude draft controls that normalize to an already checked saved value."""
     tested={c.get('value') for c in checks if c.get('op')=='text_contains' and c.get('selector')=='#recordRows' and isinstance(c.get('value'),str)}
@@ -5956,6 +5968,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     for index in range(2):
         excluded={primary['selector']}|{c['selector'] for c in checks}
         excluded|=qa_saved_literal_exclusions(actions,inventory,cfg,checks)
+        excluded|=qa_cleared_draft_selectors(actions,inventory,cfg)
         options=sorted({n['selector'] for n in inventory.get('controls',[])+inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')} - excluded)
         if not options:raise AutoQAPlanError('主結果と別の補助検査先が画面にありません')
         check_schema=json.loads(json.dumps(check_schema))

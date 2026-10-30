@@ -12,6 +12,19 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_saved_numeric_draft_is_not_a_post_submit_assertion_target(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls']+=qa.compact_qa_inventory('<input id="refund_amount" type="number" form="recordForm"><select id="status" form="recordForm"><option value="open">受付</option></select>')['controls']
+        actions=dict(steps=[dict(op='fill',selector='#title',value='商品A'),dict(op='fill',selector='#refund_amount',value='1000'),dict(op='click',selector='#saveRecord')])
+        excluded=qa.qa_cleared_draft_selectors(actions,inventory,cfg)
+        self.assertIn('#refund_amount',excluded);self.assertIn('#title',excluded);self.assertIn('#status',excluded)
+        self.assertNotIn('#recordRows',excluded);self.assertNotIn('#recordCount',excluded)
+        # A new draft edited after submission has a different legitimate state.
+        edited=dict(actions,steps=actions['steps']+[dict(op='fill',selector='#refund_amount',value='2000')])
+        self.assertNotIn('#refund_amount',qa.qa_cleared_draft_selectors(edited,inventory,cfg))
+        self.assertEqual(qa.qa_cleared_draft_selectors(actions,inventory,dict(cfg,qa_component_contract='unknown')),set())
+        self.assertEqual(qa.qa_cleared_draft_selectors(dict(steps=actions['steps'][:-1]),inventory,cfg),set())
+
     def test_saved_value_already_checked_is_removed_from_later_selector_menu(self):
         inventory,cfg=self.component_fixture()
         inventory['controls']+=qa.compact_qa_inventory('<input id="className" form="recordForm">')['controls']
