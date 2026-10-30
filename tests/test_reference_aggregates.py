@@ -12,6 +12,24 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_number_style_survives_successful_probe_and_missing_failure_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'masked-number-styles.json'
+            original={'#money':dict(template='¥{n0}',slots=1,label='返金予定の合計')}
+            observed={'#money':dict(template='¥{n0}',slots=1,number_styles=['grouped'],actual='999,999',value='999999',verdict='pass')}
+            qa.write_framework_json=lambda p,v:Path(p).write_text(json.dumps(v),encoding='utf-8')
+            merged=qa.qa_persist_number_styles(original,[observed],path)
+            self.assertEqual(merged['#money']['number_styles'],['grouped'])
+            resumed=qa.qa_persist_number_styles(original,[],path)
+            self.assertEqual(resumed['#money']['number_styles'],['grouped'])
+            self.assertEqual(qa.compile_qa_formatted_expectation(dict(exact_check=dict(op='text_equals',selector='#money',expected_values=['1000'],expected_literals=['¥',''])),resumed)['exact_check']['value'],'¥1,000')
+            saved=path.read_text()
+            for forbidden in ('999','actual','返金予定'):self.assertNotIn(forbidden,saved)
+            self.assertEqual(set(json.loads(saved)['contracts']['#money']),{'template','slots','number_styles'})
+            # Metadata from a changed template must not transfer.
+            other=qa.qa_persist_number_styles({'#money':dict(template='{n0}件',slots=1)},[],path)
+            self.assertNotIn('number_styles',other['#money'])
+
     def test_saved_numeric_draft_is_not_a_post_submit_assertion_target(self):
         inventory,cfg=self.component_fixture()
         inventory['controls']+=qa.compact_qa_inventory('<input id="refund_amount" type="number" form="recordForm"><select id="status" form="recordForm"><option value="open">受付</option></select>')['controls']

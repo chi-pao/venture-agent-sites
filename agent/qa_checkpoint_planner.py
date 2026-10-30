@@ -2641,6 +2641,29 @@ def qa_reuse_number_styles(formats,observations):
     return result
 
 
+def qa_persist_number_styles(formats,observations,path):
+    """Persist masked styles separately from disposable browser-failure files."""
+    path=Path(path);prior={}
+    if path.exists():
+        try:
+            saved=json.loads(path.read_text(encoding='utf-8'))
+            if isinstance(saved,dict) and saved.get('policy')=='masked-number-styles-1' and isinstance(saved.get('contracts'),dict):prior=saved['contracts']
+        except (ValueError,OSError,TypeError):pass
+    merged=qa_reuse_number_styles(formats,[prior]+list(observations))
+    contracts={}
+    for css,c in merged.items():
+        count=c.get('slots')
+        if type(count)is not int or not 1<=count<=8:continue
+        styles=c.get('number_styles',[]);widths=c.get('number_widths',[])
+        item=dict(template=c.get('template',''),slots=count)
+        if len(styles)==count and all(v in ('plain','grouped') for v in styles) and 'grouped' in styles:item['number_styles']=styles
+        if len(widths)==count and all(type(v)is int and 0<=v<=6 for v in widths) and any(widths):item['number_widths']=widths
+        if len(item)>2:contracts[css]=item
+    path.parent.mkdir(parents=True,exist_ok=True)
+    write_framework_json(path,dict(policy='masked-number-styles-1',contracts=contracts,method='format metadata only; no observed numbers, labels or verdicts'))
+    return merged
+
+
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
     return dict(policy='2026-10-30-survey-before-plan-12-total-source-and-shared-number-style',split=bool(cfg.get('qa_split_units')),
@@ -2737,10 +2760,13 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     if len(json.dumps(proposal,ensure_ascii=False,separators=(',',':')))<=2200:formats=proposal
             except (ValueError,OSError,TypeError):pass
         learned=[]
-        for evidence in sorted(folder.glob('*-browser/browser-observation-failure.json')):
+        # Archived observations survive successful probes, which intentionally
+        # remove the current failure file before running the browser again.
+        evidence_paths=list(folder.glob('*-browser/browser-observation-failure.json'))+list(folder.glob('failure-diagnoses/*/*/browser-observation-failure.json'))
+        for evidence in sorted(evidence_paths):
             try:learned.append(json.loads(evidence.read_text(encoding='utf-8')).get('display_contracts',{}))
             except (ValueError,OSError,TypeError):continue
-        formats=qa_reuse_number_styles(formats,learned)
+        formats=qa_persist_number_styles(formats,learned,folder/'masked-number-styles.json')
         formatted=bool(formats and (key in ('base-workflow','base-variant') or key.startswith('feature-')))
         unit_context=context+'\n検査基準日（期限などの計算に使用）:'+json.dumps(reference_clock,ensure_ascii=False)
         if formatted:

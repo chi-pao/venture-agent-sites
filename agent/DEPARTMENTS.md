@@ -394,3 +394,10 @@ Validation: available full local suite 269 passed (236.543 seconds); focused fin
 - 宣言済みnative-record-create-v1のcreateイベントが確認できた場合だけ、最後の保存以降に再編集されていないフォーム入力・選択欄を補助検査の候補から除外。保存前、保存後に新しい下書きを入力した欄、未登録actorには適用しない。既存の正解を実測値に書き換えない。
 - 元の実生成HTMLをPC/スマホで再生し、入力欄空・保存記録1件・集計¥1,000を確認した証拠は `tests/evidence/cleared-draft-534ddbf2.json`。新モデルで正しい検査先を選ぶ効果や、全機能・画面・競合比較・未知用途の合格は未実証。
 - 同じrunで在宅ワークは企画を通過しbase-workflow検査へ進んだが時間切れ。授業管理はHTML生成の形式不備・時間切れが残る。配布設定は変更しない。
+
+### 2026-10-31: 成功後に消える観測ファイルへ依存しない表示書式の保存
+
+- 実生成41104863468で返品feature-0-0の「¥1000 / ¥1,000」が再発。以前の書式共有は現行browser-observation-failure.jsonだけを読み、次のprobe前のunlinkにより一度成功すると情報が消えた。別ケースの時間切れ後に初期画面の¥0から再開すると桁区切りが失われた。
+- 同じsource/spec checkpoint内のmasked-number-styles.jsonにtemplate・slots・grouped・number_widthsだけを保存。実測数値・ラベル・判定結果は保存しない。既存の失敗診断アーカイブも書式情報の復元に使う。表示先・template・slotsが一致する場合だけ適用。
+- 保存済みの独立計算1000を変更せず、現行観測が消えた状態でも¥1,000へコンパイルでき、元の実生成HTMLのPC/スマホと一致した証拠を `tests/evidence/persistent-number-style-2248f393.json` に保存。これは書式の部分検証であり、新しいモデル判断・全機能・独立画像QA・比較品質・未知用途の合格ではない。
+- 授業管理の開発生成タイムアウトと、在宅ワークの機能検査タイムアウトは未解決。release.jsonは変更しない。
