@@ -725,7 +725,7 @@ class ReferenceAggregateTests(unittest.TestCase):
             self.assertNotIn('initial_classifications',prompt)
             if '-state-' in name:
                 self.assertEqual(dependency['status'],'受付')
-                return validate(dict(decision=0 if dependency['question']=='excluded' else 1,evidence_id=0))
+                return validate(dict(decision='included',evidence_id=0))
             membership=[int(s!='返金済み') for s in dependency['ordered_statuses']]
             if name.endswith('reverse'):membership[dependency['ordered_statuses'].index('受付')]=0
             return validate(dict(membership=membership,evidence_id=0))
@@ -811,10 +811,54 @@ class ReferenceAggregateTests(unittest.TestCase):
         names=[]
         def generate(name,prompt,schema,validate,dependency):
             names.append(name)
-            if '-state-' in name:return validate(dict(decision=1 if dependency['question']=='excluded' else 0,evidence_id=0))
+            if '-state-' in name:return validate(dict(decision='excluded',evidence_id=0))
             return validate(dict(membership=[-1 if s=='closed' else 1 for s in dependency['ordered_statuses']],evidence_id=0))
         projection,audit=qa.qa_resolve_status_partition(rule,rule,dict(outcome='closedを除く'),dict(target_label='未完了'),controls,generate,'0')
         self.assertEqual(projection['members'],['open'])
         self.assertEqual(audit['initial_classifications'][0]['closed'],-1)
         self.assertEqual(audit['classified_states']['closed'],0)
         self.assertEqual(len(names),4)
+
+    def test_causal_variant_changes_capacity_dependency_not_only_record_identity(self):
+        inventory,cfg=self.component_fixture()
+        extra=qa.compact_qa_inventory('<input id="start" type="time"><input id="end" type="time"><input id="break" type="number" min="0" max="120"><input id="windowDate" type="date">')['controls']
+        inventory=dict(inventory,controls=inventory['controls']+extra)
+        prior=dict(kind='workflow',result_selector='#capacity',steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='click',selector='#saveRecord'),dict(op='fill',selector='#windowDate',value='2026-10-30'),dict(op='click',selector='#saveCapacity')])
+        rule=dict(metric='duration',where='inputs',start_input='#start',end_input='#end',break_input='#break')
+        values={'#start':'09:00','#end':'17:00','#break':'60'}
+        proof=dict(steps=prior['steps'],expected=dict(selector='#capacity'),projections=[dict(metric='time_component',component=c,source_rule=rule) for c in ('hours','minutes')],reference_clock=dict(input_values=values))
+        cfg=dict(cfg,_qa_workflow_projection_proof=proof,_qa_prior_scenarios=[prior])
+        variant=qa.qa_component_variant_actions(cfg,inventory)
+        changed=dict(values,**{s['selector']:s['value'] for s in variant['steps'] if s['op']=='fill'})
+        self.assertEqual(qa.qa_evaluate_projection([],rule,dict(input_values=values)),'420')
+        self.assertEqual(qa.qa_evaluate_projection([],rule,dict(input_values=changed)),'405')
+        self.assertEqual(changed['#windowDate'],'2026-10-30')
+        self.assertEqual(variant['steps'][-1],dict(op='click',selector='#saveCapacity'))
+        self.assertFalse(any(k in variant for k in ('checks','exact_check')))
+        # An unrelated receipt or invalid native bound must not invent a causal input.
+        self.assertEqual(qa.qa_duration_variant_inputs(dict(cfg,_qa_workflow_projection_proof=dict(proof,steps=[])),inventory,prior),[])
+        limited=dict(inventory,controls=[dict(n,max='60') if n['selector']=='#break' else n for n in inventory['controls']])
+        self.assertIsNone(qa.qa_component_variant_actions(cfg,limited))
+
+    def test_roundtrip_mutation_is_distinct_from_prior_variant_and_preserves_independent_checks(self):
+        inventory,cfg=self.component_fixture()
+        prior=dict(kind='workflow',result_selector='#recordCount',steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='click',selector='#saveRecord')])
+        cfg=dict(cfg,_qa_prior_scenarios=[prior])
+        variant=qa.qa_component_variant_actions(cfg,inventory)
+        mutation=qa.qa_component_variant_actions(dict(cfg,_qa_variant_suffix='復元変更C'),inventory)
+        self.assertNotEqual(variant['steps'],mutation['steps'])
+        checks=[dict(op='text_equals',selector='#recordCount',value='2'),dict(op='text_contains',selector='#recordRows',value='記録A')]
+        compiled=qa.compile_qa_roundtrip(dict(csv_selector='#downloadCsv',csv_contains=['記録A','記録A 別入力B1'],json_selector='#downloadJson',restore_selector='#restoreFile',confirmation_mode='native',confirmation_steps=[],mutation_steps=mutation['steps'],checks=checks,acceptance=[],rationale='保存済みの独立検査へ実ファイルから復元する'),1)
+        self.assertEqual(compiled['checks'],checks)
+        self.assertEqual([s['op'] for s in compiled['steps']][-3:],['cancel_restore','restore_file','restore_file'])
+
+    def test_focused_status_labels_have_fixed_meaning_and_contradictions_still_fail(self):
+        controls=[dict(selector='#state',options=[dict(value='open'),dict(value='closed')])]
+        rule=dict(metric='count',where='in',field='#state',members=['open'])
+        def model(name,prompt,schema,validate,dependency):
+            if '-state-' in name:
+                self.assertEqual(schema['properties']['decision']['enum'],['included','excluded','unknown'])
+                return validate(dict(decision='included' if dependency['question']=='included' else 'excluded',evidence_id=0))
+            return validate(dict(membership=[1,0],evidence_id=0))
+        with self.assertRaisesRegex(ValueError,'独立対応が不一致'):
+            qa.qa_resolve_status_partition(rule,rule,dict(outcome='openだけ数える'),dict(target_label='未完了'),controls,model,'0')

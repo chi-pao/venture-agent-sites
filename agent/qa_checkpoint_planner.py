@@ -1053,17 +1053,17 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
     final=dict(mappings[0]);resolved=[]
     for status_index,status in enumerate(options):
         if mappings[0][status]==mappings[1][status] and mappings[0][status]in (0,1):continue
-        bit_schema=dict(type='object',properties=dict(decision=dict(type='integer',enum=[-1,0,1]),evidence_id=schema['properties']['evidence_id']),required=['decision','evidence_id'],additionalProperties=False)
+        bit_schema=dict(type='object',properties=dict(decision=dict(type='string',enum=['included','excluded','unknown']),evidence_id=schema['properties']['evidence_id']),required=['decision','evidence_id'],additionalProperties=False)
         votes=[]
         for excluded in (False,True):
             def validate_bit(value):
-                if not isinstance(value,dict) or type(value.get('decision'))is not int or value['decision']not in (0,1) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('不一致になった状態1個の意味が元要件から確定できません')
+                if not isinstance(value,dict) or value.get('decision')not in ('included','excluded') or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('不一致になった状態1個の意味が元要件から確定できません')
                 return value
             bit_context=dict(output=descriptor,numbered_requirements=clauses,status=status,fixed_condition=context.get('fixed_condition'))
-            question=('除外すべきなら1、含めるなら0' if excluded else '含めるべきなら1、除外なら0')
-            prompt=('独立した意味判定。対象「'+descriptor['target_label']+'」に状態「'+status+'」の記録を'+question+'。原文不足なら-1。提示済み入力にこの状態があるかではなく、元要件の一般則を判定する。他担当の回答は示さない。固定の日付条件があればその条件を満たす記録について答える。JSON {decision:1または0または-1,evidence_id:根拠番号}。\n'+json.dumps(bit_context,ensure_ascii=False,separators=(',',':')))
+            question=('集計から除く状態か、含める状態かを判断する' if excluded else '集計に含める状態か、除く状態かを判断する')
+            prompt=('独立した意味判定。対象「'+descriptor['target_label']+'」について状態「'+status+'」が'+question+'。回答の意味は質問順によって反転しない。included=集計対象、excluded=集計対象外、unknown=原文不足。提示済み入力にこの状態があるかではなく、元要件の一般則を判定する。他担当の回答は示さない。固定の日付条件があればその条件を満たす記録について答える。JSON {decision:includedまたはexcludedまたはunknown,evidence_id:根拠番号}。\n'+json.dumps(bit_context,ensure_ascii=False,separators=(',',':')))
             answer=generate('primary-projection-state-'+key+'-'+str(status_index)+('-exclude' if excluded else '-include'),prompt,bit_schema,validate_bit,dict(bit_context,question='excluded' if excluded else 'included'))
-            votes.append(dict(included=1-answer['decision'] if excluded else answer['decision'],response=answer))
+            votes.append(dict(included=int(answer['decision']=='included'),response=answer))
         qa_require_independent_agreement(votes[0]['included'],votes[1]['included'],descriptor['target_label']+'の状態'+status+'の正逆質問')
         final[status]=votes[0]['included'];resolved.append(dict(status=status,votes=votes))
     if any(value not in (0,1) for value in final.values()):raise AutoQAPlanError('未確定の状態が残るため集計を合格にできません')
@@ -1975,6 +1975,43 @@ def qa_component_invalid_case(cfg,inventory,scenarios,count):
     return compile_qa_invalid(dict(restore_selector=restore,invalid_steps=[dict(op='fill',selector=target['selector'],value=''),dict(op='click',selector='#saveRecord')],checks=checks,acceptance=[],rationale='必須欄を明示的に空にして送信し、不正ファイル復元も拒否されることと、直前の独立した保存状態が変わらないことを確認する'),count)
 
 
+def qa_duration_variant_inputs(cfg,inventory,prior):
+    """Perturb an independently bound input duration, never a live result.
+
+    A new record cannot change an input-only capacity. Use the previous
+    audited rule to choose the causal input, and re-run the independent oracle
+    afterward. Unknown dependencies decline this compiler.
+    """
+    proof=cfg.get('_qa_workflow_projection_proof') or {}
+    if proof.get('steps')!=prior.get('steps') or proof.get('expected',{}).get('selector')!=prior.get('result_selector'):return []
+    rules=proof.get('projections',[])
+    while rules and all(r.get('metric')=='time_component' for r in rules):rules=[r.get('source_rule',{}) for r in rules]
+    if not rules or any(r.get('metric')!='duration' or r!=rules[0] for r in rules):return []
+    rule=rules[0];nodes={n['selector']:n for n in inventory.get('controls',[])}
+    values=proof.get('reference_clock',{}).get('input_values',{})
+    fields=[rule.get(k) for k in ('start_input','end_input','break_input') if rule.get(k)]
+    if any(css not in nodes or css not in values or nodes[css].get('form')=='#recordForm' for css in fields):return None
+    buttons=cfg.get('qa_component_passive_buttons',[])
+    if len(buttons)!=1 or nodes.get(buttons[0],{}).get('tag')!='button':return None
+    changed=dict(values);css=rule.get('break_input')
+    if css and nodes[css].get('type')=='number':
+        try:
+            old=decimal.Decimal(values[css]);new=old+15
+            if new>decimal.Decimal(str(nodes[css].get('max',100000))) or new<decimal.Decimal(str(nodes[css].get('min',0))):return None
+            changed[css]=str(new)
+        except (decimal.InvalidOperation,ValueError,TypeError):return None
+    else:return None
+    try:
+        before=qa_evaluate_projection([],rule,dict(input_values=values))
+        after=qa_evaluate_projection([],rule,dict(input_values=changed))
+        if before==after:return None
+    except (ValueError,AutoQAPlanError):return None
+    # Preserve explicit selectors such as the target date when saving the
+    # independent window; do not reuse unrelated record form inputs.
+    explicit=[s for s in prior['steps'] if s.get('op')=='fill' and s.get('selector')not in fields and nodes.get(s.get('selector'),{}).get('type')=='date' and nodes[s['selector']].get('form')!='#recordForm']
+    return [dict(s) for s in explicit]+[dict(op='fill',selector=f,value=changed[f]) for f in fields]+[dict(op='click',selector=buttons[0])]
+
+
 def qa_component_variant_actions(cfg,inventory):
     """Build different declared actor inputs before deriving any expectation."""
     prior=next((p for p in cfg.get('_qa_prior_scenarios',[]) if p.get('kind')=='workflow'),None)
@@ -1998,7 +2035,7 @@ def qa_component_variant_actions(cfg,inventory):
             if node.get('form')!='#recordForm':continue
             if css in changed and isinstance(value,str):
                 original=value
-                value=original+' 別入力B'+str(row_index+1)
+                value=original+' '+cfg.get('_qa_variant_suffix','別入力B')+str(row_index+1)
                 if value in used or len(value)>min(250,int(node.get('maxlength',250))):return None
                 used.add(value);different=True
             options=[o.get('value') for o in node.get('options',[]) if o.get('value') and not o.get('disabled')]
@@ -2010,6 +2047,9 @@ def qa_component_variant_actions(cfg,inventory):
             else:steps.append(dict(op='fill',selector=css,value=value))
         if not different:return None
         steps.append(dict(op='click',selector='#saveRecord'))
+    duration_steps=qa_duration_variant_inputs(cfg,inventory,prior)
+    if duration_steps is None:return None
+    steps+=duration_steps
     if len(steps)>24:return None
     return dict(steps=steps,result_selector=prior.get('result_selector'),acceptance=[],
                 rationale='宣言した記録操作契約で、前の各入力と異なる記録と状態を追加する。期待値は後続で独立計算する')
@@ -2255,7 +2295,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-4-time-components',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-5-causal-variant-fixed-status-labels',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
@@ -2475,7 +2515,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             if type(previous_streak)is not int:previous_streak=0
             timeout_streak=previous_streak+1 if re.search(r'\b(?:TimeoutError|timed out)\b',detail,re.I) else 0
             write_framework_json(error_path,dict(error=detail,seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout,timeout_streak=timeout_streak,**qa_failure_memory(failure,detail),checked=now()))
-            raise
+            raise AutoQAPlanError('検査工程 '+key+' / '+detail) from exc
 
     scenarios=[]
     instructions={
@@ -2486,6 +2526,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         'invalid':'直前のroundtripの後。restore_invalidで不正JSONを選択し、必須項目の不正入力も実行。既存の記録が変化しないことを照合。',
     }
     for kind in ('workflow','variant','reload','roundtrip','invalid'):
+        if kind=='variant':
+            try:
+                projection_proof=json.loads((folder/'base-workflow-aggregate-proof.json').read_text(encoding='utf-8'))
+            except (OSError,ValueError):projection_proof={}
+            cfg=dict(cfg,_qa_workflow_projection_proof=projection_proof)
         prior=[dict(kind=s['kind'],steps=s['steps'],checks=s['checks']) for s in scenarios[-2:]]
         prompt=('独立した検証担当。共通検査のうち'+kind+'の1件だけをJSON {steps:[操作],checks:[補助期待結果2件以上],exact_check:{op:text_equals,selector:主結果CSS,value:完全な正解文字列},acceptance:[実際に確認する条件番号],rationale:根拠'+(',result_selector:主結果CSS' if kind=='workflow' else '')+'}で設計。'
             +instructions[kind]+'\n先行検査:'+json.dumps(prior,sort_keys=True,ensure_ascii=False,separators=(',',':'))[-3200:])
@@ -2520,7 +2565,33 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             def roundtrip_with_prior_checks(value):
                 if not isinstance(value,dict):raise AutoQAPlanError('復元検査の指定が必要です')
                 return compile_qa_roundtrip(dict(value,checks=scenarios[-1]['checks']),count)
-            value=part('base-roundtrip',prompt,roundtrip_with_prior_checks,tokens=900,schema=schema)
+            mutation=qa_component_variant_actions(dict(cfg,_qa_prior_scenarios=scenarios,
+                _qa_workflow_projection_proof={},_qa_variant_suffix='復元変更C'),full_inventory)
+            if mutation is not None and 2<=len(mutation['steps'])<=14:
+                # Generate only the file/confirmation wiring. Native record
+                # inputs are already typed; assertions remain the prior
+                # independent oracle. The browser must prove mutation,
+                # cancelled restore, and byte-for-byte state restoration.
+                target_keys=('csv_selector','json_selector','restore_selector','confirmation_mode','cancel_selector','confirmation_steps')
+                target_schema=dict(type='object',properties={k:schema['properties'][k] for k in target_keys},
+                    required=['csv_selector','json_selector','restore_selector','confirmation_mode','confirmation_steps'],additionalProperties=False)
+                target_controls=[n for n in full_inventory['controls'] if n.get('tag')=='button' or n.get('type')=='file']
+                target_prompt=('バックアップの配線だけをJSONで返す。csv_selector:CSVボタン、json_selector:JSON保存ボタン、restore_selector:復元file入力。'
+                    'confirmation_modeはブラウザconfirmならnative、画面内の確定/取消ならinline。inlineだけcancel_selectorとconfirmation_stepsの確定clickが必要。nativeのconfirmation_stepsは空配列。記録入力・期待値・checks・完成条件は生成しない。\n操作要素:'+json.dumps(target_controls,ensure_ascii=False,separators=(',',':')))
+                def validate_targets(value):
+                    if not isinstance(value,dict):raise AutoQAPlanError('復元先の指定が必要です')
+                    nodes={n['selector']:n for n in target_controls}
+                    for key in ('csv_selector','json_selector'):
+                        if nodes.get(value.get(key),{}).get('tag')!='button':raise AutoQAPlanError('実在する出力ボタンが必要: '+key)
+                    if nodes.get(value.get('restore_selector'),{}).get('type')!='file':raise AutoQAPlanError('実在する復元file入力が必要です')
+                    return value
+                targets=part('roundtrip-targets',target_prompt,validate_targets,tokens=250,include_context=False,schema=target_schema)
+                strings=list(dict.fromkeys(str(s['value']) for p in scenarios[:2] for s in p['steps'] if s.get('op') in ('fill','select') and s.get('value') and next((n.get('form') for n in full_inventory['controls'] if n['selector']==s.get('selector')),None)=='#recordForm'))
+                if len(strings)<2:raise AutoQAPlanError('CSVで照合する保存済み入力が不足しています')
+                supplied=dict(targets,csv_contains=strings[:4],mutation_steps=mutation['steps'],acceptance=[],rationale='宣言済み記録契約の別入力で保存状態を変更し、直前の独立期待値へ実ファイルで復元する')
+                value=part('base-roundtrip',prompt,roundtrip_with_prior_checks,tokens=0,schema=schema,supplied=supplied)
+            else:
+                value=part('base-roundtrip',prompt,roundtrip_with_prior_checks,tokens=900,schema=schema)
         elif kind=='invalid':
             prompt=('共通検査のうちinvalidの1件。実画面の復元先と誤入力だけをJSONで返す。'
                 '出力形式:{"restore_selector":"復元ファイル入力またはボタンCSS","invalid_steps":[{"op":"fill","selector":"必須入力CSS","value":""},{"op":"click","selector":"保存ボタンCSS"}],"checks":[{"op":"invalid","selector":"必須入力CSS"},{"op":"text_equals","selector":"集計CSS","value":"既存の正解"}],"acceptance":[0],"rationale":"根拠"}。'
