@@ -1,0 +1,1186 @@
+{
+  "kind": "saved real page and real model count diagnostic; not product acceptance",
+  "fixture": {
+    "steps": [
+      {
+        "op": "fill",
+        "selector": "#return_item",
+        "value": "独立検証商品1"
+      },
+      {
+        "op": "fill",
+        "selector": "#order_number",
+        "value": "ORDER-001"
+      },
+      {
+        "op": "fill",
+        "selector": "#response_deadline",
+        "value": "2035-12-31"
+      },
+      {
+        "op": "select",
+        "selector": "#return_status",
+        "value": "返送待ち"
+      },
+      {
+        "op": "fill",
+        "selector": "#refund_amount",
+        "value": "1000"
+      },
+      {
+        "op": "click",
+        "selector": "#saveRecord"
+      },
+      {
+        "op": "fill",
+        "selector": "#return_item",
+        "value": "独立検証商品2"
+      },
+      {
+        "op": "fill",
+        "selector": "#order_number",
+        "value": "ORDER-002"
+      },
+      {
+        "op": "fill",
+        "selector": "#response_deadline",
+        "value": "2035-12-31"
+      },
+      {
+        "op": "select",
+        "selector": "#return_status",
+        "value": "返送待ち"
+      },
+      {
+        "op": "fill",
+        "selector": "#refund_amount",
+        "value": "2000"
+      },
+      {
+        "op": "click",
+        "selector": "#saveRecord"
+      }
+    ],
+    "spec": {
+      "requested_outcome": "保存領域は空から開始する。返品商品、注文番号、対応期限、対応状況、返金額を入力して登録ボタンsaveRecordを押すと返品記録を1件追加する。recordCountは保存した全返品記録の件数。別の注文番号で同じ操作を繰り返すと別の記録を追加する。",
+      "must_have": [
+        "保存領域は空から開始する。返品商品、注文番号、対応期限、対応状況、返金額を入力して登録ボタンsaveRecordを押すと返品記録を1件追加する。recordCountは保存した全返品記録の件数。別の注文番号で同じ操作を繰り返すと別の記録を追加する。"
+      ]
+    },
+    "expected_count": 2
+  },
+  "fixture_sha256": "ccfe6cd1dde80840163450c367155c515eda4fd42d9978bec7247381102e52ff",
+  "source_sha256": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+  "intended_steps": [
+    {
+      "op": "fill",
+      "selector": "#return_item",
+      "value": "独立検証商品1"
+    },
+    {
+      "op": "fill",
+      "selector": "#order_number",
+      "value": "ORDER-001"
+    },
+    {
+      "op": "fill",
+      "selector": "#response_deadline",
+      "value": "2035-12-31"
+    },
+    {
+      "op": "fill",
+      "selector": "#return_status",
+      "value": "返送待ち"
+    },
+    {
+      "op": "fill",
+      "selector": "#refund_amount",
+      "value": "1000"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    },
+    {
+      "op": "fill",
+      "selector": "#return_item",
+      "value": "独立検証商品2"
+    },
+    {
+      "op": "fill",
+      "selector": "#order_number",
+      "value": "ORDER-002"
+    },
+    {
+      "op": "fill",
+      "selector": "#response_deadline",
+      "value": "2035-12-31"
+    },
+    {
+      "op": "fill",
+      "selector": "#return_status",
+      "value": "返送待ち"
+    },
+    {
+      "op": "fill",
+      "selector": "#refund_amount",
+      "value": "2000"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    }
+  ],
+  "models": {
+    "model": "qwen2.5-coder:7b",
+    "qa_mapping_model": "qwen2.5:7b",
+    "qa_oracle_model": "qwen2.5:14b"
+  },
+  "passed": true,
+  "model_result": {
+    "steps": [
+      {
+        "op": "fill",
+        "selector": "#return_item",
+        "value": "独立検証商品1"
+      },
+      {
+        "op": "fill",
+        "selector": "#order_number",
+        "value": "ORDER-001"
+      },
+      {
+        "op": "fill",
+        "selector": "#response_deadline",
+        "value": "2035-12-31"
+      },
+      {
+        "op": "select",
+        "selector": "#return_status",
+        "value": "返送待ち"
+      },
+      {
+        "op": "fill",
+        "selector": "#refund_amount",
+        "value": "1000"
+      },
+      {
+        "op": "click",
+        "selector": "#saveRecord"
+      },
+      {
+        "op": "fill",
+        "selector": "#return_item",
+        "value": "独立検証商品2"
+      },
+      {
+        "op": "fill",
+        "selector": "#order_number",
+        "value": "ORDER-002"
+      },
+      {
+        "op": "fill",
+        "selector": "#response_deadline",
+        "value": "2035-12-31"
+      },
+      {
+        "op": "select",
+        "selector": "#return_status",
+        "value": "返送待ち"
+      },
+      {
+        "op": "fill",
+        "selector": "#refund_amount",
+        "value": "2000"
+      },
+      {
+        "op": "click",
+        "selector": "#saveRecord"
+      }
+    ],
+    "exact_check": {
+      "op": "text_equals",
+      "selector": "#recordCount",
+      "value": "2"
+    },
+    "reference_count": {
+      "count": 2,
+      "trace": [
+        {
+          "step_index": 5,
+          "effect": "create",
+          "count": 1,
+          "record_origins": [
+            5
+          ]
+        },
+        {
+          "step_index": 11,
+          "effect": "create",
+          "count": 2,
+          "record_origins": [
+            5,
+            11
+          ]
+        }
+      ]
+    },
+    "oracle_basis": "宣言した記録コンポーネントの登録総数と独立参照計算"
+  },
+  "native_schema_plan": {
+    "steps": [
+      {
+        "op": "fill",
+        "selector": "#return_item",
+        "value": "独立検証商品1"
+      },
+      {
+        "op": "fill",
+        "selector": "#order_number",
+        "value": "ORDER-001"
+      },
+      {
+        "op": "fill",
+        "selector": "#response_deadline",
+        "value": "2035-12-31"
+      },
+      {
+        "op": "select",
+        "selector": "#return_status",
+        "value": "返送待ち"
+      },
+      {
+        "op": "fill",
+        "selector": "#refund_amount",
+        "value": "1000"
+      },
+      {
+        "op": "click",
+        "selector": "#saveRecord"
+      }
+    ]
+  },
+  "native_schema_browser": [
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "返送待ち",
+      "expected": "1",
+      "actual": "1",
+      "expected_summary": "1件 / 超過0件",
+      "actual_summary": "1件 / 超過0件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "返送待ち",
+      "expected": "1",
+      "actual": "1",
+      "expected_summary": "1件 / 超過0件",
+      "actual_summary": "1件 / 超過0件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "返送待ち",
+      "expected": "2",
+      "actual": "2",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "返送待ち",
+      "expected": "2",
+      "actual": "2",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "返金済み",
+      "expected": "3",
+      "actual": "3",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "返金済み",
+      "expected": "3",
+      "actual": "3",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "受付",
+      "expected": "4",
+      "actual": "4",
+      "expected_summary": "3件 / 超過1件",
+      "actual_summary": "3件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "受付",
+      "expected": "4",
+      "actual": "4",
+      "expected_summary": "3件 / 超過1件",
+      "actual_summary": "3件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "確認中",
+      "expected": "5",
+      "actual": "5",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "確認中",
+      "expected": "5",
+      "actual": "5",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "status": "対象外",
+      "expected": "6",
+      "actual": "6",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "status": "対象外",
+      "expected": "6",
+      "actual": "6",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "返送待ち",
+      "expected": "1",
+      "actual": "1",
+      "expected_summary": "1件 / 超過0件",
+      "actual_summary": "1件 / 超過0件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "返送待ち",
+      "expected": "1",
+      "actual": "1",
+      "expected_summary": "1件 / 超過0件",
+      "actual_summary": "1件 / 超過0件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "返送待ち",
+      "expected": "2",
+      "actual": "2",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "返送待ち",
+      "expected": "2",
+      "actual": "2",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "返金済み",
+      "expected": "3",
+      "actual": "3",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "返金済み",
+      "expected": "3",
+      "actual": "3",
+      "expected_summary": "2件 / 超過1件",
+      "actual_summary": "2件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "受付",
+      "expected": "4",
+      "actual": "4",
+      "expected_summary": "3件 / 超過1件",
+      "actual_summary": "3件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "受付",
+      "expected": "4",
+      "actual": "4",
+      "expected_summary": "3件 / 超過1件",
+      "actual_summary": "3件 / 超過1件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "確認中",
+      "expected": "5",
+      "actual": "5",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "確認中",
+      "expected": "5",
+      "actual": "5",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "status": "対象外",
+      "expected": "6",
+      "actual": "6",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "status": "対象外",
+      "expected": "6",
+      "actual": "6",
+      "expected_summary": "4件 / 超過2件",
+      "actual_summary": "4件 / 超過2件",
+      "oracle_basis": "fixed independent fixture; not a model or observed-value oracle"
+    }
+  ],
+  "fixed_browser_passed": true,
+  "semantic_binding_passed": true,
+  "fixed_contrasts": [
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品1"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-001"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2035-12-31"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "返送待ち"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "1000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        }
+      ],
+      "expected_values": [
+        "1",
+        "0"
+      ],
+      "total_count": "1"
+    },
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品2"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-002"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2000-01-01"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "返送待ち"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "2000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        }
+      ],
+      "expected_values": [
+        "2",
+        "1"
+      ],
+      "total_count": "2"
+    },
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品3"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-003"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2000-01-01"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "返金済み"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "3000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        }
+      ],
+      "expected_values": [
+        "2",
+        "1"
+      ],
+      "total_count": "3"
+    },
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品4"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-004"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2035-12-31"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "受付"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "4000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        }
+      ],
+      "expected_values": [
+        "3",
+        "1"
+      ],
+      "total_count": "4"
+    },
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品5"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-005"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2000-01-01"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "確認中"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "5000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        },
+        {
+          "#return_item": "独立検証商品5",
+          "#order_number": "ORDER-005",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "確認中",
+          "#refund_amount": "5000"
+        }
+      ],
+      "expected_values": [
+        "4",
+        "2"
+      ],
+      "total_count": "5"
+    },
+    {
+      "steps": [
+        {
+          "op": "fill",
+          "selector": "#return_item",
+          "value": "独立検証商品6"
+        },
+        {
+          "op": "fill",
+          "selector": "#order_number",
+          "value": "ORDER-006"
+        },
+        {
+          "op": "fill",
+          "selector": "#response_deadline",
+          "value": "2000-01-01"
+        },
+        {
+          "op": "select",
+          "selector": "#return_status",
+          "value": "対象外"
+        },
+        {
+          "op": "fill",
+          "selector": "#refund_amount",
+          "value": "6000"
+        },
+        {
+          "op": "click",
+          "selector": "#saveRecord"
+        }
+      ],
+      "reference_rows": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        },
+        {
+          "#return_item": "独立検証商品5",
+          "#order_number": "ORDER-005",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "確認中",
+          "#refund_amount": "5000"
+        },
+        {
+          "#return_item": "独立検証商品6",
+          "#order_number": "ORDER-006",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "対象外",
+          "#refund_amount": "6000"
+        }
+      ],
+      "expected_values": [
+        "4",
+        "2"
+      ],
+      "total_count": "6"
+    }
+  ],
+  "browser": {
+    "source": "/home/runner/work/venture-agent-sites/venture-agent-sites/department-live-artifacts/returns/outputs/sectors/business_ops/projects/62dc29ad47e5d267/02_builds/job_00001/00002_html.html",
+    "source_sha256": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+    "cases": [
+      {
+        "width": 1280,
+        "operation": "登録1件",
+        "expected": "1",
+        "actual": "1"
+      },
+      {
+        "width": 1280,
+        "operation": "登録2件",
+        "expected": "2",
+        "actual": "2"
+      },
+      {
+        "width": 1280,
+        "operation": "再読込",
+        "expected": "2",
+        "actual": "2"
+      },
+      {
+        "width": 390,
+        "operation": "登録1件",
+        "expected": "1",
+        "actual": "1"
+      },
+      {
+        "width": 390,
+        "operation": "登録2件",
+        "expected": "2",
+        "actual": "2"
+      },
+      {
+        "width": 390,
+        "operation": "再読込",
+        "expected": "2",
+        "actual": "2"
+      }
+    ],
+    "passed": true
+  },
+  "bound_primary_model": {
+    "exact_check": {
+      "op": "text_equals",
+      "selector": "#summaryValue",
+      "value": "1件 / 超過0件"
+    }
+  },
+  "semantic_contrasts": [
+    {
+      "total_count": "1",
+      "expected": [
+        "1",
+        "0"
+      ],
+      "computed": [
+        "1",
+        "0"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        }
+      ]
+    },
+    {
+      "total_count": "2",
+      "expected": [
+        "2",
+        "1"
+      ],
+      "computed": [
+        "2",
+        "1"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        }
+      ]
+    },
+    {
+      "total_count": "3",
+      "expected": [
+        "2",
+        "1"
+      ],
+      "computed": [
+        "2",
+        "1"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        }
+      ]
+    },
+    {
+      "total_count": "4",
+      "expected": [
+        "3",
+        "1"
+      ],
+      "computed": [
+        "3",
+        "1"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        }
+      ]
+    },
+    {
+      "total_count": "5",
+      "expected": [
+        "4",
+        "2"
+      ],
+      "computed": [
+        "4",
+        "2"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        },
+        {
+          "#return_item": "独立検証商品5",
+          "#order_number": "ORDER-005",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "確認中",
+          "#refund_amount": "5000"
+        }
+      ]
+    },
+    {
+      "total_count": "6",
+      "expected": [
+        "4",
+        "2"
+      ],
+      "computed": [
+        "4",
+        "2"
+      ],
+      "passed": true,
+      "declared_inputs": [
+        {
+          "#return_item": "独立検証商品1",
+          "#order_number": "ORDER-001",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "返送待ち",
+          "#refund_amount": "1000"
+        },
+        {
+          "#return_item": "独立検証商品2",
+          "#order_number": "ORDER-002",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返送待ち",
+          "#refund_amount": "2000"
+        },
+        {
+          "#return_item": "独立検証商品3",
+          "#order_number": "ORDER-003",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "返金済み",
+          "#refund_amount": "3000"
+        },
+        {
+          "#return_item": "独立検証商品4",
+          "#order_number": "ORDER-004",
+          "#response_deadline": "2035-12-31",
+          "#return_status": "受付",
+          "#refund_amount": "4000"
+        },
+        {
+          "#return_item": "独立検証商品5",
+          "#order_number": "ORDER-005",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "確認中",
+          "#refund_amount": "5000"
+        },
+        {
+          "#return_item": "独立検証商品6",
+          "#order_number": "ORDER-006",
+          "#response_deadline": "2000-01-01",
+          "#return_status": "対象外",
+          "#refund_amount": "6000"
+        }
+      ]
+    }
+  ],
+  "actual_model_calls": {
+    "qwen2.5:14b": 5
+  },
+  "component_contract": "native-record-create-v1",
+  "source_run": 41010332630,
+  "source_job": 123914529264,
+  "product_acceptance": false
+}

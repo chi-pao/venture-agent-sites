@@ -1088,6 +1088,23 @@ def qa_source_state_composition(requirements,descriptor,controls,base,field):
 
 def qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key):
     """Rebuild a disputed subset from every native status, not two bad sets."""
+    # An explicit source definition can resolve a disagreement about the
+    # whole calculation family, not only a disagreement within one family.
+    # Enumerate requirement-supported count rules; accept exactly one.
+    if left.get('metric')==right.get('metric')=='count':
+        explicit=[]
+        for state in controls:
+            field=state.get('selector')
+            if not field or not state.get('options'):continue
+            bases=[dict(metric='count',where='in',field=field,members=[])]
+            bases += [dict(metric='count',where='before_date',field=n['selector'],members=[]) for n in controls if n.get('type')=='date' and n.get('selector')]
+            for base in bases:
+                resolved=qa_source_state_composition(requirements,descriptor,controls,base,field)
+                if resolved is not None and resolved not in explicit:explicit.append(resolved)
+        if len(explicit)==1:
+            rule,audit=explicit[0]
+            return rule,dict(audit,original_proposed=left,original_independent=right)
+        if len(explicit)>1:raise AutoQAPlanError('元仕様の明示的な件数定義が複数の入力欄に対応しています')
     stable=('metric','where','field','reference_input','rounding','places')
     if any(left.get(k)!=right.get(k) for k in stable):return None
     if left.get('where')=='in':field=left.get('field');base=dict(left)
@@ -1145,12 +1162,12 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
 
 
 def qa_resolve_projection_binding(left,right,requirements,descriptor,rows,controls,clock,generate,key):
-    witnesses=qa_projection_witnesses(rows,left,right,controls,clock)
-    if not witnesses:raise AutoQAPlanError('独立対応が不一致です。候補を区別する有効な入力例が未確定のため、合格にはできません')
     partition=qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key)
     if partition is not None:
         selected,audit=partition
-        return selected,dict(audit,witnesses=witnesses)
+        return selected,audit
+    witnesses=qa_projection_witnesses(rows,left,right,controls,clock)
+    if not witnesses:raise AutoQAPlanError('独立対応が不一致です。候補を区別する有効な入力例が未確定のため、合格にはできません')
     clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
     clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
     schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1,0,1]),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['choice','evidence_id'],additionalProperties=False)
@@ -2080,7 +2097,17 @@ def qa_prepare_native_submissions(value,inventory,kind,cfg):
     binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
     known=qa_component_events(value.get('steps',[]),binding) is not None
     if not known and kind!='workflow':return value
-    if known:value=qa_normalize_component_inputs(value)
+    if known:
+        value=qa_normalize_component_inputs(value)
+        # Repeated passive cycles do not exercise another saved input. Reject
+        # the plan before expensive oracle calls; never silently trim a test.
+        passive=set()
+        for step in value.get('steps',[]):
+            if step.get('op') in ('fill','select','check') or step.get('selector')=='#saveRecord':passive.clear()
+            elif step.get('op')=='click' and step.get('selector') in ('#downloadCsv','#downloadJson','#clearForm'):
+                css=step['selector']
+                if css in passive:raise AutoQAPlanError('入力変更・保存のない出力/クリアの反復です。必要な操作だけで検査を再設計してください: '+css)
+                passive.add(css)
     feature=cfg.get('_qa_feature_context')or {};spec=cfg.get('_qa_spec')or {}
     index=feature.get('condition_index');criteria=spec.get('acceptance',[])
     condition=criteria[index] if type(index)is int and 0<=index<len(criteria) else ''
@@ -2089,6 +2116,8 @@ def qa_prepare_native_submissions(value,inventory,kind,cfg):
     if qa_missing_initial_required_inputs(value,inventory):
         repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,spec)
         if repaired is not None:value=repaired
+        missing=qa_missing_initial_required_inputs(value,inventory)
+        if missing:raise AutoQAPlanError('必須入力の補修が未完了です。操作数の上限内で入力してから保存してください: '+str(missing))
     return repair_qa_repeated_form_inputs(value,inventory,cfg)
 
 
@@ -2438,7 +2467,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-7-source-state-composition',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-8-source-family-and-input-gates',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),

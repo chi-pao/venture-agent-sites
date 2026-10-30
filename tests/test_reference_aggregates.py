@@ -12,6 +12,37 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_source_definition_resolves_count_family_disagreement(self):
+        controls=[dict(selector='#state',options=[dict(value=v) for v in ['受付','返送待ち','確認中','返金済み','対象外']]),dict(selector='#due',type='date',label='対応期限')]
+        requirements=dict(outcome='返金済み・対象外を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数を表示する。')
+        left=dict(metric='count',where='in',field='#state',members=[])
+        right=dict(metric='count',where='before_date',field='#due',members=[],also=dict(field='#state',members=[]))
+        def no_guess(*args):raise AssertionError('Explicit source algebra must precede model family consensus')
+        for a,b in [(left,right),(right,left),(right,right)]:
+            rule,audit=qa.qa_resolve_status_partition(a,b,requirements,dict(target_label='未完了'),controls,no_guess,'0')
+            self.assertEqual(rule['where'],'in');self.assertEqual(rule['members'],['受付','返送待ち','確認中'])
+            self.assertEqual(audit['original_proposed'],a)
+        rule,_=qa.qa_resolve_status_partition(left,right,requirements,dict(target_label='期限超過'),controls,no_guess,'1')
+        self.assertEqual(rule['where'],'before_date');self.assertEqual(rule['also']['members'],['受付','返送待ち','確認中'])
+        self.assertIsNone(qa.qa_resolve_status_partition(left,right,requirements,dict(target_label='別の値'),controls,no_guess,'2'))
+        with patch.object(qa,'qa_projection_witnesses',side_effect=AssertionError('Source proof does not depend on guessed witnesses')):
+            rule,_=qa.qa_resolve_projection_binding(left,right,requirements,dict(target_label='未完了'),[],controls,{},no_guess,'0')
+        self.assertEqual(rule['members'],['受付','返送待ち','確認中'])
+
+    def test_native_actions_reject_passive_cycles_before_oracle(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls']+=qa.compact_qa_inventory('<button id="downloadJson" type="button">JSON</button><button id="clearForm" type="button">クリア</button>')['controls']
+        steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord')]+[dict(op='click',selector=css) for css in ['#downloadJson','#clearForm','#downloadJson']]
+        with self.assertRaisesRegex(ValueError,'反復'):qa.qa_prepare_native_submissions(dict(steps=steps),inventory,'feature',cfg)
+        self.assertEqual(len(steps),5)
+
+    def test_unrepaired_initial_input_cannot_reach_oracle(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls']+=qa.compact_qa_inventory('<select id="state" form="recordForm" required><option value="">選択</option><option value="open">受付</option></select>')['controls']
+        raw=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord')])
+        with patch.object(qa,'repair_qa_missing_initial_inputs',return_value=None):
+            with self.assertRaisesRegex(ValueError,'補修が未完了'):qa.qa_prepare_native_submissions(raw,inventory,'feature',cfg)
+
     def test_feature_context_keeps_complete_condition_and_selected_case_without_repeated_artifacts(self):
         condition='開始09:00、終了17:00、休憩90分で390分になることを独立確認する。'
         cfg=dict(_qa_spec=dict(acceptance=[condition]),_qa_feature_context=dict(condition_index=0,case_index=1,previous_cases=[dict(steps=[dict(op='fill',selector='#name',value='A')],checks=[dict(value='old oracle must not become a new expected value')])],design_example=dict(outputs='redundant artifact '*1000,test_cases=[dict(input='first case'),dict(input='second case',action='save it',expected='second case outcome')])) )

@@ -1,0 +1,122 @@
+{
+  "kind": "completed real CI failure replay; not full product acceptance",
+  "source_run": 41010332630,
+  "artifacts": {
+    "attendance": 12957663778,
+    "returns": 12957767969
+  },
+  "attendance": {
+    "raw_plan_sha256": "a9530cc8ca021fe5164b6e0d9edb148797d6997a1a8b5b6ea201b1d8076cf082",
+    "raw_steps": 24,
+    "early_rejection": "入力変更・保存のない出力/クリアの反復です。必要な操作だけで検査を再設計してください: #downloadJson",
+    "oracle_called": false
+  },
+  "returns": {
+    "requirements": {
+      "outcome": "注文ごとの返品期限、返金、対応状況を一連で確認し、見落としを減らす",
+      "must_have": [
+        "注文金額・送料・返金額の計算機能",
+        "期限超過の検知機能",
+        "対応完了の確認機能",
+        "返金済み・対象外を除く未完了件数。返金済み・対象外を除く未処理件数。対応期限が今日より前かつ未完了の期限超過件数を表示する。"
+      ],
+      "workflow": [
+        "注文登録",
+        "返品理由・期限・対応状況の確認",
+        "返金計算",
+        "未対応一覧の更新",
+        "対応完了の確認"
+      ],
+      "source_addenda": [
+        {
+          "source": "独立した返品6件・全5状態の実証要求",
+          "text": "返金済み・対象外を除く未完了件数。返金済み・対象外を除く未処理件数。対応期限が今日より前かつ未完了の期限超過件数を表示する。"
+        }
+      ]
+    },
+    "original_family_choices": [
+      {
+        "metric": "count",
+        "where": "in",
+        "field": "#return_status",
+        "members": [],
+        "status_family": true
+      },
+      {
+        "metric": "count",
+        "where": "before_date",
+        "field": "#response_deadline",
+        "members": [],
+        "also": {
+          "field": "#return_status",
+          "members": []
+        },
+        "status_family": true
+      }
+    ],
+    "compiled_rule": {
+      "metric": "count",
+      "where": "in",
+      "field": "#return_status",
+      "members": [
+        "受付",
+        "返送待ち",
+        "確認中"
+      ],
+      "basis": "元仕様で明示された集合「未完了」と条件の合成"
+    },
+    "source_audit": {
+      "valid": true,
+      "method": "bounded explicit requirement set definition and named conjunction; not model consensus or observed values",
+      "source_definition": {
+        "name": "未完了",
+        "field": "#return_status",
+        "members": [
+          "受付",
+          "返送待ち",
+          "確認中"
+        ],
+        "excluded": [
+          "返金済み",
+          "対象外"
+        ],
+        "source_excerpt": "返金済み・対象外を除く未完了件数"
+      },
+      "source_expression": "返金済み・対象外を除く未完了件数",
+      "classified_states": {
+        "受付": 1,
+        "返送待ち": 1,
+        "確認中": 1,
+        "返金済み": 0,
+        "対象外": 0
+      },
+      "original_proposed": {
+        "metric": "count",
+        "where": "in",
+        "field": "#return_status",
+        "members": [],
+        "status_family": true
+      },
+      "original_independent": {
+        "metric": "count",
+        "where": "before_date",
+        "field": "#response_deadline",
+        "members": [],
+        "also": {
+          "field": "#return_status",
+          "members": []
+        },
+        "status_family": true
+      }
+    }
+  },
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "fresh real model generation",
+    "all feature cases and independent audits",
+    "visual and competitor design proof",
+    "unknown use case"
+  ]
+}

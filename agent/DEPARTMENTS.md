@@ -319,3 +319,13 @@ The final jobs of head `d5fe2cf7` then completed: returns failed, while attendan
 Feature-context assembly now retains the complete selected acceptance condition, matching design case, actual controls and previous-case input differences, while excluding repeated whole-feature descriptions and prior generated expected values. On the archived failing workday request, the context shrank from 9,604 to 5,494 characters without truncating its selected condition. This addresses an observed timeout burden, not a guarantee that all remaining action planning succeeds.
 
 Validation: available full local suite 269 passed (236.543 seconds); focused final suite 193 passed, including checkpoint/resumption, source arithmetic/ambiguity, finite state composition, provenance/cache isolation and actual Chromium numeric-leaf tests. Windows bundle synchronization, `--check`, and compilation passed. Fresh Ollama generation, all feature cases, competitor/design quality and unregistered-use completion remain required and unproven.
+
+### 2026-10-30: 計算方式の不一致と未補修操作を検査生成前に止める
+
+- 正規ブランチ `7d0239f2` の実生成 run `41010332630` は全体未合格。attendance は feature-0-0 の必須 `#attendance_status` 未入力、workday は仕様算術を企画で修復した後 base-workflow の時間切れ（最終ジョブ45分上限）、returns は計算方式の独立選択不一致で停止した。実行中ジョブの手動キャンセルはしていない。
+- 返品の固定診断は初めて `passed=true`、`semantic_binding_passed=true`。実Ollama応答、6件・全5状態の独立計算、PC/スマホの保存・再読込24照合を保持した。`tests/evidence/returns-real-model-7d0239f2.json` に完了ログの結果を保存。これは診断合格であり、主パイプラインの全機能・画面品質の合格ではない。
+- 返品の主検査では「未完了」の一方が状態件数、他方が期限前AND状態件数を選択。前修正は同一計算方式のときだけ明示定義を適用していたうえ、対比例生成を先に要求していた。要求原文の有限集合定義から一意に証明できる件数規則を、方式比較・対比例要求より先に解決する。複数入力欄に対応する/明示定義がない/非件数の場合は推測しない。モデル合意や画面の実測値は根拠にしない。
+- attendance の実応答は24操作の上限までJSON出力・クリアを反復。必須選択欄を追加できず補修がNoneでも先へ進んでいた。宣言済みnative記録契約では、入力変更・保存のない出力/クリアの反復を操作段階で拒否し、必須補修が完了しない操作も期待値生成前に拒否する。検査を黙って短縮・操作を削除しない。
+- `tests/evidence/source-family-input-gates-7d0239f2.json` は最新失敗応答そのものを再読込した局所再現。返品は原文から受付/返送待ち/確認中を対象と確定、授業管理は反復を期待値生成前に拒否。新しい実モデル生成と製品全体の完成は引き続き未確認。
+- 同期生成区間を更新し、検査方式識別子を更新。成功済みの部署成果物と独立ブラウザ証拠は保持。release.json は変更しない。
+- 今回のローカル検証: `python -m unittest discover -s tests -p 'test_*.py' -q` は272件・233.033秒で合格。bundle `--check` とcompileも合格。追加の実モデルCIはこの変更を保存した後に実施し、局所再現/制御テストと製品品質合格を区別する。
