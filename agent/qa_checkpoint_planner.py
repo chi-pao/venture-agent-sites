@@ -190,7 +190,7 @@ class _QAInventory(HTMLParser):
                     node['ancestor_selectors']=['#'+v['id'] for t,v in self.stack[:-1] if v.get('id')]
                 form_id=a.get('form') or next((v.get('id') for t,v in reversed(self.stack[:-1]) if t=='form' and v.get('id')),None)
                 if form_id:node['form']='#'+form_id
-                for key in ('type','value','placeholder','min','max','required','name','disabled','readonly','role'):
+                for key in ('type','value','placeholder','min','max','required','name','disabled','readonly','role','pattern','maxlength','minlength'):
                     if key in a:node[key]=a[key] if a[key] is not None else True
                 self.nodes.append(node)
         # Track text owners separately. Void controls do not own following text.
@@ -513,7 +513,7 @@ def qa_validate_display_boundary(raw,formats):
     text=exact.get('value')
     if not contract or not isinstance(text,str):return raw
     slots=contract.get('slots')
-    if type(slots)is int and slots>0 and len(re.findall(r'-?\d+(?:\.\d+)?',text))!=slots:
+    if type(slots)is int and slots>0 and len(re.findall(r'-?\d+(?:,\d{3})*(?:\.\d+)?',text))!=slots:
         raise AutoQAPlanError('expected_values: 対象要素の全数値を仕様と入力から独立して計算してください。数値だけに切り詰めた期待値は禁止です')
     return raw
 
@@ -657,20 +657,40 @@ def qa_display_contracts_from_nodes(nodes):
     for node in nodes:
         text=str(node.get('text','')).strip();selector=node.get('selector','')
         if not selector.startswith('#') or not text or len(text)>180:continue
-        slots=[]
+        slots=[];styles=[]
         def slot(match):
-            key='{n'+str(len(slots))+'}';slots.append(key);return key
-        template=re.sub(r'-?\d+(?:\.\d+)?',slot,text)
+            key='{n'+str(len(slots))+'}';slots.append(key);styles.append('grouped' if ',' in match.group() else 'plain');return key
+        template=re.sub(r'-?\d+(?:,\d{3})*(?:\.\d+)?',slot,text)
         if not 1<=len(slots)<=8:continue
         label=re.sub(r'-?\d+(?:\.\d+)?','数値',str(node.get('label','')))[:80]
         contracts[selector]=dict(template=template,slots=len(slots),label=label)
+        if any(style=='grouped' for style in styles):contracts[selector]['number_styles']=styles
+        for key in ('tag','ancestor_selectors'):
+            if key in node:contracts[selector][key]=node[key]
         if len(contracts)>=24:break
     return contracts
 
 
 def capture_qa_display_contracts(page):
-    nodes=page.evaluate(r"""() => [...document.querySelectorAll('[id]')].filter(e=>!['INPUT','SELECT','TEXTAREA','BUTTON','SCRIPT','STYLE'].includes(e.tagName)).map(e=>{const labelled=(e.getAttribute('aria-labelledby')||'').split(/\s+/).map(id=>document.getElementById(id)?.innerText||'').join(' ').trim();const own=e.querySelector(':scope > span,:scope > label');const sibling=[...(e.parentElement?.children||[])].find(x=>x!==e&&['SPAN','LABEL'].includes(x.tagName));const label=labelled||e.getAttribute('aria-label')||own?.innerText||sibling?.innerText||e.closest('section')?.querySelector('h2,h3')?.innerText||'';return {selector:'#'+e.id,text:e.innerText||'',label};}).filter(e=>e.text.length<=180)""")
+    nodes=page.evaluate(r"""() => {
+      const path=e=>{const parts=[];let n=e;while(n&&!n.id){const p=n.parentElement;if(!p)return '';parts.unshift(n.tagName.toLowerCase()+':nth-child('+([...p.children].indexOf(n)+1)+')');n=p;}return n?'#'+CSS.escape(n.id)+(parts.length?' > '+parts.join(' > '):''):'';};
+      return [...document.querySelectorAll('[id],strong,output')].filter(e=>!['INPUT','SELECT','TEXTAREA','BUTTON','SCRIPT','STYLE'].includes(e.tagName)).map(e=>{
+        const labelled=(e.getAttribute('aria-labelledby')||'').split(/\s+/).map(id=>document.getElementById(id)?.innerText||'').join(' ').trim();
+        const own=e.querySelector(':scope > span,:scope > label');const sibling=[...(e.parentElement?.children||[])].find(x=>x!==e&&['SPAN','LABEL'].includes(x.tagName));
+        const ancestors=[];let n=e.parentElement;while(n){if(n.id)ancestors.push('#'+n.id);n=n.parentElement;}
+        return {selector:e.id?'#'+CSS.escape(e.id):path(e),tag:e.tagName.toLowerCase(),ancestor_selectors:ancestors,text:e.innerText||'',label:labelled||e.getAttribute('aria-label')||own?.innerText||sibling?.innerText||e.closest('section')?.querySelector('h2,h3')?.innerText||''};
+      }).filter(e=>e.selector&&e.text.length<=180);
+    }""")
     return qa_display_contracts_from_nodes(nodes)
+
+
+def qa_merge_display_inventory(inventory,formats):
+    outputs=[dict(n) for n in inventory.get('outputs',[])]
+    known={n['selector'] for n in outputs}
+    for css,contract in formats.items():
+        if css not in known and contract.get('tag')in ('strong','output') and contract.get('ancestor_selectors'):
+            outputs.append(dict(selector=css,tag=contract['tag'],label=contract.get('label',''),ancestor_selectors=contract['ancestor_selectors']))
+    return dict(inventory,outputs=outputs)
 
 
 def qa_validate_explicit_percentage(text):
@@ -705,7 +725,9 @@ def compile_qa_formatted_expectation(value,formats):
         raise AutoQAPlanError('expected_literalsに数値の前後の期待文字列を全て指定してください。業務状態の文言も観測値を自動採用しません')
     if any(re.search(r'\{n\d+\}|\d',v) for v in literals):
         raise AutoQAPlanError('expected_literals: 数値や未解決の書式記号を文字列に混ぜないでください。数値はexpected_valuesに分離してください')
-    text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(values))
+    styles=contract.get('number_styles',[])
+    displayed=[format(decimal.Decimal(v),',f') if i<len(styles) and styles[i]=='grouped' else v for i,v in enumerate(values)]
+    text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(displayed))
     qa_validate_explicit_percentage(text)
     # Both numbers and surrounding business-state text come from independent
     # QA. The observed template is guidance only, never an automatic oracle.
@@ -1000,6 +1022,8 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
     if left.get('where')=='in':field=left.get('field');base=dict(left)
     elif left.get('where')in ('before_date','on_reference_date','on_input_date'):
         fields={p['also']['field'] for p in (left,right) if isinstance(p.get('also'),dict) and p['also'].get('field')}
+        if not fields:
+            fields={n['selector'] for n in controls if 2<=len([o for o in n.get('options',[]) if o.get('value')])<=5}
         if len(fields)!=1:return None
         field=next(iter(fields));base=dict(left);base.pop('also',None)
     else:return None
@@ -1767,13 +1791,17 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             raise AutoQAPlanError('参照集計: 対象位置に対応する選択肢が未確定です。未対応の規則を推測して採用できません')
         marked=template.replace('{n'+str(index)+'}','【今回の対象数値】')
         output_descriptor=dict(selector=selector,label=contract.get('label',''),target_label=qa_quantity_scope(contract,index),before_target=template.split('{n'+str(index)+'}',1)[0],after_target=template.split('{n'+str(index)+'}',1)[1])
-        context=dict(requirements=requirements,controls=controls,input_values=input_values,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
+        input_conditions=[dict(selector=n['selector'],label=n.get('label',''),value=input_values[n['selector']],scope='saved record' if n['selector']in row_fields else 'explicit view setting') for n in controls if n['selector']in input_values]
+        context=dict(requirements=requirements,controls=controls,input_values=input_values,input_conditions=input_conditions,output=output_descriptor,display_template=template,target_position=index+1,target_marked_display=marked,candidates=candidates)
         scoped_output={k:output_descriptor[k] for k in ('selector','target_label')}
-        prompt=('対象の数値項目「'+scoped_output['target_label']+'」だけの意味に対応する計算規則を選択肢から選ぶ。他の項目は今回扱わない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
+        prompt=('対象の数値項目「'+scoped_output['target_label']+'」だけの意味に対応する計算規則を選択肢から選ぶ。他の項目は今回扱わない。計算結果は回答しない。該当なしは-1。JSON {"choice":選択肢番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件（画面の項目名付き）:'+json.dumps(input_conditions,ensure_ascii=False,separators=(',',':'))+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
         projection=generate('primary-projection-'+str(index),prompt,schema,validate,context)
-        blind_prompt=('別担当が独立して規則を選ぶ。先行する提案は示さない。対象は出力項目「'+scoped_output['target_label']+'」1個だけ。ほかの集計・表示形式の網羅性は判定しない。原文に対応する選択肢番号を選び、未確定は-1。JSON {"choice":番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件:'+json.dumps(input_values,ensure_ascii=False)+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
+        blind_prompt=('別担当が独立して規則を選ぶ。先行する提案は示さない。対象は出力項目「'+scoped_output['target_label']+'」1個だけ。ほかの集計・表示形式の網羅性は判定しない。原文に対応する選択肢番号を選び、未確定は-1。JSON {"choice":番号}のみ。\n出力項目:'+json.dumps(scoped_output,ensure_ascii=False)+'\n元要件:'+source+'\n入力した条件（画面の項目名付き）:'+json.dumps(input_conditions,ensure_ascii=False,separators=(',',':'))+'\n選択肢（各配列は[番号,規則]）:'+json.dumps(qa_compact_projection_choices(candidates,controls),ensure_ascii=False,separators=(',',':')))
         independent=generate('primary-projection-blind-'+str(index),blind_prompt,schema,validate,context)
-        if projection==independent:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
+        if projection==independent:
+            partition=qa_resolve_status_partition(projection,independent,requirements,output_descriptor,controls,generate,str(index))
+            if partition is not None:projection,audit=partition
+            else:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
         else:projection,audit=qa_resolve_projection_binding(projection,independent,requirements,output_descriptor,rows,controls,evaluation_context,generate,str(index))
         values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
@@ -1823,6 +1851,46 @@ def qa_primary_component_expectation(selector,formats,context,generate):
         answer=generate('primary-literal-'+str(index),prompt,schema,validate,dict(context=context,selector=selector,index=index,values=values))
         literals.append(validate(answer)['value'])
     return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+
+
+def qa_component_variant_actions(cfg,inventory):
+    """Build different declared actor inputs before deriving any expectation."""
+    prior=next((p for p in cfg.get('_qa_prior_scenarios',[]) if p.get('kind')=='workflow'),None)
+    if not prior:return None
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(prior.get('steps',[]),binding)
+    if events is None:return None
+    rows=qa_reference_rows(prior['steps'],events)
+    if not rows:return None
+    nodes={n['selector']:n for n in inventory.get('controls',[])}
+    text_fields=[css for css,n in nodes.items() if n.get('form')=='#recordForm' and n.get('tag')=='input' and n.get('type','text')=='text' and not n.get('pattern')]
+    changed=[css for css in text_fields if nodes[css].get('required')] or text_fields[:1]
+    if not changed or any(not any(css in row for css in changed) for row in rows):return None
+    used={str(value) for row in rows for value in row.values()};steps=[]
+    search=nodes.get('#searchRecords',{})
+    if search.get('type')=='search':steps.append(dict(op='fill',selector='#searchRecords',value=''))
+    for row_index,row in enumerate(rows):
+        different=False
+        for css,value in row.items():
+            node=nodes.get(css,{})
+            if node.get('form')!='#recordForm':continue
+            if css in changed and isinstance(value,str):
+                original=value
+                value=original+' 別入力B'+str(row_index+1)
+                if value in used or len(value)>min(250,int(node.get('maxlength',250))):return None
+                used.add(value);different=True
+            options=[o.get('value') for o in node.get('options',[]) if o.get('value') and not o.get('disabled')]
+            if node.get('tag')=='select':
+                alternatives=[v for v in options if v!=value]
+                value=alternatives[0] if alternatives else value
+                steps.append(dict(op='select',selector=css,value=value))
+            elif node.get('type')in ('checkbox','radio'):steps.append(dict(op='check',selector=css,value=value))
+            else:steps.append(dict(op='fill',selector=css,value=value))
+        if not different:return None
+        steps.append(dict(op='click',selector='#saveRecord'))
+    if len(steps)>24:return None
+    return dict(steps=steps,result_selector=prior.get('result_selector'),acceptance=[],
+                rationale='宣言した記録操作契約で、前の各入力と異なる記録と状態を追加する。期待値は後続で独立計算する')
 
 
 def qa_component_saved_checks(actions,primary,inventory,cfg):
@@ -1906,6 +1974,8 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if not child:continue
         for parent in node.get('ancestor_selectors',[]):
             outer=available_formats.get(parent,{})
+            if cfg.get('qa_reference_aggregates') and child.get('slots') and outer.get('slots'):
+                parents.add(parent)
             if child.get('slots')==outer.get('slots') and child.get('template','') in outer.get('template','') and child.get('label')==outer.get('label'):
                 parents.add(parent);leaf_replacements.setdefault(parent,set()).add(node['selector'])
     output_selectors=[css for css in output_selectors if css not in parents]
@@ -1953,7 +2023,11 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if kind=='variant' and qa_variant_repeats_workflow(value,cfg.get('_qa_prior_scenarios',[])):
             raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
         return validate_qa_inventory_actions(value,inventory,kind)
-    actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
+    variant=qa_component_variant_actions(cfg,inventory) if kind=='variant' else None
+    if variant is not None:
+        actions=validate_actions(variant)
+        write_framework_json(directory/'actions-component-contract.json',dict(contract=cfg['qa_component_contract'],value=actions,method='different native actor inputs compiled before independent assertions; not app generation'))
+    else:actions=stage('actions','独立した操作計画。今回は操作だけを返す。期待値やchecksは生成しない。入力例と保存・実行を最後まで指定し、主結果CSSと検査する完成条件番号を選ぶ。複数記録は1件ごとに保存する。feature_caseがある場合はその条件を操作し、ケース1はケース0とは異なる入力例にする。JSON {steps,result_selector,acceptance,rationale}。\n'+context+'\n前回の不備:'+hint,
         action_schema,semantic,700,validate_actions)
     action_context=json.dumps(actions,ensure_ascii=False,separators=(',',':'))
     oracle_context=qa_split_stage_context(context,cfg,inventory,key,actions)
@@ -2027,7 +2101,7 @@ def qa_initial_display_context(name,source,directory):
     if path.exists():
         try:
             saved=json.loads(path.read_text(encoding='utf-8'))
-            if saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
+            if saved.get('survey_policy')=='numeric-leaves-2' and saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
                 return saved
         except (ValueError,TypeError,KeyError):pass
     from playwright.sync_api import sync_playwright
@@ -2040,7 +2114,7 @@ def qa_initial_display_context(name,source,directory):
             context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
             page=context.new_page();page.goto(url,wait_until='networkidle',timeout=15000)
             clock=page.evaluate("() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'browser local clock'};}")
-            result=dict(source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
+            result=dict(survey_policy='numeric-leaves-2',source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
                         method='numeric-stripped interface survey; no acceptance verdict or observed numeric expectations')
             result=json.loads(json.dumps(result,sort_keys=True,ensure_ascii=False))
             write_framework_json(path,result);context.close()
@@ -2050,7 +2124,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-1',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-2',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
@@ -2064,6 +2138,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
     initial_context=qa_initial_display_context(name,page,folder) if cfg.get('qa_split_units') and cfg.get('qa_reference_aggregates') and cfg.get('qa_probe_units') else {}
+    full_inventory=qa_merge_display_inventory(full_inventory,initial_context.get('display_contracts',{}));inventory=full_inventory
     acceptance=spec['acceptance'];count=len(acceptance)
     handoff=cfg.get('_department_documents') or {}
     design_plan=handoff.get('implementation_plan') or {}

@@ -224,6 +224,9 @@ class ReferenceAggregateTests(unittest.TestCase):
         def generate(name,prompt,schema,validate,dependency):
             calls.append(name)
             self.assertTrue(name.startswith('primary-projection-'))
+            if '-membership-' in name:
+                wanted='absent' if dependency['output']['target_label']=='欠席' else 'present'
+                return validate(dict(membership=[int(v==wanted) for v in dependency['ordered_statuses']],evidence_id=0))
             wanted='present' if name.endswith('0') else 'absent'
             self.assertIn(name.rsplit('-',1)[-1],('0','3'))
             choice=next(i for i,c in enumerate(dependency['candidates']) if c['where']=='in' and c['members']==[wanted])
@@ -233,7 +236,7 @@ class ReferenceAggregateTests(unittest.TestCase):
             result=qa.qa_reference_primary_expectation(dict(steps=steps,result_selector='#summary'),formats,dict(must_have=['出席扱いの数を全体で割った割合と欠席数']),dict(model='mapper',qa_oracle_model='reviewer'),inventory,Path(t),'case',generate)
             proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
         self.assertEqual(result['exact_check']['value'],'50%（出席扱い1/2、欠席1）')
-        self.assertEqual(len(calls),4)
+        self.assertEqual(len(calls),8)
         self.assertEqual(proof['projection_audits'][1]['derived_from'],0)
         self.assertEqual(proof['projection_audits'][2]['derived_from'],0)
 
@@ -364,6 +367,7 @@ class ReferenceAggregateTests(unittest.TestCase):
         calls=[]
         def generate(name,prompt,schema,validate,dependency):
             calls.append(name)
+            if '-membership-' in name:return validate(dict(membership=[int(v=='pending') for v in dependency['ordered_statuses']],evidence_id=0))
             if '-resolution-' in name:return validate(dict(choice=1 if name.endswith('reverse') else 0,evidence_id=0))
             index=int(name.rsplit('-',1)[1]);candidates=dependency['candidates']
             if index==0 and '-blind-' not in name:wanted=lambda c:c['where']=='in' and c['members']==['pending']
@@ -440,7 +444,7 @@ class ReferenceAggregateTests(unittest.TestCase):
     def test_same_variant_is_rejected_before_primary_generation_and_cache_reuse(self):
         inventory,cfg=self.component_fixture()
         actions=dict(steps=[dict(op='fill',selector='#title',value='同一A'),dict(op='click',selector='#saveRecord')],acceptance=[0],rationale='入力後保存する',result_selector='#recordCount')
-        cfg=dict(cfg,_qa_prior_scenarios=[dict(actions,kind='workflow')],_qa_display_contracts={'#recordCount':dict(slots=1,template='{n0}',label='登録数')})
+        cfg=dict(cfg,qa_component_contract='unknown',_qa_prior_scenarios=[dict(actions,kind='workflow')],_qa_display_contracts={'#recordCount':dict(slots=1,template='{n0}',label='登録数')})
         calls=[]
         def model(prompt,config,tokens,**kw):
             calls.append(Path(config['_json_transport_evidence']).name)
@@ -564,3 +568,75 @@ class ReferenceAggregateTests(unittest.TestCase):
             for name in ('primary-projection-membership-0-forward.json','primary-projection-resolution-1-reverse.json','primary-projection-0.json','primary-projection-membership-0-forward-request.json','actions.json'):(directory/name).write_text('{}')
             qa.qa_clear_primary_components(directory)
             self.assertEqual(sorted(p.name for p in directory.iterdir()),['actions.json','primary-projection-membership-0-forward-request.json'])
+
+    def test_grouped_currency_is_one_slot_and_independent_value_keeps_grouping(self):
+        formats=qa.qa_display_contracts_from_nodes([dict(selector='#amount',text='¥8,000',label='返金予定の合計')])
+        self.assertEqual(formats['#amount']['slots'],1)
+        self.assertEqual(formats['#amount']['template'],'¥{n0}')
+        raw=dict(exact_check=dict(op='text_equals',selector='#amount',expected_values=['12000.5'],expected_literals=['¥','']))
+        self.assertEqual(qa.qa_compile_bound_primary(raw,'#amount',formats)['exact_check']['value'],'¥12,000.5')
+        self.assertNotIn('8000',str(raw))
+
+    def test_anonymous_numeric_leaves_are_bound_and_container_is_not_primary(self):
+        inventory,cfg=self.component_fixture()
+        leaf='#totals > div:nth-child(1) > strong:nth-child(2)'
+        formats={'#totals':dict(template='未完了{n0}件 / 超過{n1}件',slots=2,label='対応状況',tag='div'),'#recordCount':dict(template='{n0}',slots=1,label='登録数'),leaf:dict(template='{n0}件',slots=1,label='未完了',tag='strong',ancestor_selectors=['#totals'])}
+        inventory['outputs'].append(dict(selector='#totals',tag='div'))
+        inventory=qa.qa_merge_display_inventory(inventory,formats)
+        cfg=dict(cfg,qa_reference_aggregates=True,_qa_display_contracts=formats)
+        seen=[]
+        def model(prompt,config,tokens,**kw):
+            choices=kw['schema']['properties']['result_selector']['enum'];seen.extend(choices)
+            self.assertNotIn('#totals',choices);self.assertIn(leaf,choices)
+            return kw['validator'](dict(steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='click',selector='#saveRecord')],result_selector=leaf,acceptance=[0],rationale='登録を確認する'))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True),patch.object(qa,'qa_reference_primary_expectation',return_value=dict(exact_check=dict(op='text_equals',selector=leaf,value='1件'))):
+            result=qa.qa_split_unit_generation('元要件',cfg,Path(t),'base-workflow','input',qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+        self.assertEqual(result['result_selector'],leaf)
+        self.assertEqual(len([n for n in inventory['outputs'] if n['selector']==leaf]),1)
+        self.assertEqual(len(qa.qa_merge_display_inventory(inventory,formats)['outputs']),len(inventory['outputs']))
+
+    def test_declared_actor_variant_changes_record_inputs_before_oracle(self):
+        inventory,cfg=self.component_fixture()
+        prior=dict(kind='workflow',result_selector='#recordCount',steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='click',selector='#saveRecord'),dict(op='fill',selector='#title',value='記録B'),dict(op='click',selector='#saveRecord')])
+        cfg=dict(cfg,_qa_prior_scenarios=[prior])
+        variant=qa.qa_component_variant_actions(cfg,inventory)
+        self.assertFalse(qa.qa_variant_repeats_workflow(variant,[prior]))
+        self.assertNotIn('exact_check',variant);self.assertNotIn('checks',variant)
+        self.assertEqual(variant['acceptance'],[])
+        steps=prior['steps']+variant['steps']
+        events=qa.qa_component_events(steps,cfg)
+        self.assertEqual(len(qa.qa_reference_rows(steps,events)),4)
+        self.assertEqual(len({r['#title'] for r in qa.qa_reference_rows(steps,events)}),4)
+        self.assertIsNone(qa.qa_component_variant_actions(dict(cfg,qa_component_contract='unknown'),inventory))
+        constrained=dict(inventory,controls=[dict(n,pattern='[A-Z]+') if n['selector']=='#title' else n for n in inventory['controls']])
+        self.assertIsNone(qa.qa_component_variant_actions(cfg,constrained))
+
+    def test_agreeing_wrong_subset_still_gets_complete_native_state_check(self):
+        options=['受付','返送待ち','返金済み'];controls=[dict(selector='#state',tag='select',options=[dict(value=x) for x in options])]
+        steps=[]
+        for value in options:steps.extend([dict(op='select',selector='#state',value=value),dict(op='click',selector='#save')])
+        events=[dict(step_index=i,effect='create',target=None) for i in (1,3,5)]
+        def generate(name,prompt,schema,validate,dependency):
+            if '-membership-' in name:return validate(dict(membership=[int(s!='返金済み') for s in dependency['ordered_statuses']],evidence_id=0))
+            return validate(dict(choice=next(i for i,p in enumerate(dependency['candidates']) if p['where']=='in' and p['members']==['返送待ち'])))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=events),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
+            result=qa.qa_reference_primary_expectation(dict(result_selector='#summary',steps=steps),{'#summary':dict(template='{n0}件',slots=1,label='未完了')},dict(requested_outcome='返金済みを除く未完了件数'),dict(model='x'),dict(controls=controls),Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'2件')
+        self.assertEqual(proof['projections'][0]['members'],['受付','返送待ち'])
+        self.assertEqual(proof['projection_audits'][0]['original_proposed']['members'],['返送待ち'])
+
+    def test_selected_day_binding_receives_named_input_setting_not_just_ids(self):
+        controls=[dict(tag='input',selector='#day',type='date',label='作業日'),dict(tag='input',selector='#target',type='date',label='対象日')]
+        steps=[dict(op='fill',selector='#day',value='2023-10-29'),dict(op='click',selector='#save'),dict(op='fill',selector='#target',value='2023-10-29')]
+        def generate(name,prompt,schema,validate,dependency):
+            self.assertIn('対象日',prompt);self.assertIn('explicit view setting',prompt)
+            selected=next(c for c in dependency['input_conditions'] if c['selector']=='#target')
+            self.assertEqual(selected['label'],'対象日')
+            return validate(dict(choice=next(i for i,p in enumerate(dependency['candidates']) if p['where']=='on_input_date')))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=[dict(step_index=1,effect='create',target=None)]),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
+            result=qa.qa_reference_primary_expectation(dict(result_selector='#summary',steps=steps),{'#summary':dict(template='{n0}件',slots=1,label='対象日の件数')},dict(requested_outcome='対象日の作業件数'),dict(model='x',_qa_reference_clock=dict(date='2026-10-30')),dict(controls=controls),Path(t),'case',generate)
+        self.assertEqual(result['exact_check']['value'],'1件')
