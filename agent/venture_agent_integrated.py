@@ -5498,6 +5498,8 @@ def qa_secondary_reference_check(check,actions,formats,spec,cfg,inventory,folder
     selector=check.get('selector');contract=formats.get(selector,{})
     if not cfg.get('qa_reference_aggregates') or check.get('op') not in ('text_equals','text_contains'):return check
     if not any(n.get('selector')==selector for n in inventory.get('outputs',[])):return check
+    node=next(n for n in inventory.get('outputs',[]) if n.get('selector')==selector)
+    if selector=='#recordRows' or node.get('tag') in ('table','tbody','thead','tfoot','tr','main','section','header','form','script','style'):return check
     count=contract.get('slots')
     if type(count)is not int or not 1<=count<=8:return check
     isolated=dict(actions,result_selector=selector)
@@ -5537,6 +5539,44 @@ def qa_primary_component_expectation(selector,formats,context,generate):
     return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
 
 
+def qa_repair_feature_view_date(value,record,view,cfg):
+    """Choose one declared date, without regenerating completed operations."""
+    directory=cfg.get('_qa_input_repair_directory')
+    if not directory or len(value.get('steps',[]))>=24:return None
+    spec=cfg.get('_qa_spec') or {};feature=cfg.get('_qa_feature_context') or {};index=feature.get('condition_index')
+    conditions=spec.get('acceptance',[])
+    condition=conditions[index] if type(index)is int and 0<=index<len(conditions) else ''
+    if not condition:return None
+    candidates=[step.get('value') for step in value.get('steps',[]) if step.get('selector')==record['selector'] and step.get('op')=='fill']
+    candidates+=re.findall(r'(?<![0-9])\d{4}-\d{2}-\d{2}(?![0-9])',str(condition))
+    dates=[]
+    for candidate in candidates:
+        try:
+            if not isinstance(candidate,str) or qa_date.fromisoformat(candidate).isoformat()!=candidate:continue
+        except ValueError:continue
+        if candidate not in dates:dates.append(candidate)
+    if not dates or len(dates)>8:return None
+    model=cfg.get('qa_mapping_model') or cfg.get('qa_oracle_model') or cfg['model']
+    context=dict(policy='declared-view-date-1',condition=condition,record_date_control=record,view_date_control=view,dates=dates,steps=value['steps'],model=model)
+    digest=hashlib.sha256(json.dumps(context,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+    path=Path(directory)/'view-dates'/(digest+'.json');path.parent.mkdir(parents=True,exist_ok=True)
+    def validate(answer):
+        choice=answer.get('choice') if isinstance(answer,dict) else None
+        if type(choice)is not int or not 0<=choice<len(dates):raise AutoQAPlanError('対象日の1項目が元の完成条件から確定できません。操作全体や正解は変更しません')
+        return answer
+    answer=None
+    if path.exists():
+        try:answer=validate(json.loads(path.read_text(encoding='utf-8')))
+        except (ValueError,TypeError,KeyError):pass
+    if answer is None:
+        schema=dict(type='object',properties=dict(choice=dict(type='integer',enum=[-1]+list(range(len(dates))))),required=['choice'],additionalProperties=False)
+        prompt=('独立QA。記録の日付と画面の集計対象日は別入力。完成条件と確定済み入力から、不足した集計対象日1個だけを候補から選ぶ。同じ日の集計を確認するなら記録日を指定。別日の検査ならその指定日に従う。未確定/候補外は-1。期待値や操作の再生成は禁止。JSON {choice:番号}。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
+        answer=ai_json(prompt,dict(cfg,model=model,_schema_in_prompt=False,_bounded_json_retry=True,_json_transport_evidence=str(path.with_suffix('.transport.json'))),100,schema=schema,max_attempts=1,request_timeout=int(cfg.get('qa_part_timeout',180)),validator=validate)
+        write_framework_json(path,dict(validate(answer),source=context))
+    step=dict(op='fill',selector=view['selector'],value=dates[answer['choice']])
+    return dict(value,steps=[step]+value['steps'])
+
+
 def qa_prepare_native_submissions(value,inventory,kind,cfg):
     """Apply submission checks to feature units using the same create actor."""
     binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
@@ -5561,7 +5601,9 @@ def qa_prepare_native_submissions(value,inventory,kind,cfg):
         view_dates=[n for n in dates if n.get('form')!='#recordForm']
         filled={step.get('selector') for step in value.get('steps',[]) if step.get('op')=='fill'}
         if len(record_dates)==len(view_dates)==1 and record_dates[0]['selector'] in filled and view_dates[0]['selector'] not in filled:
-            raise AutoQAPlanError('記録の日付と集計の対象日は別の入力です。機能検査では対象日も明示してください: '+view_dates[0]['selector']+'。同じ日の集計を検査するなら記録の日付と揃え、別の日を検査するならその入力から正解を独立計算してください')
+            repaired=qa_repair_feature_view_date(value,record_dates[0],view_dates[0],cfg)
+            if repaired is None:raise AutoQAPlanError('記録の日付と集計の対象日は別の入力です。機能検査では対象日も明示してください: '+view_dates[0]['selector']+'。同じ日の集計を検査するなら記録の日付と揃え、別の日を検査するならその入力から正解を独立計算してください')
+            value=repaired
     feature=cfg.get('_qa_feature_context')or {};spec=cfg.get('_qa_spec')or {}
     index=feature.get('condition_index');criteria=spec.get('acceptance',[])
     condition=criteria[index] if type(index)is int and 0<=index<len(criteria) else ''
@@ -5931,7 +5973,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-10-saved-literals-and-currency',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-11-scalar-outputs-and-date-repair',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),

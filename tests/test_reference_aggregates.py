@@ -12,6 +12,36 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_numeric_dates_in_saved_table_are_not_aggregate_metrics(self):
+        check=dict(op='text_contains',selector='#recordRows',value='田中太郎')
+        formats={'#recordRows':dict(slots=3,template='田中太郎\t{n0}-{n1}-{n2}\t出席')}
+        with patch.object(qa,'qa_reference_primary_expectation',side_effect=AssertionError('A date in a row is not a count metric')):
+            result=qa.qa_secondary_reference_check(check,dict(steps=[]),formats,{},dict(qa_reference_aggregates=True),dict(outputs=[dict(selector='#recordRows',tag='tbody')]),Path('.'),'case',None)
+        self.assertEqual(result,check)
+        check=dict(check,selector='#otherTable')
+        with patch.object(qa,'qa_reference_primary_expectation',side_effect=AssertionError('Unknown table must not become a scalar aggregate')):
+            result=qa.qa_secondary_reference_check(check,{'steps':[]},{'#otherTable':dict(slots=3)}, {},dict(qa_reference_aggregates=True),dict(outputs=[dict(selector='#otherTable',tag='table')]),Path('.'),'case',None)
+        self.assertEqual(result,check)
+
+    def test_one_missing_view_date_is_repaired_and_cached_without_replanning(self):
+        raw=dict(steps=[dict(op='fill',selector='#date',value='2023-10-10'),dict(op='click',selector='#save')],checks=[dict(op='text_equals',selector='#total',value='7時間00分')])
+        record=dict(selector='#date');view=dict(selector='#view')
+        with tempfile.TemporaryDirectory() as t:
+            cfg=dict(model='planner',qa_mapping_model='independent',_qa_input_repair_directory=t,_qa_feature_context=dict(condition_index=0),_qa_spec=dict(acceptance=['2023-10-10の作業を登録し、同日の予定合計を表示する']))
+            def generate(prompt,cfg,tokens,**kw):
+                self.assertEqual(tokens,100);self.assertEqual(cfg['model'],'independent');self.assertNotIn('7時間00分',prompt)
+                return kw['validator'](dict(choice=0))
+            with patch.object(qa,'ai_json',side_effect=generate,create=True) as model:
+                first=qa.qa_repair_feature_view_date(raw,record,view,cfg)
+                again=qa.qa_repair_feature_view_date(raw,record,view,cfg)
+            self.assertEqual(model.call_count,1);self.assertEqual(first,again)
+            self.assertEqual(first['steps'],[dict(op='fill',selector='#view',value='2023-10-10')]+raw['steps'])
+            self.assertEqual(first['checks'],raw['checks'])
+            cfg['_qa_spec']['acceptance']=['2023-10-11の別日を検査する']
+            with patch.object(qa,'ai_json',side_effect=lambda p,c,t,**kw:kw['validator'](dict(choice=-1)),create=True):
+                with self.assertRaisesRegex(ValueError,'確定できません'):qa.qa_repair_feature_view_date(raw,record,view,cfg)
+        self.assertIsNone(qa.qa_repair_feature_view_date(raw,record,view,dict(model='x')))
+
     def test_saved_literal_checks_do_not_expect_cleared_input_or_full_row_layout(self):
         inventory,cfg=self.component_fixture()
         actions=dict(steps=[dict(op='fill',selector='#title',value='商品A'),dict(op='click',selector='#saveRecord')])

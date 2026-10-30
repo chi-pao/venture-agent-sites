@@ -1,0 +1,116 @@
+{
+  "kind": "completed failure replay for table/scalar boundary; not roster product acceptance",
+  "source_run": 41042706857,
+  "artifact": 12971937463,
+  "source_sha256": "e791efc7549be2ed67afb30e42844a9995802fc2d3e27b73cfff9b06d1478a96",
+  "steps": [
+    {
+      "op": "fill",
+      "selector": "#student",
+      "value": "田中太郎,鈴木花子,山田一郎"
+    },
+    {
+      "op": "fill",
+      "selector": "#class_name",
+      "value": "Python入門"
+    },
+    {
+      "op": "fill",
+      "selector": "#class_date",
+      "value": "2023-10-05"
+    },
+    {
+      "op": "select",
+      "selector": "#attendance_status",
+      "value": "出席"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    },
+    {
+      "op": "click",
+      "selector": "#downloadJson"
+    },
+    {
+      "op": "click",
+      "selector": "#downloadCsv"
+    },
+    {
+      "op": "click",
+      "selector": "#clearForm"
+    },
+    {
+      "op": "fill",
+      "selector": "#student",
+      "value": "田中太郎,鈴木花子,山田一郎"
+    },
+    {
+      "op": "fill",
+      "selector": "#class_name",
+      "value": "Python入門"
+    },
+    {
+      "op": "fill",
+      "selector": "#class_date",
+      "value": "2023-10-05"
+    },
+    {
+      "op": "select",
+      "selector": "#attendance_status",
+      "value": "出席"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    },
+    {
+      "op": "click",
+      "selector": "#downloadJson"
+    },
+    {
+      "op": "click",
+      "selector": "#downloadCsv"
+    }
+  ],
+  "original_saved_literal": {
+    "op": "text_contains",
+    "selector": "#recordRows",
+    "value": "田中太郎,鈴木花子,山田一郎"
+  },
+  "compiled_saved_literal": {
+    "op": "text_contains",
+    "selector": "#recordRows",
+    "value": "田中太郎,鈴木花子,山田一郎"
+  },
+  "replay": [
+    {
+      "width": 1280,
+      "expected_saved_operations": 2,
+      "actual_record_count": "2",
+      "literal": "田中太郎,鈴木花子,山田一郎",
+      "saved_literal_found": true,
+      "scalar_aggregate_inference_called": false,
+      "passed": true
+    },
+    {
+      "width": 390,
+      "expected_saved_operations": 2,
+      "actual_record_count": "2",
+      "literal": "田中太郎,鈴木花子,山田一郎",
+      "saved_literal_found": true,
+      "scalar_aggregate_inference_called": false,
+      "passed": true
+    }
+  ],
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "Three names entered together are not proof of three separately managed students",
+    "complete feature workflow and independent audits",
+    "fresh real models",
+    "visual and competitor comparison",
+    "unknown use case"
+  ]
+}
