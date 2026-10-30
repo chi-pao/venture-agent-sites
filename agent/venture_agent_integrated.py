@@ -4494,8 +4494,28 @@ def qa_source_state_composition(requirements,descriptor,controls,base,field):
     return result,dict(valid=True,method='bounded explicit requirement set definition and named conjunction; not model consensus or observed values',source_definition=definition,source_expression=expression,classified_states={v:int(v in definition['members']) for v in options})
 
 
+def qa_source_unqualified_sum(left,right,requirements,descriptor,controls):
+    """A named unqualified total does not invent a status restriction."""
+    stable=('metric','where','field','value_field','reference_input','rounding','places')
+    if left.get('metric')!='sum' or any(left.get(k)!=right.get(k) for k in stable):return None
+    if left.get('where') not in ('all','on_input_date','on_reference_date'):return None
+    target=descriptor.get('target_label','');node=next((n for n in controls if n.get('selector')==left.get('value_field',left.get('field'))),{})
+    if not isinstance(target,str) or not target or target not in node.get('label',''):return None
+    clauses=[str(requirements.get('outcome',''))]+list(map(str,requirements.get('must_have',[])))+list(map(str,requirements.get('workflow',[])))
+    pieces=[part.strip() for clause in clauses for part in re.split(r'[。、\n]',clause) if part.strip()]
+    definition=next((part for part in pieces if re.fullmatch(re.escape(target)+r'合計(?:の自動計算|を(?:計算|表示)(?:する)?)?',part)),None)
+    if definition is None:return None
+    statuses={o['value'] for n in controls for o in n.get('options',[]) if o.get('value')}
+    if any(re.search(r'合計|集計|計算|のみ|除く|以外|限定|対象',part) and any(status in part for status in statuses) for part in pieces):return None
+    result=dict(left);result.pop('also',None);result.pop('status_family',None)
+    result['basis']='原文の無限定な'+target+'合計。独立一致した対象日と数値項目を保持し、状態条件を創作しない'
+    return result,dict(valid=True,method='unqualified named source total; independently agreed field and date scope; no status restriction in aggregation clauses',source_definition=definition,original_proposed=left,original_independent=right)
+
+
 def qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key):
     """Rebuild a disputed subset from every native status, not two bad sets."""
+    total=qa_source_unqualified_sum(left,right,requirements,descriptor,controls)
+    if total is not None:return total
     # An explicit source definition can resolve a disagreement about the
     # whole calculation family, not only a disagreement within one family.
     # Enumerate requirement-supported count rules; accept exactly one.
@@ -5971,9 +5991,32 @@ def qa_initial_display_context(name,source,directory):
         finally:browser.close()
 
 
+def qa_reuse_number_styles(formats,observations):
+    """Share masked grouping/zero-padding, never numeric values or verdict text."""
+    result={css:dict(contract) for css,contract in formats.items()}
+    for observed in observations:
+        if not isinstance(observed,dict):continue
+        for css,incoming in observed.items():
+            current=result.get(css)
+            if not isinstance(current,dict) or not isinstance(incoming,dict):continue
+            count=current.get('slots')
+            if type(count)is not int or not 1<=count<=8 or incoming.get('slots')!=count or incoming.get('template')!=current.get('template'):continue
+            styles=list(current.get('number_styles',['plain']*count))
+            if len(styles)!=count:continue
+            learned=incoming.get('number_styles',[])
+            if isinstance(learned,list) and len(learned)==count and all(v in ('plain','grouped') for v in learned):
+                styles=['grouped' if old=='grouped' or new=='grouped' else 'plain' for old,new in zip(styles,learned)]
+                if 'grouped' in styles:current['number_styles']=styles
+            widths=list(current.get('number_widths',[0]*count));learned=incoming.get('number_widths',[])
+            if len(widths)==count and isinstance(learned,list) and len(learned)==count and all(type(v)is int and 0<=v<=6 for v in learned) and all(type(v)is int and 0<=v<=6 for v in widths):
+                widths=[max(a,b) for a,b in zip(widths,learned)]
+                if any(widths):current['number_widths']=widths
+    return result
+
+
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-11-scalar-outputs-and-date-repair',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-12-total-source-and-shared-number-style',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),
@@ -6044,6 +6087,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                     proposal=dict(formats,**{selector:available[selector]})
                     if len(json.dumps(proposal,ensure_ascii=False,separators=(',',':')))<=2200:formats=proposal
             except (ValueError,OSError,TypeError):pass
+        learned=[]
+        for evidence in sorted(folder.glob('*-browser/browser-observation-failure.json')):
+            try:learned.append(json.loads(evidence.read_text(encoding='utf-8')).get('display_contracts',{}))
+            except (ValueError,OSError,TypeError):continue
+        formats=qa_reuse_number_styles(formats,learned)
         formatted=bool(formats and (key in ('base-workflow','base-variant') or key.startswith('feature-')))
         unit_context=context+'\n検査基準日（期限などの計算に使用）:'+json.dumps(reference_clock,ensure_ascii=False)
         if formatted:

@@ -1,0 +1,215 @@
+{
+  "kind": "source-rule and masked-format replay on unchanged generated pages; not full product acceptance",
+  "source_run": 41049323983,
+  "artifacts": {
+    "workday": 12975244665,
+    "returns": 12975748554
+  },
+  "workday": {
+    "requirements": {
+      "outcome": "一日の稼働枠と作業予定、実績、休憩をまとめて記録し、残り時間や超過を自動計算できる",
+      "must_have": [
+        "日付・開始終了・休憩・作業名・予定時間・実績の入力",
+        "稼働可能時間、予定合計、実績、差分の自動計算",
+        "編集、完了状態、検索、ローカル保存、再読込、CSV出力、JSONバックアップと復元"
+      ],
+      "workflow": [
+        "日付・開始終了・休憩・作業名・予定時間・実績を入力",
+        "稼働可能時間、予定合計、実績、差分を計算",
+        "編集、完了状態、検索、ローカル保存、再読込、CSV出力、JSONバックアップと復元"
+      ]
+    },
+    "original_mappings": [
+      {
+        "basis": "予定（分）の対象日合計",
+        "field": "#work_date",
+        "members": [],
+        "metric": "sum",
+        "places": 0,
+        "reference_input": "#workdayDate",
+        "rounding": "exact",
+        "value_field": "#planned_minutes",
+        "where": "on_input_date"
+      },
+      {
+        "basis": "予定（分）の対象日合計",
+        "field": "#work_date",
+        "members": [],
+        "metric": "sum",
+        "places": 0,
+        "reference_input": "#workdayDate",
+        "rounding": "exact",
+        "value_field": "#planned_minutes",
+        "where": "on_input_date"
+      }
+    ],
+    "compiled_rule": {
+      "basis": "原文の無限定な予定合計。独立一致した対象日と数値項目を保持し、状態条件を創作しない",
+      "field": "#work_date",
+      "members": [],
+      "metric": "sum",
+      "places": 0,
+      "reference_input": "#workdayDate",
+      "rounding": "exact",
+      "value_field": "#planned_minutes",
+      "where": "on_input_date"
+    },
+    "audit": {
+      "valid": true,
+      "method": "unqualified named source total; independently agreed field and date scope; no status restriction in aggregation clauses",
+      "source_definition": "予定合計",
+      "original_proposed": {
+        "basis": "予定（分）の対象日合計",
+        "field": "#work_date",
+        "members": [],
+        "metric": "sum",
+        "places": 0,
+        "reference_input": "#workdayDate",
+        "rounding": "exact",
+        "value_field": "#planned_minutes",
+        "where": "on_input_date"
+      },
+      "original_independent": {
+        "basis": "予定（分）の対象日合計",
+        "field": "#work_date",
+        "members": [],
+        "metric": "sum",
+        "places": 0,
+        "reference_input": "#workdayDate",
+        "rounding": "exact",
+        "value_field": "#planned_minutes",
+        "where": "on_input_date"
+      }
+    },
+    "declared_rows": [
+      {
+        "#planned_minutes": "60",
+        "#work_date": "2023-10-10",
+        "#task_status": "未着手"
+      },
+      {
+        "#planned_minutes": "90",
+        "#work_date": "2023-10-10",
+        "#task_status": "進行中"
+      },
+      {
+        "#planned_minutes": "120",
+        "#work_date": "2023-10-10",
+        "#task_status": "完了"
+      },
+      {
+        "#planned_minutes": "999",
+        "#work_date": "2023-10-11",
+        "#task_status": "完了"
+      }
+    ]
+  },
+  "returns": {
+    "original_expected": {
+      "op": "text_equals",
+      "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+      "value": "¥1000"
+    },
+    "compiled_expected": {
+      "op": "text_equals",
+      "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+      "value": "¥1,000"
+    },
+    "source_projection_audits": [
+      {
+        "independent": {
+          "basis": "返金予定額（円）の全保存記録の合計",
+          "field": "#refund_amount",
+          "members": [],
+          "metric": "sum",
+          "places": 0,
+          "rounding": "exact",
+          "where": "all"
+        },
+        "method": "blind independent semantic binding agreement",
+        "scope": "#returnTotals > div:nth-child(3) > strong:nth-child(2)の数値位置1",
+        "valid": true
+      }
+    ],
+    "number_style_before": {
+      "ancestor_selectors": [
+        "#returnTotals"
+      ],
+      "label": "返金予定の合計",
+      "slots": 1,
+      "tag": "strong",
+      "template": "¥{n0}"
+    },
+    "number_style_after": {
+      "ancestor_selectors": [
+        "#returnTotals"
+      ],
+      "label": "返金予定の合計",
+      "slots": 1,
+      "tag": "strong",
+      "template": "¥{n0}",
+      "number_styles": [
+        "grouped"
+      ]
+    }
+  },
+  "replay": [
+    {
+      "app": "workday",
+      "width": 1280,
+      "states": [
+        "未着手",
+        "進行中",
+        "完了"
+      ],
+      "independent_minutes": "270",
+      "other_day_minutes_excluded": "999",
+      "expected": "4時間30分 / 0時間00分",
+      "actual": "4時間30分 / 0時間00分",
+      "passed": true
+    },
+    {
+      "app": "returns",
+      "width": 1280,
+      "independently_recomputed_values": [
+        "1000"
+      ],
+      "expected": "¥1,000",
+      "actual": "¥1,000",
+      "passed": true
+    },
+    {
+      "app": "workday",
+      "width": 390,
+      "states": [
+        "未着手",
+        "進行中",
+        "完了"
+      ],
+      "independent_minutes": "270",
+      "other_day_minutes_excluded": "999",
+      "expected": "4時間30分 / 0時間00分",
+      "actual": "4時間30分 / 0時間00分",
+      "passed": true
+    },
+    {
+      "app": "returns",
+      "width": 390,
+      "independently_recomputed_values": [
+        "1000"
+      ],
+      "expected": "¥1,000",
+      "actual": "¥1,000",
+      "passed": true
+    }
+  ],
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "all independent feature cases",
+    "fresh real models",
+    "design comparison and actual visual acceptance",
+    "unknown use case"
+  ]
+}

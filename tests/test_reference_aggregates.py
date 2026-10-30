@@ -12,6 +12,33 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_unqualified_named_total_keeps_date_scope_and_includes_every_state(self):
+        controls=[dict(selector='#planned',label='予定時間（分）'),dict(selector='#state',options=[dict(value=v) for v in ['未着手','進行中','完了']])]
+        left=dict(metric='sum',where='on_input_date',field='#date',value_field='#planned',reference_input='#view',also=dict(field='#state',members=['完了']))
+        right=dict(left,also=dict(field='#state',members=['進行中','完了']))
+        requirements=dict(outcome='一日の予定を確認',must_have=['稼働可能時間、予定合計、実績、差分の自動計算','編集、完了状態、検索、保存'])
+        def no_model(*args):raise AssertionError('Do not invent a status subset for an unqualified named source total')
+        rule,audit=qa.qa_resolve_status_partition(left,right,requirements,dict(target_label='予定'),controls,no_model,'0')
+        self.assertNotIn('also',rule);self.assertEqual(rule['reference_input'],'#view');self.assertEqual(audit['source_definition'],'予定合計')
+        rows=[{'#planned':str(v),'#state':state,'#date':'2026-10-30'} for v,state in zip([60,90,120],['未着手','進行中','完了'])]
+        rows.append({'#planned':'999','#state':'完了','#date':'2026-10-31'})
+        self.assertEqual(qa.qa_evaluate_projection(rows,rule,dict(input_values={'#view':'2026-10-30'})),'270')
+        restricted=dict(requirements,must_have=requirements['must_have']+['完了のみを合計する'])
+        self.assertIsNone(qa.qa_source_unqualified_sum(left,right,restricted,dict(target_label='予定'),controls))
+        restricted=dict(requirements,must_have=requirements['must_have']+['完了のみ対象'])
+        self.assertIsNone(qa.qa_source_unqualified_sum(left,right,restricted,dict(target_label='予定'),controls))
+        self.assertIsNone(qa.qa_source_unqualified_sum(left,dict(right,reference_input='#other'),requirements,dict(target_label='予定'),controls))
+
+    def test_shared_number_style_uses_no_observed_values_and_retains_large_context(self):
+        formats={'#money':dict(template='¥{n0}',slots=1,label='返金予定額')}
+        formats.update({'#extra'+str(i):dict(template='{n0}件',slots=1,label='数量'*30) for i in range(30)})
+        incoming={'#money':dict(template='¥{n0}',slots=1,number_styles=['grouped'],actual='999999',value='999999')}
+        merged=qa.qa_reuse_number_styles(formats,[incoming,{'#money':dict(template='$ {n0}',slots=1,number_styles=['plain'])}])
+        self.assertNotIn('number_styles',formats['#money']);self.assertNotIn('999999',str(merged));self.assertEqual(len(merged),len(formats))
+        compiled=qa.qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector='#money',expected_values=['1000'],expected_literals=['¥',''])),'#money',merged)
+        self.assertEqual(compiled['exact_check']['value'],'¥1,000')
+        self.assertEqual(qa.qa_reuse_number_styles(merged,[{'#money':dict(template='¥{n0}',slots=1,number_styles=['plain'])}])['#money']['number_styles'],['grouped'])
+
     def test_numeric_dates_in_saved_table_are_not_aggregate_metrics(self):
         check=dict(op='text_contains',selector='#recordRows',value='田中太郎')
         formats={'#recordRows':dict(slots=3,template='田中太郎\t{n0}-{n1}-{n2}\t出席')}
