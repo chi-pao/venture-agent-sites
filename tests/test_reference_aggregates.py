@@ -12,6 +12,17 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_saved_value_already_checked_is_removed_from_later_selector_menu(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls']+=qa.compact_qa_inventory('<input id="className" form="recordForm">')['controls']
+        actions=dict(steps=[dict(op='fill',selector='#title',value='田中太郎'),dict(op='fill',selector='#className',value='Python入門'),dict(op='click',selector='#saveRecord')])
+        first=qa.qa_secondary_saved_literal(dict(op='text_equals',selector='#title',value='田中太郎'),actions,inventory,cfg)
+        self.assertEqual(qa.qa_saved_literal_exclusions(actions,inventory,cfg,[first]),{'#title'})
+        second=qa.qa_secondary_saved_literal(dict(op='text_equals',selector='#className',value='Python入門'),actions,inventory,cfg)
+        self.assertEqual(first['selector'],second['selector']);self.assertNotEqual(first,second)
+        self.assertEqual(qa.qa_saved_literal_exclusions(actions,inventory,cfg,[first,second]),{'#title','#className'})
+        self.assertEqual(qa.qa_saved_literal_exclusions(actions,inventory,dict(cfg,qa_component_contract='unknown'),[first]),set())
+
     def test_unqualified_named_total_keeps_date_scope_and_includes_every_state(self):
         controls=[dict(selector='#planned',label='予定時間（分）'),dict(selector='#state',options=[dict(value=v) for v in ['未着手','進行中','完了']])]
         left=dict(metric='sum',where='on_input_date',field='#date',value_field='#planned',reference_input='#view',also=dict(field='#state',members=['完了']))

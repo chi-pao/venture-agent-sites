@@ -2114,6 +2114,18 @@ def qa_secondary_saved_literal(check,actions,inventory,cfg):
     return dict(op='text_contains',selector='#recordRows',value=value)
 
 
+def qa_saved_literal_exclusions(actions,inventory,cfg,checks):
+    """Exclude draft controls that normalize to an already checked saved value."""
+    tested={c.get('value') for c in checks if c.get('op')=='text_contains' and c.get('selector')=='#recordRows' and isinstance(c.get('value'),str)}
+    if not tested:return set()
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions.get('steps',[])
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(steps,binding)
+    if events is None:return set()
+    rows=qa_reference_rows(steps,events)
+    return {n['selector'] for n in inventory.get('controls',[]) if n.get('form')=='#recordForm' and n.get('tag') in ('input','textarea') and n.get('type','text') in ('text','textarea') and any(row.get(n['selector']) in tested for row in rows)}
+
+
 def qa_secondary_reference_check(check,actions,formats,spec,cfg,inventory,folder,key,generate):
     """Numeric secondary assertions use the same source-only compiler as primary."""
     selector=check.get('selector');contract=formats.get(selector,{})
@@ -2508,6 +2520,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
     for index in range(2):
         excluded={primary['selector']}|{c['selector'] for c in checks}
+        excluded|=qa_saved_literal_exclusions(actions,inventory,cfg,checks)
         options=sorted({n['selector'] for n in inventory.get('controls',[])+inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')} - excluded)
         if not options:raise AutoQAPlanError('主結果と別の補助検査先が画面にありません')
         check_schema=json.loads(json.dumps(check_schema))
@@ -2519,7 +2532,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
             saved=qa_secondary_saved_literal(check,actions,inventory,cfg)
             if saved!=check:
                 write_framework_json(directory/('secondary-'+str(index)+'-saved-binding.json'),dict(original=check,compiled=saved,method='submitted literal found in independently declared saved records; not cleared draft or guessed row layout'))
-                if saved.get('selector') in excluded:raise AutoQAPlanError('保存先への対応づけが既存の検査先と重複します。別の独立した結果を検査してください')
+                if saved.get('selector') in excluded and (saved.get('selector')!='#recordRows' or saved==primary or saved in checks):raise AutoQAPlanError('保存先への対応づけが既存の検査と同一です。別の独立した値を検査してください')
                 return dict(value,check=saved)
             return value
         dependency=dict(actions=actions,primary=primary,earlier=checks)
@@ -2626,6 +2639,24 @@ def qa_compilation_identity(cfg):
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 
 
+def qa_native_requirement_gap(spec,inventory,cfg):
+    """Recognize one demonstrable native date-only capability gap, not all UIs."""
+    controls=inventory.get('controls',[])
+    binding=dict(cfg,_qa_binding_controls=controls,_qa_binding_outputs=inventory.get('outputs',[]))
+    if qa_component_events([],binding) is None:return ''
+    conditions=[str(c) for c in spec.get('acceptance',[])]
+    requested=next((c for c in conditions if re.search(r'授業日時[^。\n]{0,100}(?:[01]?\d|2[0-3]):[0-5]\d',c)),None)
+    if not requested:return ''
+    dates=[n for n in controls if n.get('form')=='#recordForm' and n.get('type')=='date' and '授業' in n.get('label','')]
+    if not dates:return ''
+    capable=[n for n in controls if n.get('tag') in ('input','select') and not n.get('disabled') and not n.get('readonly') and (n.get('type') in ('time','datetime-local') or n.get('type')!='date' and re.search(r'時刻|日時|時間|開始|終了|時$|分$',n.get('label','')))]
+    if capable:return ''
+    # A custom time picker may expose its editable control only after a click.
+    if any(n.get('tag')=='button' and re.search(r'時刻|日時|時間',n.get('text','')+' '+n.get('label','')) for n in controls):return ''
+    if any(n.get('tag')=='select' and any(re.fullmatch(r'(?:[01]?\d|2[0-3]):[0-5]\d',str(o.get('value',''))) for o in n.get('options',[])) for n in controls):return ''
+    return '実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください'
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -2633,6 +2664,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     signature=hashlib.sha256(json.dumps(dict(policy=CHECKPOINT_QA_POLICY,name=name,spec=spec,
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
+    gap=qa_native_requirement_gap(spec,full_inventory,cfg)
+    if gap:
+        write_framework_json(folder/'native-capability-gap.json',dict(source_sha=hashlib.sha256(page.encode()).hexdigest(),details=gap,acceptance=spec.get('acceptance',[]),controls=full_inventory.get('controls',[]),owner='development',passed=False))
+        raise AutoQAPlanError(gap)
     initial_context=qa_initial_display_context(name,page,folder) if cfg.get('qa_split_units') and cfg.get('qa_reference_aggregates') and cfg.get('qa_probe_units') else {}
     cfg=dict(cfg,_qa_input_defaults=initial_context.get('input_defaults',{}))
     full_inventory=qa_merge_display_inventory(full_inventory,initial_context.get('display_contracts',{}));inventory=full_inventory

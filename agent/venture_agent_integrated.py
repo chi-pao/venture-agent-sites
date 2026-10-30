@@ -3188,24 +3188,32 @@ DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
 def department_duration_correction(condition):
-    """Correct only an unambiguous declared same-day start/end/break equation."""
+    """Correct one same-day source equation in unit or H:MM duration form."""
     from decimal import Decimal
+    if re.search(r'別の入力\s*[:：]',condition):return None
+    inputs=re.split(r'/\s*操作\s*[:：]|期待結果\s*[:：]',condition,maxsplit=1)[0]
     starts=set(re.findall(r'開始(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
     ends=set(re.findall(r'終了(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
-    breaks=set(re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',condition))
-    matches=list(re.finditer(r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?',condition))
-    if len(starts)!=1 or len(ends)!=1 or len(breaks)!=1 or len(matches)!=1:return None
+    pauses={Decimal(n)*(60 if unit=='時間' else 1) for n,unit in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',inputs)}
+    pauses.update(Decimal(int(h)*60+int(m)) for h,m in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d{1,3}):([0-5]\d)(?![0-9])',inputs))
+    pattern=r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?:(?P<h>\d{1,3}):(?P<m>[0-5]\d)(?![0-9])|(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?)'
+    matches=list(re.finditer(pattern,condition))
+    if len(starts)!=1 or len(ends)!=1 or len(pauses)!=1 or len(matches)!=1:return None
     def minute(t):h,m=map(int,t.split(':'));return Decimal(h*60+m)
-    pause,unit=next(iter(breaks));pause=Decimal(pause)*(60 if unit=='時間' else 1)
-    computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
+    pause=next(iter(pauses));computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
     if computed<0 or computed!=computed.to_integral_value():return None
-    match=matches[0];declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
+    match=matches[0]
+    if match['h'] is not None:declared=Decimal(int(match['h'])*60+int(match['m']))
+    else:declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
     if declared==computed:return None
-    if match['mins'] is not None or match['unit']=='時間':
-        hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
-    else:replacement=str(int(computed))+'分'
-    start=match.start('n');end=match.end()
-    return dict(before=condition,after=condition[:start]+replacement+condition[end:],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
+    if match['h'] is not None:
+        hours,mins=divmod(int(computed),60);replacement=str(hours).zfill(len(match['h']) if match['h'].startswith('0') else 1)+':'+str(mins).zfill(2);start=match.start('h')
+    else:
+        if match['mins'] is not None or match['unit']=='時間':
+            hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
+        else:replacement=str(int(computed))+'分'
+        start=match.start('n')
+    return dict(before=condition,after=condition[:start]+replacement+condition[match.end():],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
 
 
 def department_difference_issue(condition):
@@ -3215,6 +3223,14 @@ def department_difference_issue(condition):
     for match in re.finditer(pattern,condition):
         values=match.groups();minutes=[Decimal(values[i])*(60 if values[i+1]=='時間' else 1) for i in (0,2,4)]
         if minutes[0]!=minutes[1]-minutes[2]:return '差分の定義式と正解が矛盾しています: '+match.group()
+    clock=r'-?\d{1,3}:[0-5]\d'
+    for match in re.finditer(r'差分\s*[:：]\s*('+clock+r')\s*[（(]([^（）()]{1,220})[）)]',condition):
+        expressions=list(re.finditer('('+clock+r')\s*[-−]\s*('+clock+r')(?:\s*=\s*('+clock+r'))?',match[2]))
+        if len(expressions)!=1:continue
+        def minutes(value):
+            sign=-1 if value.startswith('-') else 1;h,m=map(int,value.lstrip('-').split(':'));return sign*(h*60+m)
+        expression=expressions[0];computed=minutes(expression[1])-minutes(expression[2])
+        if minutes(match[1])!=computed or expression[3] is not None and minutes(expression[3])!=computed:return '差分の定義式と正解が矛盾しています: '+match.group()
     return ''
 
 
@@ -5513,6 +5529,18 @@ def qa_secondary_saved_literal(check,actions,inventory,cfg):
     return dict(op='text_contains',selector='#recordRows',value=value)
 
 
+def qa_saved_literal_exclusions(actions,inventory,cfg,checks):
+    """Exclude draft controls that normalize to an already checked saved value."""
+    tested={c.get('value') for c in checks if c.get('op')=='text_contains' and c.get('selector')=='#recordRows' and isinstance(c.get('value'),str)}
+    if not tested:return set()
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions.get('steps',[])
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(steps,binding)
+    if events is None:return set()
+    rows=qa_reference_rows(steps,events)
+    return {n['selector'] for n in inventory.get('controls',[]) if n.get('form')=='#recordForm' and n.get('tag') in ('input','textarea') and n.get('type','text') in ('text','textarea') and any(row.get(n['selector']) in tested for row in rows)}
+
+
 def qa_secondary_reference_check(check,actions,formats,spec,cfg,inventory,folder,key,generate):
     """Numeric secondary assertions use the same source-only compiler as primary."""
     selector=check.get('selector');contract=formats.get(selector,{})
@@ -5907,6 +5935,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
     check_schema=dict(type='object',properties={'check':properties['checks']['items']},required=['check'],additionalProperties=False)
     for index in range(2):
         excluded={primary['selector']}|{c['selector'] for c in checks}
+        excluded|=qa_saved_literal_exclusions(actions,inventory,cfg,checks)
         options=sorted({n['selector'] for n in inventory.get('controls',[])+inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form','script','style')} - excluded)
         if not options:raise AutoQAPlanError('主結果と別の補助検査先が画面にありません')
         check_schema=json.loads(json.dumps(check_schema))
@@ -5918,7 +5947,7 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
             saved=qa_secondary_saved_literal(check,actions,inventory,cfg)
             if saved!=check:
                 write_framework_json(directory/('secondary-'+str(index)+'-saved-binding.json'),dict(original=check,compiled=saved,method='submitted literal found in independently declared saved records; not cleared draft or guessed row layout'))
-                if saved.get('selector') in excluded:raise AutoQAPlanError('保存先への対応づけが既存の検査先と重複します。別の独立した結果を検査してください')
+                if saved.get('selector') in excluded and (saved.get('selector')!='#recordRows' or saved==primary or saved in checks):raise AutoQAPlanError('保存先への対応づけが既存の検査と同一です。別の独立した値を検査してください')
                 return dict(value,check=saved)
             return value
         dependency=dict(actions=actions,primary=primary,earlier=checks)
@@ -6025,6 +6054,24 @@ def qa_compilation_identity(cfg):
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 
 
+def qa_native_requirement_gap(spec,inventory,cfg):
+    """Recognize one demonstrable native date-only capability gap, not all UIs."""
+    controls=inventory.get('controls',[])
+    binding=dict(cfg,_qa_binding_controls=controls,_qa_binding_outputs=inventory.get('outputs',[]))
+    if qa_component_events([],binding) is None:return ''
+    conditions=[str(c) for c in spec.get('acceptance',[])]
+    requested=next((c for c in conditions if re.search(r'授業日時[^。\n]{0,100}(?:[01]?\d|2[0-3]):[0-5]\d',c)),None)
+    if not requested:return ''
+    dates=[n for n in controls if n.get('form')=='#recordForm' and n.get('type')=='date' and '授業' in n.get('label','')]
+    if not dates:return ''
+    capable=[n for n in controls if n.get('tag') in ('input','select') and not n.get('disabled') and not n.get('readonly') and (n.get('type') in ('time','datetime-local') or n.get('type')!='date' and re.search(r'時刻|日時|時間|開始|終了|時$|分$',n.get('label','')))]
+    if capable:return ''
+    # A custom time picker may expose its editable control only after a click.
+    if any(n.get('tag')=='button' and re.search(r'時刻|日時|時間',n.get('text','')+' '+n.get('label','')) for n in controls):return ''
+    if any(n.get('tag')=='select' and any(re.fullmatch(r'(?:[01]?\d|2[0-3]):[0-5]\d',str(o.get('value',''))) for o in n.get('options',[])) for n in controls):return ''
+    return '実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください'
+
+
 def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     import time as qa_time
     inventory=compact_qa_inventory(page)
@@ -6032,6 +6079,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
     signature=hashlib.sha256(json.dumps(dict(policy=CHECKPOINT_QA_POLICY,name=name,spec=spec,
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
+    gap=qa_native_requirement_gap(spec,full_inventory,cfg)
+    if gap:
+        write_framework_json(folder/'native-capability-gap.json',dict(source_sha=hashlib.sha256(page.encode()).hexdigest(),details=gap,acceptance=spec.get('acceptance',[]),controls=full_inventory.get('controls',[]),owner='development',passed=False))
+        raise AutoQAPlanError(gap)
     initial_context=qa_initial_display_context(name,page,folder) if cfg.get('qa_split_units') and cfg.get('qa_reference_aggregates') and cfg.get('qa_probe_units') else {}
     cfg=dict(cfg,_qa_input_defaults=initial_context.get('input_defaults',{}))
     full_inventory=qa_merge_display_inventory(full_inventory,initial_context.get('display_contracts',{}));inventory=full_inventory

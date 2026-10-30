@@ -8,6 +8,39 @@ from test_preview import app
 
 
 class DepartmentSpecContractTests(TestCase):
+    def test_requested_class_timestamp_missing_in_date_only_native_page_is_development_gap(self):
+        page='<form id="recordForm"><input id="class_date" type="date"><label for="class_date">授業日</label><button id="saveRecord" type="submit">保存</button></form><strong id="recordCount">0</strong><tbody id="recordRows"></tbody>'
+        inventory=app.compact_qa_inventory(page)
+        spec=dict(self.spec,acceptance=['授業日時を2023-10-05 14:00に設定し保存と再読込で保持する'])
+        cfg=dict(self.cfg,qa_component_contract='native-record-create-v1')
+        gap=app.qa_native_requirement_gap(spec,inventory,cfg)
+        self.assertIn('実装不足',gap)
+        self.assertEqual(app.department_failure_target(dict(failed_step='操作シナリオ設計',details=gap),'実操作・画面検証へ差し戻し'),'development')
+        with patch.object(app,'qa_initial_display_context',side_effect=AssertionError('Do not regenerate tests for an absent input')),patch.object(app,'ai_json',side_effect=AssertionError('The missing capability is already established')):
+            with self.assertRaisesRegex(app.AutoQAPlanError,'実装不足'):app.checkpointed_independent_qa_plan('授業管理',page,cfg,spec,[])
+        with_time=app.compact_qa_inventory(page+'<label for="class_time">授業時刻</label><input id="class_time" type="time">')
+        self.assertEqual(app.qa_native_requirement_gap(spec,with_time,cfg),'')
+        custom=app.compact_qa_inventory(page+'<button id=\"timePicker\" type=\"button\">授業時刻を選ぶ</button>')
+        self.assertEqual(app.qa_native_requirement_gap(spec,custom,cfg),'')
+        self.assertEqual(app.qa_native_requirement_gap(spec,inventory,dict(cfg,qa_component_contract='unknown')),'')
+
+    def test_colon_duration_equation_is_checked_before_product_qa(self):
+        wrong='入力: 日付=2023年10月10日, 開始時間=10:00, 終了時間=18:00, 休憩時間=1:30 / 操作: 稼働枠と作業を保存 / 期待結果: 稼働可能時間: 8:00 (終了時間 - 開始時間 - 休憩時間 = 18:00 - 10:00 - 1:30 = 6:30)、予定合計: 7:00、実績: 6:30、差分: -0:30 (予定合計 - 実績 = 7:00 - 6:30 = 0:30)。'
+        fix=app.department_duration_correction(wrong)
+        self.assertEqual(fix['computed_minutes'],'390');self.assertIn('稼働可能時間: 6:30',fix['after'])
+        self.assertIn('休憩時間=1:30',fix['after']);self.assertIn('差分: -0:30',fix['after'])
+        self.assertIsNone(app.department_duration_correction(fix['after']))
+        self.assertIn('矛盾',app.department_difference_issue(fix['after']))
+        self.assertEqual(app.department_difference_issue(fix['after'].replace('差分: -0:30','差分: 0:30')),'')
+        self.assertIn('矛盾',app.department_difference_issue('差分: 0:30 (7:00 - 6:30 = -0:30)'))
+        self.assertIsNone(app.department_duration_correction(wrong.replace('終了時間=18:00','終了時間=08:00')))
+        self.assertIsNone(app.department_duration_correction(wrong+' 別の入力: 休憩時間=2:00'))
+        spec=dict(self.spec,acceptance=[wrong])
+        self.assertTrue(app.department_spec_contract_issue(spec,self.rationale).startswith('時間算術:'))
+        with patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'store_product_spec',side_effect=lambda name,value,**kw:value) as save:
+            with self.assertRaisesRegex(app.AutoQAPlanError,'残る仕様の不一致'):app.ensure_department_product_spec('在宅ワーク',self.cfg)
+        self.assertIn('稼働可能時間: 6:30',save.call_args.args[1]['acceptance'][0])
+
     def test_ai_duration_typo_is_corrected_from_same_inputs_only(self):
         wrong='入力: 日付=2023-10-05, 開始時間=09:00, 終了時間=17:00, 休憩時間=1.5時間 / 操作: 稼働枠を保存 / 期待結果: 稼働可能時間: 7.5時間 (17:00 - 09:00 - 1.5時間)'
         spec=dict(self.spec,acceptance=[wrong,'保存後に同じ入力値が再表示される','CSVに保存値が含まれる'])

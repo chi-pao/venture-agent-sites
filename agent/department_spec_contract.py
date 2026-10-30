@@ -6,24 +6,32 @@ DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
 def department_duration_correction(condition):
-    """Correct only an unambiguous declared same-day start/end/break equation."""
+    """Correct one same-day source equation in unit or H:MM duration form."""
     from decimal import Decimal
+    if re.search(r'別の入力\s*[:：]',condition):return None
+    inputs=re.split(r'/\s*操作\s*[:：]|期待結果\s*[:：]',condition,maxsplit=1)[0]
     starts=set(re.findall(r'開始(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
     ends=set(re.findall(r'終了(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
-    breaks=set(re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',condition))
-    matches=list(re.finditer(r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?',condition))
-    if len(starts)!=1 or len(ends)!=1 or len(breaks)!=1 or len(matches)!=1:return None
+    pauses={Decimal(n)*(60 if unit=='時間' else 1) for n,unit in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',inputs)}
+    pauses.update(Decimal(int(h)*60+int(m)) for h,m in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d{1,3}):([0-5]\d)(?![0-9])',inputs))
+    pattern=r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?:(?P<h>\d{1,3}):(?P<m>[0-5]\d)(?![0-9])|(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?)'
+    matches=list(re.finditer(pattern,condition))
+    if len(starts)!=1 or len(ends)!=1 or len(pauses)!=1 or len(matches)!=1:return None
     def minute(t):h,m=map(int,t.split(':'));return Decimal(h*60+m)
-    pause,unit=next(iter(breaks));pause=Decimal(pause)*(60 if unit=='時間' else 1)
-    computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
+    pause=next(iter(pauses));computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
     if computed<0 or computed!=computed.to_integral_value():return None
-    match=matches[0];declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
+    match=matches[0]
+    if match['h'] is not None:declared=Decimal(int(match['h'])*60+int(match['m']))
+    else:declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
     if declared==computed:return None
-    if match['mins'] is not None or match['unit']=='時間':
-        hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
-    else:replacement=str(int(computed))+'分'
-    start=match.start('n');end=match.end()
-    return dict(before=condition,after=condition[:start]+replacement+condition[end:],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
+    if match['h'] is not None:
+        hours,mins=divmod(int(computed),60);replacement=str(hours).zfill(len(match['h']) if match['h'].startswith('0') else 1)+':'+str(mins).zfill(2);start=match.start('h')
+    else:
+        if match['mins'] is not None or match['unit']=='時間':
+            hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
+        else:replacement=str(int(computed))+'分'
+        start=match.start('n')
+    return dict(before=condition,after=condition[:start]+replacement+condition[match.end():],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
 
 
 def department_difference_issue(condition):
@@ -33,6 +41,14 @@ def department_difference_issue(condition):
     for match in re.finditer(pattern,condition):
         values=match.groups();minutes=[Decimal(values[i])*(60 if values[i+1]=='時間' else 1) for i in (0,2,4)]
         if minutes[0]!=minutes[1]-minutes[2]:return '差分の定義式と正解が矛盾しています: '+match.group()
+    clock=r'-?\d{1,3}:[0-5]\d'
+    for match in re.finditer(r'差分\s*[:：]\s*('+clock+r')\s*[（(]([^（）()]{1,220})[）)]',condition):
+        expressions=list(re.finditer('('+clock+r')\s*[-−]\s*('+clock+r')(?:\s*=\s*('+clock+r'))?',match[2]))
+        if len(expressions)!=1:continue
+        def minutes(value):
+            sign=-1 if value.startswith('-') else 1;h,m=map(int,value.lstrip('-').split(':'));return sign*(h*60+m)
+        expression=expressions[0];computed=minutes(expression[1])-minutes(expression[2])
+        if minutes(match[1])!=computed or expression[3] is not None and minutes(expression[3])!=computed:return '差分の定義式と正解が矛盾しています: '+match.group()
     return ''
 
 
