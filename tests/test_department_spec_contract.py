@@ -8,6 +8,39 @@ from test_preview import app
 
 
 class DepartmentSpecContractTests(TestCase):
+    def test_declared_backup_lifecycle_compiles_data_without_named_screens(self):
+        spec=dict(delivery_mode='browser_local',must_have=['受講者名簿のローカル保存','バックアップと復元機能'])
+        cfg=dict(department_backup_protocol='browser-json-file-v1')
+        self.assertTrue(app.department_file_backup_protocol('バックアップと復元機能',spec,{},cfg))
+        data=dict(saved_input='受講者名=山田、授業日=2026-10-30、状態=出席',changed_input='受講者名=山田、授業日=2026-10-30、状態=欠席')
+        compiled=app.department_compile_backup_acceptance(data)
+        self.assertIn(data['saved_input'],compiled['expected']);self.assertIn(data['changed_input'],compiled['expected'])
+        self.assertIn('キャンセル',compiled['action']);self.assertIn('JSON',compiled['action']);self.assertIn('再読込',compiled['action'])
+        self.assertNotIn('完成条件に追加',compiled['expected'])
+        self.assertFalse(app.department_unrequested_file_contract(str(compiled),str(spec)))
+        self.assertFalse(app.department_file_backup_protocol('バックアップと復元機能',dict(spec,must_have=spec['must_have']+['バックアップ名と履歴一覧']),{},cfg))
+        self.assertFalse(app.department_file_backup_protocol('未登録の旅程の乗継計算',spec,{},cfg))
+        with self.assertRaises(app.AutoQAPlanError):app.department_compile_backup_acceptance(dict(data,changed_input=data['saved_input']))
+        with self.assertRaises(app.AutoQAPlanError):app.department_compile_backup_acceptance(dict(data,saved_input='バックアップ名=指定されていない名前'))
+
+    def test_backup_data_compilation_still_receives_independent_source_audit(self):
+        spec=dict(self.spec,delivery_mode='browser_local',must_have=['日付と状態の入力と保存','CSV出力機能','バックアップと復元機能'])
+        calls=[]
+        def model(prompt,cfg,tokens,**kw):
+            calls.append(prompt)
+            if prompt.startswith('完成条件の独立監査。'):return kw['validator'](dict(valid=True,issues=[]))
+            if 'saved_input' in kw['schema']['properties']:
+                self.assertNotIn('expected',kw['schema']['properties'])
+                return kw['validator'](dict(saved_input='作業名=資料整理、日付=2026-10-30、実績=60分',changed_input='作業名=資料整理、日付=2026-10-30、実績=90分'))
+            return kw['validator'](dict(input='作業名=資料整理、実績=60分を入力する',action='対象の保存またはCSV出力を実行する',expected='資料整理の実績60分が保存値または出力ファイルに含まれる'))
+        with patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'ai_json',side_effect=model),patch.object(app,'store_product_spec',side_effect=lambda name,value,**kw:value):
+            repaired=app.ensure_department_product_spec('在宅ワーク',dict(self.cfg,department_backup_protocol='browser-json-file-v1'))
+        self.assertEqual(len(repaired['acceptance']),3)
+        self.assertEqual(sum(p.startswith('完成条件の独立監査。') for p in calls),3)
+        self.assertTrue(list(self.root.rglob('*-backup-data-last-response.json')))
+        self.assertTrue(list(self.root.rglob('*-backup-protocol.json')))
+        self.assertIn('実績=60分',repaired['acceptance'][-1]);self.assertIn('実績=90分',repaired['acceptance'][-1])
+
     def test_unrequested_file_names_and_backup_screens_are_detected_without_removing_scope(self):
         source=dict(must_have=['受講者名簿のローカル保存','授業日時と出欠状態の連動','CSV出力機能','バックアップと復元機能'],requested_outcome='名簿登録から保存とCSV出力までを行う',acceptance=['3名を保存する。ファイル名は「名簿_YYYY-MM-DD_HH-MM.csv」である','バックアップ名=午前10時の記録をバックアップ一覧画面から復元する'])
         self.assertIn('命名規則',app.department_spec_contract_issue(source,{}))

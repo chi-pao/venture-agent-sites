@@ -37,6 +37,7 @@ def main():
     if qa_model=='qwen2.5:14b':cfg.update(qa_part_timeout=300,qa_part_timeout_ceiling=480)
     cfg['qa_mapping_model']=qa_model or oracle_model or cfg['model']
     cfg['qa_factored_status_bindings']=True
+    cfg.update(qa_backup_component_contract='native-record-backup-v1',department_backup_protocol='browser-json-file-v1')
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):

@@ -12,6 +12,20 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_declared_backup_protocol_requires_native_controls_and_never_invents_inline_buttons(self):
+        inventory,cfg=self.component_fixture()
+        inventory=dict(inventory,controls=inventory['controls']+qa.compact_qa_inventory('<button id="downloadJson">JSON保存</button><input id="restoreFile" type="file">')['controls'])
+        cfg=dict(cfg,qa_backup_component_contract='native-record-backup-v1')
+        targets=qa.qa_declared_backup_targets(cfg,inventory)
+        self.assertEqual(targets['confirmation_mode'],'native');self.assertEqual(targets['confirmation_steps'],[])
+        self.assertEqual(qa.qa_validate_backup_targets(targets,inventory),targets)
+        self.assertIsNone(qa.qa_declared_backup_targets(dict(cfg,qa_backup_component_contract='unknown'),inventory))
+        missing=dict(inventory,controls=[n for n in inventory['controls'] if n['selector']!='#restoreFile'])
+        self.assertIsNone(qa.qa_declared_backup_targets(cfg,missing))
+        cached=dict(targets,confirmation_mode='inline',confirmation_steps=[dict(op='click',selector='#confirm')]);cached.pop('cancel_selector')
+        with self.assertRaises(ValueError):qa.qa_validate_backup_targets(cached,inventory)
+        with self.assertRaises(ValueError):qa.qa_validate_backup_targets(dict(targets,confirmation_steps=[dict(op='click',selector='#confirm')]),inventory)
+
     def test_factored_status_menu_keeps_rule_families_and_requires_all_state_classification(self):
         controls=[dict(selector='#state',label='対応状況',required=True,options=[dict(value=s) for s in ['受付','返送待ち','確認中','返金済み','対象外']]),dict(selector='#due',type='date',label='期限')]
         raw=qa.qa_projection_candidates(controls,'{n0}件',0,row_fields={'#state','#due'})

@@ -128,6 +128,31 @@ def qa_roundtrip_schema(count):
         'additionalProperties':False}
 
 
+def qa_declared_backup_targets(cfg,inventory):
+    """A versioned file protocol, never a model guess about confirmation UI."""
+    if cfg.get('qa_backup_component_contract')!='native-record-backup-v1':return None
+    if cfg.get('qa_component_contract')!='native-record-create-v1':return None
+    nodes={n['selector']:n for n in inventory.get('controls',[])}
+    if any(nodes.get(css,{}).get('tag')!='button' for css in ('#downloadCsv','#downloadJson')):return None
+    if nodes.get('#restoreFile',{}).get('type')!='file':return None
+    return dict(csv_selector='#downloadCsv',json_selector='#downloadJson',restore_selector='#restoreFile',confirmation_mode='native',confirmation_steps=[],cancel_selector='')
+
+
+def qa_validate_backup_targets(value,inventory):
+    if not isinstance(value,dict):raise AutoQAPlanError('復元先の指定が必要です')
+    nodes={n['selector']:n for n in inventory.get('controls',[])}
+    for key in ('csv_selector','json_selector'):
+        if nodes.get(value.get(key),{}).get('tag')!='button':raise AutoQAPlanError('実在する出力ボタンが必要: '+key)
+    if nodes.get(value.get('restore_selector'),{}).get('type')!='file':raise AutoQAPlanError('実在する復元file入力が必要です')
+    mode=value.get('confirmation_mode');steps=value.get('confirmation_steps')
+    if mode not in ('native','inline') or not isinstance(steps,list):raise AutoQAPlanError('復元確認方式が未確定です')
+    if mode=='native' and steps:raise AutoQAPlanError('ブラウザconfirmに画面内の確定clickを追加できません')
+    if mode=='inline':
+        if nodes.get(value.get('cancel_selector'),{}).get('tag')!='button' or not steps:raise AutoQAPlanError('画面内復元には実在する取消ボタンと確定操作が必要です')
+        if any(s.get('op')!='click' or nodes.get(s.get('selector'),{}).get('tag')!='button' for s in steps):raise AutoQAPlanError('画面にない復元確定ボタンを推測できません')
+    return value
+
+
 def compile_qa_roundtrip(value,count):
     if not isinstance(value,dict):raise AutoQAPlanError('復元検査の対象と変更操作をJSONで指定してください')
     if value.get('blocked_features'):raise AutoQAPlanError('実装不足: '+str(value['blocked_features']))
@@ -2354,6 +2379,7 @@ def qa_compilation_identity(cfg):
     return dict(policy='2026-10-30-survey-before-plan-6-semantic-rule-reuse-view-reload',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
+                backup_component=cfg.get('qa_backup_component_contract'),
                 factored_status_bindings=bool(cfg.get('qa_factored_status_bindings')),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 
@@ -2636,16 +2662,16 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 target_schema=dict(type='object',properties={k:schema['properties'][k] for k in target_keys},
                     required=['csv_selector','json_selector','restore_selector','confirmation_mode','confirmation_steps'],additionalProperties=False)
                 target_controls=[n for n in full_inventory['controls'] if n.get('tag')=='button' or n.get('type')=='file']
+                buttons=[n['selector'] for n in target_controls if n.get('tag')=='button'];files=[n['selector'] for n in target_controls if n.get('type')=='file']
+                for field in ('csv_selector','json_selector'):target_schema['properties'][field]['enum']=buttons
+                target_schema['properties']['restore_selector']['enum']=files
+                target_schema['properties']['cancel_selector']['enum']=['']+buttons
                 target_prompt=('バックアップの配線だけをJSONで返す。csv_selector:CSVボタン、json_selector:JSON保存ボタン、restore_selector:復元file入力。'
                     'confirmation_modeはブラウザconfirmならnative、画面内の確定/取消ならinline。inlineだけcancel_selectorとconfirmation_stepsの確定clickが必要。nativeのconfirmation_stepsは空配列。記録入力・期待値・checks・完成条件は生成しない。\n操作要素:'+json.dumps(target_controls,ensure_ascii=False,separators=(',',':')))
                 def validate_targets(value):
-                    if not isinstance(value,dict):raise AutoQAPlanError('復元先の指定が必要です')
-                    nodes={n['selector']:n for n in target_controls}
-                    for key in ('csv_selector','json_selector'):
-                        if nodes.get(value.get(key),{}).get('tag')!='button':raise AutoQAPlanError('実在する出力ボタンが必要: '+key)
-                    if nodes.get(value.get('restore_selector'),{}).get('type')!='file':raise AutoQAPlanError('実在する復元file入力が必要です')
-                    return value
-                targets=part('roundtrip-targets',target_prompt,validate_targets,tokens=250,include_context=False,schema=target_schema)
+                    return qa_validate_backup_targets(value,dict(controls=target_controls))
+                declared=qa_declared_backup_targets(cfg,full_inventory)
+                targets=part('roundtrip-targets',target_prompt,validate_targets,tokens=0 if declared else 250,include_context=False,schema=target_schema,supplied=declared)
                 strings=list(dict.fromkeys(str(s['value']) for p in scenarios[:2] for s in p['steps'] if s.get('op') in ('fill','select') and s.get('value') and next((n.get('form') for n in full_inventory['controls'] if n['selector']==s.get('selector')),None)=='#recordForm'))
                 if len(strings)<2:raise AutoQAPlanError('CSVで照合する保存済み入力が不足しています')
                 supplied=dict(targets,csv_contains=strings[:4],mutation_steps=mutation['steps'],acceptance=[],rationale='宣言済み記録契約の別入力で保存状態を変更し、直前の独立期待値へ実ファイルで復元する')
