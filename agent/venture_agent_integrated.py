@@ -6543,7 +6543,8 @@ def run_product_departments(job, name, cfg):
             else: previous = product_source(name)
         feedback = '\n'.join(DEPARTMENT_NAMES[k] + 'からの修正指示: ' + v['detail'] for k,v in context['feedback'].items())
         plan = quality_requirements_text(name) + '\n' + feedback
-        page, verdict, passed = build(job, name, dict(department_configuration(context_cfg, 'development'), _department_documents=context['design']),
+        page, verdict, passed = build(job, name, dict(department_configuration(context_cfg, 'development'), _department_documents=context['design'],
+                _department_repair_feedback='\n'.join(v['detail'] for k,v in context['feedback'].items() if k in ('development','design'))),
             plan, asset_kind='品質改善候補HTML', existing_page=previous,
             allow_partial=spec['delivery_mode']=='connected')
         if not page: raise ValueError(verdict)
@@ -9123,7 +9124,8 @@ def autonomous_recovery_plan(failure,stage=0):
 
 def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow_partial=False):
     history=query("SELECT validation FROM agent_assets WHERE idea=? AND kind IN ('品質改善候補HTML','試作品HTML') ORDER BY id DESC LIMIT 1",(name,))
-    last=history[0]['validation'] if history else ''
+    repair_feedback=str(cfg.get('_department_repair_feedback') or '').strip()
+    last=repair_feedback or (history[0]['validation'] if history else '')
     checkpoint,checkpoint_info=product_checkpoint(name)
     previous_page=existing_page or checkpoint
     repair_rows=query('SELECT value FROM agent_settings WHERE key=?',('product_repair_state:'+name,))
@@ -9182,7 +9184,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
     # Previously projects spent most of their budget on monolithic HTML before
     # trying these validated components as a last resort.
     structured_seed_attempted=False
-    if not previous_page and product_operation(name,release_spec) in PRODUCT_OPERATION_REQUIREMENTS and product_operation(name,release_spec)!='custom_workflow':
+    if not repair_feedback and not previous_page and product_operation(name,release_spec) in PRODUCT_OPERATION_REQUIREMENTS and product_operation(name,release_spec)!='custom_workflow':
         structured_seed_attempted=True
         event(job,name+': 用途別の検証済み機能部品から先に組み立て、全受入条件の実ブラウザQAへ回します')
         try:
@@ -9245,6 +9247,8 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
             + '\n必ず実装する具体的な範囲:' + str(specification.get('mvp_scope',''))[:800]
             + '\n無料の代替と比較して実装で確かめる違い:' + str(specification.get('differentiation',''))[:800]
         )
+        if repair_feedback:
+            requirements += '\n独立検査で確定した今回の修正対象（過去の簡易検査合格より優先）:\n'+repair_feedback[:4000]
         requirements += design_tokens_prompt(competitor_design_tokens(handoff.get('brief',{})))
         if legacy_reason:
             requirements += '\n作り直しの理由:'+legacy_reason+'。入力値・計算・結果だけの汎用サンプルを再生成しない。対象者の実際の作業を具体的な項目と処理にする。'
@@ -9389,7 +9393,7 @@ def build(job, name, cfg, plan,asset_kind='試作品HTML',existing_page='',allow
         save(job, name, asset_kind, final[0], 'html', final[1])
         try:
             if not development_allowed(name):return final
-            if release_spec.get('delivery_mode')=='browser_local' or partial:
+            if not repair_feedback and (release_spec.get('delivery_mode')=='browser_local' or partial):
                 event(job,name+': 自由生成が検査に通らないため、定義済み入力・保存・出力部品で再構成します')
                 return structured_product_fallback(job,name,cfg,plan,asset_kind,partial)
         except ProductPatternUnsupportedError as exc:

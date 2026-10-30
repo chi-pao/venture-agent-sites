@@ -105,7 +105,8 @@ def run_product_departments(job, name, cfg):
             else: previous = product_source(name)
         feedback = '\n'.join(DEPARTMENT_NAMES[k] + 'からの修正指示: ' + v['detail'] for k,v in context['feedback'].items())
         plan = quality_requirements_text(name) + '\n' + feedback
-        page, verdict, passed = build(job, name, dict(department_configuration(context_cfg, 'development'), _department_documents=context['design']),
+        page, verdict, passed = build(job, name, dict(department_configuration(context_cfg, 'development'), _department_documents=context['design'],
+                _department_repair_feedback='\n'.join(v['detail'] for k,v in context['feedback'].items() if k in ('development','design'))),
             plan, asset_kind='品質改善候補HTML', existing_page=previous,
             allow_partial=spec['delivery_mode']=='connected')
         if not page: raise ValueError(verdict)

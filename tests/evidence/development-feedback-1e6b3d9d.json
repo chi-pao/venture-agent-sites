@@ -1,0 +1,70 @@
+{
+  "source_run": 41067297185,
+  "source_commit": "1e6b3d9d985d6367ba36172545566bc93fe78b9f",
+  "product": "attendance",
+  "release_ready": false,
+  "fresh_model_inference": false,
+  "rounds": [
+    {
+      "iteration": 1,
+      "stage": "開発・統合へ差し戻し",
+      "details": "同じ版で検査計画が繰り返し不合格です。検査定義と仕様を再診断します。実装側の原因は未確定です: 操作シナリオ設計: 実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください"
+    },
+    {
+      "iteration": 2,
+      "stage": "開発・統合へ差し戻し",
+      "details": "同じ版で検査計画が繰り返し不合格です。検査定義と仕様を再診断します。実装側の原因は未確定です: 操作シナリオ設計: 実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください"
+    },
+    {
+      "iteration": 3,
+      "stage": "開発・統合へ差し戻し",
+      "details": "同じ版で検査計画が繰り返し不合格です。検査定義と仕様を再診断します。実装側の原因は未確定です: 操作シナリオ設計: 実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください"
+    }
+  ],
+  "unchanged_development_receipts": [
+    {
+      "artifact_path": "attendance/outputs/departments/62cb16570e4a27c8/0fde4e86a87960b0ca3808e99ce88d36056a1ba1622fa48dd59c2bb90bd65b29/development/976d6fc37665e914c1644ca146548108529df32ee5f491f0b45b6f5bc793fd08.json",
+      "receipt": {
+        "content_sha": "e791efc7549be2ed67afb30e42844a9995802fc2d3e27b73cfff9b06d1478a96",
+        "details": "構造化部品の入力・保存・検索・CSV/JSON・簡易操作検査合格。 製品QA・他社比較・利用価値の最終確認はこれから実施。",
+        "path": "/home/runner/work/venture-agent-sites/venture-agent-sites/department-live-artifacts/attendance/outputs/sectors/education/projects/fc6e2d76672afdcd/02_builds/job_00100/00306_html.html",
+        "preliminary_passed": true
+      }
+    },
+    {
+      "artifact_path": "attendance/outputs/departments/62cb16570e4a27c8/0fde4e86a87960b0ca3808e99ce88d36056a1ba1622fa48dd59c2bb90bd65b29/development/cfae65366b89df86886d4e682d22fc1c058cf76ca67b63f113e6b22118deb9a3.json",
+      "receipt": {
+        "content_sha": "e791efc7549be2ed67afb30e42844a9995802fc2d3e27b73cfff9b06d1478a96",
+        "details": "構造化部品の入力・保存・検索・CSV/JSON・簡易操作検査合格。 製品QA・他社比較・利用価値の最終確認はこれから実施。",
+        "path": "/home/runner/work/venture-agent-sites/venture-agent-sites/department-live-artifacts/attendance/outputs/sectors/education/projects/fc6e2d76672afdcd/02_builds/job_00100/00303_html.html",
+        "preliminary_passed": true
+      }
+    }
+  ],
+  "diagnosis": "Explicit development feedback reached the owning department, but legacy candidate reset reentered the structured seed using the cached defective product_interface. Prior preliminary-pass text also masked the current defect in incremental repair.",
+  "changes": [
+    "Forward only development/design feedback as a separate build input",
+    "Prioritize the current defect over prior preliminary pass messages",
+    "Skip structured seed and terminal component fallback while repairing an established product defect",
+    "Append explicit repair target after bounded planning text so it survives long-plan truncation"
+  ],
+  "limits": [
+    "Control tests establish routing only; new real AI repair must prove the class-time feature",
+    "Workday proposal arithmetic and returns ongoing run remain independent unresolved scopes",
+    "No full product, design, competitor, or unknown-use acceptance"
+  ],
+  "validation": {
+    "full_control_and_regression": {
+      "tests": 290,
+      "seconds": 232.397,
+      "result": "OK"
+    },
+    "after_final_prompt_change": {
+      "related_tests": 15,
+      "result": "OK"
+    },
+    "bundle_check": "OK",
+    "compile": "OK",
+    "product_acceptance": false
+  }
+}
