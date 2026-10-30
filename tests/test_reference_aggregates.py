@@ -494,7 +494,7 @@ class ReferenceAggregateTests(unittest.TestCase):
         from contextlib import nullcontext
         clock=dict(date=qa.qa_current_reference_clock(None)['date'],source='browser local clock')
         calls=[]
-        tab=types.SimpleNamespace(goto=lambda *a,**k:calls.append('load'),evaluate=lambda script:clock)
+        tab=types.SimpleNamespace(goto=lambda *a,**k:calls.append('load'),evaluate=lambda script:{'#start':'09:00','#end':'17:00','#break':'60'} if 'Object.fromEntries' in script else clock)
         context=types.SimpleNamespace(route=lambda *a:None,new_page=lambda:tab,close=lambda:None)
         browser=types.SimpleNamespace(new_context=lambda **k:context,close=lambda:None)
         sync=types.SimpleNamespace(sync_playwright=lambda:nullcontext(types.SimpleNamespace(chromium=types.SimpleNamespace(launch=lambda **k:browser))))
@@ -504,6 +504,7 @@ class ReferenceAggregateTests(unittest.TestCase):
             first=qa.qa_initial_display_context('商品','same source',Path(t))
             second=qa.qa_initial_display_context('商品','same source',Path(t))
             self.assertEqual(first,second)
+            self.assertEqual(first['input_defaults']['#break'],'60')
             self.assertEqual(json.dumps(first,ensure_ascii=False),json.dumps(second,ensure_ascii=False))
             self.assertEqual(first['display_contracts']['#summaryValue']['template'],'{n0}件 / 超過{n1}件')
             self.assertNotIn('999',json.dumps(first));self.assertNotIn('888',json.dumps(first))
@@ -640,3 +641,117 @@ class ReferenceAggregateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=[dict(step_index=1,effect='create',target=None)]),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
             result=qa.qa_reference_primary_expectation(dict(result_selector='#summary',steps=steps),{'#summary':dict(template='{n0}件',slots=1,label='対象日の件数')},dict(requested_outcome='対象日の作業件数'),dict(model='x',_qa_reference_clock=dict(date='2026-10-30')),dict(controls=controls),Path(t),'case',generate)
         self.assertEqual(result['exact_check']['value'],'1件')
+
+    def time_fixture(self):
+        controls=[dict(selector='#date',type='date',label='作業日'),dict(selector='#target',type='date',label='対象日'),dict(selector='#planned',type='number',label='予定（分）'),dict(selector='#actual',type='number',label='実績（分）'),dict(selector='#start',type='time',label='開始'),dict(selector='#end',type='time',label='終了'),dict(selector='#pause',type='number',label='休憩（分）')]
+        controls=[dict(n,tag='input') for n in controls]
+        inputs={'#target':'2023-10-01','#start':'09:00','#end':'17:00','#pause':'60'}
+        choices=qa.qa_projection_candidates(controls,'{n0}分',0,input_values=inputs,row_fields={'#date','#planned','#actual'})
+        return controls,inputs,choices
+
+    def test_duration_candidates_compute_native_start_end_break_in_minutes(self):
+        controls,inputs,choices=self.time_fixture()
+        duration=next(p for p in choices if p['metric']=='duration' and p.get('break_input'))
+        self.assertEqual(qa.qa_evaluate_projection([],duration,dict(input_values=inputs)),'420')
+        self.assertEqual(qa.qa_evaluate_projection([],duration,dict(input_values=dict(inputs,**{'#start':'09:30','#pause':'45'}))),'405')
+        no_pause=next(p for p in choices if p['metric']=='duration' and not p.get('break_input'))
+        self.assertEqual(qa.qa_evaluate_projection([],no_pause,dict(input_values=inputs)),'480')
+        short=qa.qa_compact_projection_choices(choices,controls)
+        self.assertTrue(any('終了−開始−休憩' in p[1] for p in short))
+
+    def test_duration_missing_malformed_overnight_and_pause_overflow_are_rejected(self):
+        controls,inputs,choices=self.time_fixture()
+        duration=next(p for p in choices if p['metric']=='duration' and p.get('break_input'))
+        for change in ({'#end':''},{'#start':'25:00'},{'#end':'08:00'},{'#pause':'999'},{'#pause':'-1'}):
+            with self.assertRaises(ValueError):qa.qa_evaluate_projection([],duration,dict(input_values=dict(inputs,**change)))
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([],duration,{})
+
+    def test_date_scoped_sums_and_duration_differences_use_declared_parameters(self):
+        controls,inputs,choices=self.time_fixture()
+        rows=[{'#date':'2023-10-01','#planned':'60','#actual':'45'},{'#date':'2023-10-01','#planned':'90','#actual':'75'},{'#date':'2026-10-30','#planned':'999','#actual':'888'}]
+        planned=next(p for p in choices if p['metric']=='sum' and p.get('value_field')=='#planned')
+        self.assertEqual(qa.qa_evaluate_projection(rows,planned,dict(input_values=inputs)),'150')
+        remaining=next(p for p in choices if p['metric']=='difference' and p['left']['metric']=='duration' and p['left'].get('break_input') and p['right'].get('value_field')=='#planned')
+        self.assertEqual(qa.qa_evaluate_projection(rows,remaining,dict(input_values=inputs)),'270')
+        gap=next(p for p in choices if p['metric']=='difference' and p['left'].get('value_field')=='#planned' and p['right'].get('value_field')=='#actual')
+        self.assertEqual(qa.qa_evaluate_projection(rows,gap,dict(input_values=inputs)),'30')
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([],planned,{})
+
+    def test_compound_projection_is_bounded_and_does_not_execute_code(self):
+        leaf=dict(metric='count',where='all',field='',members=[])
+        nested=leaf
+        for _ in range(5):nested=dict(metric='difference',left=nested,right=leaf)
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([],nested,{})
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([],dict(metric='exec',expression='anything'),{})
+
+    def test_default_parameters_and_explicit_override_feed_independent_duration(self):
+        controls,inputs,choices=self.time_fixture()
+        def generate(name,prompt,schema,validate,dependency):
+            self.assertIn('09:30',prompt);self.assertIn('開始',prompt)
+            return validate(dict(choice=next(i for i,p in enumerate(dependency['candidates']) if p['metric']=='duration' and p.get('break_input'))))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=[]),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
+            result=qa.qa_reference_primary_expectation(dict(result_selector='#total',steps=[dict(op='fill',selector='#start',value='09:30')]),{'#total':dict(template='{n0}分',slots=1,label='使える稼働時間')},dict(requested_outcome='終了から開始と休憩を引いた稼働可能分数'),dict(model='x',_qa_input_defaults=inputs),dict(controls=controls),Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'390分')
+        self.assertEqual(proof['reference_clock']['input_values']['#start'],'09:30')
+        self.assertEqual(proof['reference_clock']['input_values']['#pause'],'60')
+
+    def test_same_native_workflow_actions_resume_across_oracle_policy_inputs_only(self):
+        inventory,cfg=self.component_fixture();inventory['outputs'].append(dict(selector='#summaryValue',tag='strong'))
+        cfg=dict(cfg,qa_reference_aggregates=True,_qa_display_contracts={'#summaryValue':dict(slots=1,template='{n0}件',label='件数'),'#recordCount':dict(slots=1,template='{n0}',label='登録数')})
+        calls=[]
+        def model(prompt,config,tokens,**kw):
+            calls.append(config['model'])
+            return kw['validator'](dict(steps=[dict(op='fill',selector='#title',value='保存A'),dict(op='click',selector='#saveRecord')],result_selector='#summaryValue',acceptance=[0],rationale='登録して確認する'))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        primary=dict(exact_check=dict(op='text_equals',selector='#summaryValue',value='1件'))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'ai_json',side_effect=model,create=True),patch.object(qa,'qa_reference_primary_expectation',return_value=primary):
+            args=('same scope',cfg,Path(t),'base-workflow')
+            for identity in ('first oracle policy','changed input default policy'):
+                qa.qa_split_unit_generation(*args,identity,qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+            self.assertEqual(calls,['mapper'])
+            self.assertTrue((Path(t)/'base-workflow-split'/'actions-resumed.json').exists())
+            qa.qa_split_unit_generation('same scope',dict(cfg,qa_action_model='different'),Path(t),'base-workflow','third',qa.qa_unit_schema(1,'workflow'),lambda raw:raw,inventory)
+            self.assertEqual(calls,['mapper','different'])
+            self.assertFalse((Path(t)/'base-workflow-split'/'actions-resumed.json').exists())
+
+    def test_single_disputed_state_gets_independent_positive_negative_questions(self):
+        controls=[dict(selector='#state',options=[dict(value=s) for s in ['受付','返送待ち','返金済み']])]
+        rule=dict(metric='count',where='in',field='#state',members=['返送待ち'])
+        names=[]
+        def generate(name,prompt,schema,validate,dependency):
+            names.append(name)
+            self.assertNotIn('initial_classifications',prompt)
+            if '-state-' in name:
+                self.assertEqual(dependency['status'],'受付')
+                return validate(dict(decision=0 if dependency['question']=='excluded' else 1,evidence_id=0))
+            membership=[int(s!='返金済み') for s in dependency['ordered_statuses']]
+            if name.endswith('reverse'):membership[dependency['ordered_statuses'].index('受付')]=0
+            return validate(dict(membership=membership,evidence_id=0))
+        projection,audit=qa.qa_resolve_status_partition(rule,rule,dict(outcome='返金済み以外の受付・返送待ちを未完了として数える'),dict(target_label='未完了'),controls,generate,'0')
+        self.assertEqual(projection['members'],['受付','返送待ち'])
+        self.assertEqual(len(names),4)
+        self.assertEqual(audit['initial_classifications'][1]['受付'],0)
+        self.assertEqual(audit['classified_states']['受付'],1)
+        self.assertEqual(len(audit['resolved_disagreements']),1)
+
+    def test_disputed_state_unconfirmed_inverted_answers_cannot_pass(self):
+        controls=[dict(selector='#state',options=[dict(value='open'),dict(value='closed')])]
+        rule=dict(metric='count',where='in',field='#state',members=['open'])
+        def generate(name,prompt,schema,validate,dependency):
+            if '-state-' in name:return validate(dict(decision=1,evidence_id=0))
+            return validate(dict(membership=[1,0],evidence_id=0))
+        with self.assertRaises(ValueError):qa.qa_resolve_status_partition(rule,rule,dict(outcome='openだけ'),dict(target_label='未完了'),controls,generate,'0')
+
+    def test_native_invalid_protocol_preserves_all_prior_saved_checks(self):
+        inventory,cfg=self.component_fixture();inventory['controls'].append(dict(selector='#restoreFile',tag='input',type='file'))
+        workflow=dict(kind='workflow',steps=[dict(op='fill',selector='#title',value='保存A'),dict(op='click',selector='#saveRecord')])
+        prior=dict(kind='roundtrip',steps=[dict(op='restore_file',selector='#restoreFile')],checks=[dict(op='text_equals',selector='#recordCount',value='1'),dict(op='text_contains',selector='#recordRows',value='保存A')])
+        case=qa.qa_component_invalid_case(cfg,inventory,[workflow,prior],1)
+        self.assertEqual(case['steps'],[dict(op='restore_invalid',selector='#restoreFile'),dict(op='fill',selector='#title',value=''),dict(op='click',selector='#saveRecord')])
+        self.assertEqual(case['checks'][:2],prior['checks'])
+        self.assertIn(dict(op='invalid',selector='#title'),case['checks'])
+        qa.validate_qa_inventory_actions(case,inventory,'invalid')
+        self.assertIsNone(qa.qa_component_invalid_case(dict(cfg,qa_component_contract='unknown'),inventory,[workflow,prior],1))
+        self.assertIsNone(qa.qa_component_invalid_case(cfg,inventory,[workflow,dict(prior,steps=[])],1))

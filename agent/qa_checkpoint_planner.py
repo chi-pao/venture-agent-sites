@@ -1045,12 +1045,28 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
         prompt=('独立した意味判定。出力項目「'+descriptor['target_label']+'」の集計対象を、ordered_statusesの各状態について個別に決める。含める=1、除外=0、要件不足=-1。membershipは提示順と同じ長さ。固定の日付条件があれば変更せず、その条件を満たす記録の各状態を判定する。今回入力済みの状態だけに限定しない。前の候補は示さない。原文の根拠番号evidence_idも返す。JSON {membership:[1,0],evidence_id:0}。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
         answer=generate('primary-projection-membership-'+key+('-reverse' if reverse else '-forward'),prompt,schema,validate,context)
         mappings.append(dict(zip(ordered,answer['membership'])));responses.append(answer)
-    agreement=qa_require_independent_agreement(mappings[0],mappings[1],descriptor['target_label']+'の全状態の独立分類')
-    members=[v for v in options if mappings[0][v]]
+    final=dict(mappings[0]);resolved=[]
+    for status_index,status in enumerate(options):
+        if mappings[0][status]==mappings[1][status]:continue
+        bit_schema=dict(type='object',properties=dict(decision=dict(type='integer',enum=[-1,0,1]),evidence_id=schema['properties']['evidence_id']),required=['decision','evidence_id'],additionalProperties=False)
+        votes=[]
+        for excluded in (False,True):
+            def validate_bit(value):
+                if not isinstance(value,dict) or type(value.get('decision'))is not int or value['decision']not in (0,1) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('不一致になった状態1個の意味が元要件から確定できません')
+                return value
+            bit_context=dict(output=descriptor,numbered_requirements=clauses,status=status,fixed_condition=context.get('fixed_condition'))
+            question=('除外すべきなら1、含めるなら0' if excluded else '含めるべきなら1、除外なら0')
+            prompt=('独立した意味判定。対象「'+descriptor['target_label']+'」に状態「'+status+'」の記録を'+question+'。原文不足なら-1。提示済み入力にこの状態があるかではなく、元要件の一般則を判定する。他担当の回答は示さない。固定の日付条件があればその条件を満たす記録について答える。JSON {decision:1または0または-1,evidence_id:根拠番号}。\n'+json.dumps(bit_context,ensure_ascii=False,separators=(',',':')))
+            answer=generate('primary-projection-state-'+key+'-'+str(status_index)+('-exclude' if excluded else '-include'),prompt,bit_schema,validate_bit,dict(bit_context,question='excluded' if excluded else 'included'))
+            votes.append(dict(included=1-answer['decision'] if excluded else answer['decision'],response=answer))
+        qa_require_independent_agreement(votes[0]['included'],votes[1]['included'],descriptor['target_label']+'の状態'+status+'の正逆質問')
+        final[status]=votes[0]['included'];resolved.append(dict(status=status,votes=votes))
+    agreement=dict(valid=True,scope=descriptor['target_label']+'の全状態の独立分類',initial_classifications=mappings,resolved_disagreements=resolved)
+    members=[v for v in options if final[v]]
     if base['where']=='in':base['members']=members
     elif set(members)!=set(options):base['also']=dict(field=field,members=members)
     base['basis']=descriptor['target_label']+'の元要件に基づく全状態の独立分類'
-    return base,dict(agreement,method='independent complete native-status classification in reversed order; no prior subsets disclosed',original_proposed=left,original_independent=right,classified_states=mappings[0],responses=responses)
+    return base,dict(agreement,method='independent complete native-status classification in reversed order; no prior subsets disclosed',original_proposed=left,original_independent=right,classified_states=final,responses=responses)
 
 
 def qa_resolve_projection_binding(left,right,requirements,descriptor,rows,controls,clock,generate,key):
@@ -1637,11 +1653,38 @@ def qa_reference_rows(steps,events):
     return list(rows.values())
 
 
-def qa_evaluate_projection(rows,projection,reference_clock):
+def qa_evaluate_projection(rows,projection,reference_clock,_depth=0):
     """Small explicit aggregate language, with no eval or model arithmetic."""
+    if _depth>3:raise AutoQAPlanError('参照集計: 計算式が深すぎます')
     metric=projection.get('metric');where=projection.get('where');field=projection.get('field');members=projection.get('members',[])
+    if metric in ('duration','difference'):
+        D=decimal.Decimal
+        if metric=='duration':
+            inputs=reference_clock.get('input_values',{})
+            def minute(css):
+                value=inputs.get(css,'')
+                if not isinstance(value,str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',value):raise AutoQAPlanError('参照集計: 開始・終了の独立したHH:MM入力が必要です')
+                hour,minutes=map(int,value.split(':'));return D(hour*60+minutes)
+            start=minute(projection.get('start_input'));end=minute(projection.get('end_input'))
+            pause=D(0)
+            if projection.get('break_input'):
+                value=inputs.get(projection['break_input'],'')
+                if not isinstance(value,str) or not re.fullmatch(r'\d+(?:\.\d+)?',value):raise AutoQAPlanError('参照集計: 休憩の独立した分数入力が必要です')
+                pause=D(value)
+            if end<start or pause>end-start:raise AutoQAPlanError('参照集計: 日をまたぐ時間・休憩超過の扱いは仕様で未確定です')
+            result=end-start-pause
+        else:
+            if not isinstance(projection.get('left'),dict) or not isinstance(projection.get('right'),dict):raise AutoQAPlanError('参照集計: 差分の両辺が必要です')
+            result=D(qa_evaluate_projection(rows,projection['left'],reference_clock,_depth+1))-D(qa_evaluate_projection(rows,projection['right'],reference_clock,_depth+1))
+        return qa_evaluate_projection([{'#derived':str(result)}],dict(metric='sum',where='all',field='#derived',rounding=projection.get('rounding','exact'),places=projection.get('places',0)),reference_clock,_depth+1)
+
     if metric not in ('count','percent','sum') or where not in ('all','in','before_date','on_reference_date','on_input_date'):raise AutoQAPlanError('参照集計: 未対応の計算は推測できません')
     if not isinstance(members,list) or any(not isinstance(v,str) for v in members):raise AutoQAPlanError('参照集計: 条件値が不正です')
+    if where in ('before_date','on_reference_date','on_input_date'):
+        try:
+            reference_value=reference_clock['input_values'][projection['reference_input']] if where=='on_input_date' else reference_clock['date']
+            qa_date.fromisoformat(reference_value)
+        except (KeyError,TypeError,ValueError):raise AutoQAPlanError('参照集計: 独立した日付基準が必要です')
     selected=[]
     for row in rows:
         if where=='all':matched=True
@@ -1669,8 +1712,9 @@ def qa_evaluate_projection(rows,projection,reference_clock):
         if not rows:raise AutoQAPlanError('参照集計: 母数0の割合の仕様が未定義です')
         result=D(len(selected))*100/D(len(rows))
     else:
-        if any(field not in row or not re.fullmatch(r'-?\d+(?:\.\d+)?',str(row[field])) for row in selected):raise AutoQAPlanError('参照集計: 合計対象の独立した数値入力が必要です')
-        result=sum((D(str(row[field])) for row in selected),D(0))
+        value_field=projection.get('value_field',field)
+        if any(value_field not in row or not re.fullmatch(r'-?\d+(?:\.\d+)?',str(row[value_field])) for row in selected):raise AutoQAPlanError('参照集計: 合計対象の独立した数値入力が必要です')
+        result=sum((D(str(row[value_field])) for row in selected),D(0))
     rounding=projection.get('rounding','exact');places=projection.get('places',0)
     if type(places)is not int or not 0<=places<=4:raise AutoQAPlanError('参照集計: 桁数が範囲外です')
     quant=D(1).scaleb(-places)
@@ -1721,6 +1765,32 @@ def qa_projection_candidates(controls,template,index,output=None,input_values=No
             if reference.get('type')=='date' and css!=node['selector'] and isinstance((input_values or {}).get(css),str):
                 candidates.append(dict(rule('on_input_date',node['selector'],label=(node.get('label')or node['selector'])+'が入力済みの'+(reference.get('label')or css)+'と同じ日付の保存記録'),reference_input=css))
 
+
+    if not percent:
+        numbers=[n for n in controls if n.get('type')=='number' and (row_fields is None or n['selector']in row_fields)]
+        scoped=[]
+        for date_rule in [p for p in candidates if p['where']=='on_input_date']:
+            for number in numbers:
+                candidate=dict(date_rule,metric='sum',value_field=number['selector'],basis=(number.get('label')or number['selector'])+'の対象日合計')
+                scoped.append(candidate)
+        candidates.extend(scoped)
+        times=[n for n in controls if n.get('type')=='time' and n['selector']in (input_values or {})]
+        starts=[n for n in times if re.search(r'開始|start',n.get('label','')+' '+n['selector'],re.I)]
+        ends=[n for n in times if re.search(r'終了|end',n.get('label','')+' '+n['selector'],re.I)]
+        pauses=[n for n in controls if n.get('type')=='number' and n['selector']in (input_values or {}) and re.search(r'休憩|break',n.get('label','')+' '+n['selector'],re.I)]
+        durations=[]
+        if len(starts)==len(ends)==1:
+            for pause in ([None]+pauses[:1]):
+                candidate=dict(metric='duration',where='inputs',field='',members=[],start_input=starts[0]['selector'],end_input=ends[0]['selector'],break_input=pause['selector'] if pause else '',rounding='exact',places=0,basis='終了−開始'+('−休憩' if pause else '')+'の分数')
+                durations.append(candidate)
+        candidates.extend(durations)
+        sums=scoped or [p for p in candidates if p['metric']=='sum' and p['where']=='all']
+        def difference(left,right):return dict(metric='difference',where='inputs',field='',members=[],left=left,right=right,rounding='exact',places=0,basis=left['basis']+'−'+right['basis'])
+        for duration in durations:
+            for total in sums:candidates.append(difference(duration,total))
+        for left in sums:
+            for right in sums:
+                if left!=right:candidates.append(difference(left,right))
     return candidates
 
 
@@ -1728,9 +1798,12 @@ def qa_compact_projection_choices(candidates,controls):
     """Lossless short meanings keep finite semantic choices within CPU budgets."""
     labels={n['selector']:n.get('label')or n['selector'] for n in controls}
     def meaning(p):
-        field=labels.get(p.get('field'),p.get('field',''))
+        if p['metric']=='duration':return '分数('+labels.get(p['end_input'],p['end_input'])+'−'+labels.get(p['start_input'],p['start_input'])+('−'+labels.get(p['break_input'],p['break_input']) if p.get('break_input') else '')+')'
+        if p['metric']=='difference':return '('+meaning(p['left'])+' − '+meaning(p['right'])+')'
+        field=labels.get(p.get('value_field',p.get('field')),p.get('value_field',p.get('field','')))
+        filter_field=labels.get(p.get('field'),p.get('field',''))
         where=p['where']
-        condition=('全保存記録' if where=='all' else field+'∈{'+','.join(p.get('members',[]))+'}' if where=='in' else field+'<基準日' if where=='before_date' else field+'=今日(基準日)' if where=='on_reference_date' else field+'=入力['+labels.get(p.get('reference_input'),p.get('reference_input',''))+']')
+        condition=('全保存記録' if where=='all' else field+'∈{'+','.join(p.get('members',[]))+'}' if where=='in' else field+'<基準日' if where=='before_date' else field+'=今日(基準日)' if where=='on_reference_date' else filter_field+'=入力['+labels.get(p.get('reference_input'),p.get('reference_input',''))+']')
         if p.get('also'):
             extra=p['also'];condition+=' AND '+labels.get(extra['field'],extra['field'])+'∈{'+','.join(extra['members'])+'}'
         return ('件数' if p['metric']=='count' else '割合(分母=全保存記録)' if p['metric']=='percent' else field+'合計')+'('+condition+')'
@@ -1770,7 +1843,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     rows=qa_reference_rows(steps,events)
     controls=[{k:n[k] for k in ('selector','label','type','options','required','disabled','min','max') if k in n} for n in inventory.get('controls',[]) if n.get('tag') in ('input','select','textarea')]
     fields=['']+[n['selector'] for n in controls]
-    input_values={step['selector']:str(step.get('value','')) for step in steps if step.get('op') in ('fill','select')}
+    input_values=dict(cfg.get('_qa_input_defaults',{}));input_values.update({step['selector']:str(step.get('value','')) for step in steps if step.get('op') in ('fill','select')})
     evaluation_context=dict(cfg.get('_qa_reference_clock',{}),input_values=input_values)
     row_fields=set.intersection(*(set(row) for row in rows)) if rows else set()
     values=[];projections=[];audits=[]
@@ -1853,6 +1926,21 @@ def qa_primary_component_expectation(selector,formats,context,generate):
     return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
 
 
+def qa_component_invalid_case(cfg,inventory,scenarios,count):
+    """Compile native required-field and corrupt-file rejection operations."""
+    if not scenarios:return None
+    workflow=next((s for s in scenarios if s.get('kind')=='workflow'),None)
+    if not workflow:return None
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    if qa_component_events(workflow.get('steps',[]),binding) is None:return None
+    target=next((n for n in inventory.get('controls',[]) if n.get('form')=='#recordForm' and n.get('required') and n.get('tag')in ('input','textarea') and n.get('type','text')in ('text','date') and not n.get('readonly') and not n.get('disabled')),None)
+    restore=next((s.get('selector') for s in reversed(scenarios[-1].get('steps',[])) if s.get('op')=='restore_file'),None)
+    if target is None or not any(n.get('selector')==restore and n.get('type')=='file' for n in inventory.get('controls',[])):return None
+    checks=[dict(c) for c in scenarios[-1].get('checks',[])]+[dict(op='invalid',selector=target['selector'])]
+    if len(checks)>8:return None
+    return compile_qa_invalid(dict(restore_selector=restore,invalid_steps=[dict(op='fill',selector=target['selector'],value=''),dict(op='click',selector='#saveRecord')],checks=checks,acceptance=[],rationale='必須欄を明示的に空にして送信し、不正ファイル復元も拒否されることと、直前の独立した保存状態が変わらないことを確認する'),count)
+
+
 def qa_component_variant_actions(cfg,inventory):
     """Build different declared actor inputs before deriving any expectation."""
     prior=next((p for p in cfg.get('_qa_prior_scenarios',[]) if p.get('kind')=='workflow'),None)
@@ -1925,7 +2013,7 @@ def qa_component_saved_checks(actions,primary,inventory,cfg):
 def qa_clear_primary_components(directory):
     directory=Path(directory)
     for path in directory.glob('primary-*.json'):
-        if re.fullmatch(r'primary-(?:(?:number|literal|projection|projection-audit|projection-blind)-[0-9]+|projection-(?:resolution|membership)-[0-9]+-(?:forward|reverse))\.json',path.name):path.unlink(missing_ok=True)
+        if re.fullmatch(r'primary-(?:(?:number|literal|projection|projection-audit|projection-blind)-[0-9]+|projection-(?:resolution|membership)-[0-9]+-(?:forward|reverse)|projection-state-[0-9]+-[0-9]+-(?:include|exclude))\.json',path.name):path.unlink(missing_ok=True)
 
 
 def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,inventory,hint=''):
@@ -1943,10 +2031,19 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
             try:
                 receipt=json.loads(path.read_text(encoding='utf-8'))
                 if receipt.get('input_sha')==digest:return check(receipt['value'])
+                if name=='actions' and kind=='workflow':
+                    request_path=directory/'actions-request.json'
+                    request=json.loads(request_path.read_text(encoding='utf-8')) if request_path.exists() else {}
+                    if request.get('model')==model and request.get('schema')==stage_schema:
+                        resumed=check(receipt['value'])
+                        write_framework_json(directory/'actions-resumed.json',dict(prior_input_sha=receipt.get('input_sha'),input_sha=digest,model=model,method='same source/spec checkpoint and exact native schema; actions revalidated, assertions not reused'))
+                        write_framework_json(path,dict(receipt,input_sha=digest,value=resumed))
+                        return resumed
             except (ValueError,TypeError,KeyError):pass
         def capture(value):
             write_framework_json(directory/(name+'-last-response.json'),value)
             return check(value)
+        if name=='actions':(directory/'actions-resumed.json').unlink(missing_ok=True)
         started=qa_stage_time.monotonic()
         write_framework_json(directory/(name+'-request.json'),dict(prompt=prompt,prompt_chars=len(prompt),schema=stage_schema,model=model,tokens=tokens,timeout=int(cfg.get('qa_part_timeout',180))))
         try:
@@ -2090,6 +2187,11 @@ def qa_invalidate_split_failure(folder,key,raw,observation):
         if check==fault:(directory/('secondary-'+str(i)+'.json')).unlink(missing_ok=True)
 
 
+def qa_capture_view_input_defaults(page):
+    """Independent starting parameters, excluding record inputs and credentials."""
+    return page.evaluate("() => Object.fromEntries([...document.querySelectorAll('input[id]')].filter(e=>e.form?.id!=='recordForm'&&['date','time','number'].includes(e.type)).map(e=>['#'+e.id,e.value]))")
+
+
 def qa_initial_display_context(name,source,directory):
     """Collect masked formats before planning, shared by every scenario.
 
@@ -2101,7 +2203,7 @@ def qa_initial_display_context(name,source,directory):
     if path.exists():
         try:
             saved=json.loads(path.read_text(encoding='utf-8'))
-            if saved.get('survey_policy')=='numeric-leaves-2' and saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
+            if saved.get('survey_policy')=='numeric-leaves-3-input-defaults' and saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
                 return saved
         except (ValueError,TypeError,KeyError):pass
     from playwright.sync_api import sync_playwright
@@ -2114,7 +2216,8 @@ def qa_initial_display_context(name,source,directory):
             context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
             page=context.new_page();page.goto(url,wait_until='networkidle',timeout=15000)
             clock=page.evaluate("() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'browser local clock'};}")
-            result=dict(survey_policy='numeric-leaves-2',source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
+            input_defaults=qa_capture_view_input_defaults(page)
+            result=dict(survey_policy='numeric-leaves-3-input-defaults',input_defaults=input_defaults,source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
                         method='numeric-stripped interface survey; no acceptance verdict or observed numeric expectations')
             result=json.loads(json.dumps(result,sort_keys=True,ensure_ascii=False))
             write_framework_json(path,result);context.close()
@@ -2124,7 +2227,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-2',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-3-input-arithmetic',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
@@ -2138,6 +2241,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
         source=hashlib.sha256(page.encode()).hexdigest(),model=cfg['model'],url=cfg['url']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'qa-plan-parts'/signature;folder.mkdir(parents=True,exist_ok=True)
     initial_context=qa_initial_display_context(name,page,folder) if cfg.get('qa_split_units') and cfg.get('qa_reference_aggregates') and cfg.get('qa_probe_units') else {}
+    cfg=dict(cfg,_qa_input_defaults=initial_context.get('input_defaults',{}))
     full_inventory=qa_merge_display_inventory(full_inventory,initial_context.get('display_contracts',{}));inventory=full_inventory
     acceptance=spec['acceptance'];count=len(acceptance)
     handoff=cfg.get('_department_documents') or {}
@@ -2394,7 +2498,11 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
                 '出力形式:{"restore_selector":"復元ファイル入力またはボタンCSS","invalid_steps":[{"op":"fill","selector":"必須入力CSS","value":""},{"op":"click","selector":"保存ボタンCSS"}],"checks":[{"op":"invalid","selector":"必須入力CSS"},{"op":"text_equals","selector":"集計CSS","value":"既存の正解"}],"acceptance":[0],"rationale":"根拠"}。'
                 'requiredがない欄なら実際のエラーメッセージを検査し、入力の種類に合う不正値を使う。入力の検査後に既存保存値が変わらないことを確認。'
                 '\n既存の保存値の期待結果:'+json.dumps(scenarios[-1]['checks'],ensure_ascii=False,separators=(',',':'))[:1600])
-            value=part('base-invalid',prompt,lambda v:compile_qa_invalid(v,count),tokens=800,schema=qa_invalid_schema(count))
+            native_invalid=qa_component_invalid_case(cfg,full_inventory,scenarios,count)
+            if native_invalid is not None:
+                write_framework_json(folder/'base-invalid-component-contract.json',dict(contract=cfg['qa_component_contract'],value=native_invalid,method='native required-field and corrupt-file protocol; prior independent saved-state assertions retained'))
+                value=part('base-invalid',prompt,lambda v:validate_qa_unit(v,'invalid',count),tokens=0,schema=qa_unit_schema(count,'invalid'),supplied=native_invalid)
+            else:value=part('base-invalid',prompt,lambda v:compile_qa_invalid(v,count),tokens=800,schema=qa_invalid_schema(count))
         else:
             value=part('base-'+kind,prompt,lambda v,k=kind:validate_qa_unit(v,k,count),tokens=1200 if kind=='workflow' else 900,schema=qa_unit_schema(count,kind))
         scenarios.append(dict(value,kind=kind))

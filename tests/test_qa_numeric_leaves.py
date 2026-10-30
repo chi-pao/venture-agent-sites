@@ -25,3 +25,15 @@ class NumericLeafBrowserTests(unittest.TestCase):
                 page.locator(leaf).evaluate('(node)=>node.textContent="¥12,000"')
                 self.assertEqual(page.locator(leaf).inner_text(),expected['exact_check']['value'])
             finally:browser.close()
+
+    def test_only_native_view_defaults_feed_time_arithmetic(self):
+        with sync_playwright() as p:
+            browser=p.chromium.launch(headless=True)
+            try:
+                page=browser.new_page()
+                page.set_content('<form id="recordForm"><input id="recordMinutes" type="number" value="99"></form><input id="start" type="time" value="09:30"><input id="end" type="time" value="17:00"><input id="pause" type="number" value="45"><input id="secret" type="password" value="never-copy"><input id="text" value="not-a-numeric-default">')
+                defaults=app.qa_capture_view_input_defaults(page)
+                self.assertEqual(defaults,{'#start':'09:30','#end':'17:00','#pause':'45'})
+                rule=dict(metric='duration',where='inputs',start_input='#start',end_input='#end',break_input='#pause')
+                self.assertEqual(app.qa_evaluate_projection([],rule,dict(input_values=defaults)),'405')
+            finally:browser.close()
