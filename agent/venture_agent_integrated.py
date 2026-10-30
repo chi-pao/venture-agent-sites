@@ -3187,6 +3187,37 @@ import re
 DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
+def department_duration_correction(condition):
+    """Correct only an unambiguous declared same-day start/end/break equation."""
+    from decimal import Decimal
+    starts=set(re.findall(r'開始(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
+    ends=set(re.findall(r'終了(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
+    breaks=set(re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',condition))
+    matches=list(re.finditer(r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?',condition))
+    if len(starts)!=1 or len(ends)!=1 or len(breaks)!=1 or len(matches)!=1:return None
+    def minute(t):h,m=map(int,t.split(':'));return Decimal(h*60+m)
+    pause,unit=next(iter(breaks));pause=Decimal(pause)*(60 if unit=='時間' else 1)
+    computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
+    if computed<0 or computed!=computed.to_integral_value():return None
+    match=matches[0];declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
+    if declared==computed:return None
+    if match['mins'] is not None or match['unit']=='時間':
+        hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
+    else:replacement=str(int(computed))+'分'
+    start=match.start('n');end=match.end()
+    return dict(before=condition,after=condition[:start]+replacement+condition[end:],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
+
+
+def department_difference_issue(condition):
+    from decimal import Decimal
+    number=r'-?\d+(?:\.\d+)?';unit=r'(?:時間|分)'
+    pattern=r'差分\s*[:：]\s*('+number+r')\s*('+unit+r')\s*[（(]\s*('+number+r')\s*('+unit+r')\s*[-−]\s*('+number+r')\s*('+unit+r')\s*[）)]'
+    for match in re.finditer(pattern,condition):
+        values=match.groups();minutes=[Decimal(values[i])*(60 if values[i+1]=='時間' else 1) for i in (0,2,4)]
+        if minutes[0]!=minutes[1]-minutes[2]:return '差分の定義式と正解が矛盾しています: '+match.group()
+    return ''
+
+
 def department_unrequested_file_contract(text,source):
     named=bool(re.search(r'ファイル名.{0,40}(?:YYYY|HH.?MM|\.csv)|(?:バックアップ名|復元名)\s*[=＝]|バックアップ一覧画面',str(text),re.I))
     return named and not re.search(r'ファイル名|命名|バックアップ名|復元名|バックアップ一覧',str(source))
@@ -3207,6 +3238,10 @@ def department_spec_contract_issue(spec,rationale):
         return '具体値・利用操作・正解がない抽象的な完成条件です'
     vague=[str(c) for c in spec.get('acceptance',[]) if re.search(r'完了し[、,て].*(?:表示される|ダウンロードされる|保存・復元される)$',str(c)) and not re.search(r'[0-9０-９=＝「」]',str(c))]
     if vague:return '具体入力と照合値がなく、機能名を完了・表示と言い換えた完成条件です'
+    if any(department_duration_correction(str(c)) for c in spec.get('acceptance',[])):return '時間算術: 開始・終了・休憩と稼働可能時間の正解が矛盾しています'
+    for c in spec.get('acceptance',[]):
+        difference=department_difference_issue(str(c))
+        if difference:return difference
     return ''
 
 
@@ -3258,6 +3293,15 @@ def ensure_department_product_spec(name,cfg):
     rows=query('SELECT source FROM venture_product_specs WHERE idea=?',(name,))
     if rows and str(rows[0]['source']).startswith('ユーザー'):
         raise AutoQAPlanError('ユーザー指定の完成条件に確認が必要です: '+issue)
+    if issue.startswith('時間算術:'):
+        corrected=[];proof=[]
+        for index,condition in enumerate(spec.get('acceptance',[])):
+            fix=department_duration_correction(str(condition));corrected.append(fix['after'] if fix else condition)
+            if fix:proof.append(dict(fix,acceptance_index=index))
+        saved=store_product_spec(name,dict(spec,acceptance=corrected,arithmetic_contract_corrections=list(spec.get('arithmetic_contract_corrections',[]))+proof),source='AI設計・元の時刻と休憩の算術だけを訂正')
+        remaining=department_spec_contract_issue(saved,rationale)
+        if remaining:raise AutoQAPlanError('時刻算術は訂正済み。残る仕様の不一致を企画担当で修復してください: '+remaining)
+        return saved
     signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,issue=issue,spec=spec,
         rationale=rationale,model=cfg['model']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'spec-contracts'/signature;folder.mkdir(parents=True,exist_ok=True)
@@ -3277,6 +3321,9 @@ def ensure_department_product_spec(name,cfg):
                 raise AutoQAPlanError('指定されていない共同編集を追加しないでください')
             if department_unrequested_file_contract(' '.join(value.values()),original+' '+str(rationale)):
                 raise AutoQAPlanError('元要件にないファイル名・名前付きバックアップ画面を完成条件へ追加しないでください')
+            if department_duration_correction('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected']):raise AutoQAPlanError('開始・終了・休憩と稼働可能時間の計算が矛盾しています')
+            difference=department_difference_issue(value['expected'])
+            if difference:raise AutoQAPlanError(difference)
             return value
         value=None
         if path.exists():
@@ -4397,6 +4444,47 @@ def qa_projection_witnesses(rows,left,right,controls,clock):
     return result
 
 
+def qa_source_state_composition(requirements,descriptor,controls,base,field):
+    """Compile only explicit finite-set definitions and their named conjunction.
+
+    This bounded Japanese grammar is requirement-side set algebra, not an
+    interpretation of renderer code or observed quantities. Unsupported text
+    falls back to the independent semantic mapper.
+    """
+    nodes={n['selector']:n for n in controls};node=nodes.get(field,{})
+    options=list(dict.fromkeys(o.get('value') for o in node.get('options',[]) if o.get('value') and not o.get('disabled')))
+    if not 2<=len(options)<=5:return None
+    source=' '.join([str(requirements.get('outcome',''))]+list(map(str,requirements.get('must_have',[])))+list(map(str,requirements.get('workflow',[]))))
+    atom='(?:'+'|'.join(re.escape(v) for v in sorted(options,key=len,reverse=True))+')'
+    pattern=re.compile(r'(?:^|[。 、:：は])(?P<excluded>'+atom+r'(?:・'+atom+r')*)を除く(?P<name>[^\s。、「」,]{1,30}?)件数(?=[。 、,]|を表示|を数え|$)')
+    definitions={}
+    for match in pattern.finditer(source):
+        if re.match(r'を(?:表示|数え)(?:しない|ない|ません)',source[match.end():]):return None
+        name=match['name'];excluded=match['excluded'].split('・');members=[v for v in options if v not in excluded]
+        owners=[n['selector'] for n in controls if set(excluded)<={o.get('value') for o in n.get('options',[]) if o.get('value') and not o.get('disabled')}]
+        if owners!=[field]:return None
+        if name in definitions and definitions[name]['members']!=members:raise AutoQAPlanError('元仕様で同じ状態条件の定義が矛盾しています: '+name)
+        definitions[name]=dict(name=name,field=field,members=members,excluded=excluded,source_excerpt=match.group().lstrip('。 、:：は'))
+    matches=[];target=str(descriptor.get('target_label',''))
+    for name,definition in definitions.items():
+        if base.get('where')=='in' and target==name:
+            matches.append((definition,definition['source_excerpt']))
+        elif base.get('where')=='before_date':
+            date_node=nodes.get(base.get('field'),{});label=date_node.get('label','')
+            if date_node.get('type')!='date' or not label:continue
+            expression=r'(?:^|[。 、:：は])'+re.escape(label)+r'が(?:今日|基準日)より前かつ'+re.escape(name)+'の'+re.escape(target)+r'件数(?=[。 、,]|を表示|を数え|$)'
+            found=re.search(expression,source)
+            if found:
+                if re.match(r'を(?:表示|数え)(?:しない|ない|ません)',source[found.end():]):return None
+                matches.append((definition,found.group().lstrip('。 、:：は')))
+    if len(matches)!=1:return None
+    definition,expression=matches[0];result=dict(base);result.pop('status_family',None)
+    if result['where']=='in':result['members']=definition['members']
+    else:result['also']=dict(field=field,members=definition['members'])
+    result['basis']='元仕様で明示された集合「'+definition['name']+'」と条件の合成'
+    return result,dict(valid=True,method='bounded explicit requirement set definition and named conjunction; not model consensus or observed values',source_definition=definition,source_expression=expression,classified_states={v:int(v in definition['members']) for v in options})
+
+
 def qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key):
     """Rebuild a disputed subset from every native status, not two bad sets."""
     stable=('metric','where','field','reference_input','rounding','places')
@@ -4412,6 +4500,8 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
     node=next((n for n in controls if n.get('selector')==field),{})
     options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value') and not o.get('disabled')))
     if not 2<=len(options)<=5:return None
+    explicit=qa_source_state_composition(requirements,descriptor,controls,base,field)
+    if explicit is not None:return explicit[0],dict(explicit[1],original_proposed=left,original_independent=right)
     clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
     clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
     schema=dict(type='object',properties=dict(membership=dict(type='array',items=dict(type='integer',enum=[-1,0,1]),minItems=len(options),maxItems=len(options)),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['membership','evidence_id'],additionalProperties=False)
@@ -4962,9 +5052,16 @@ def qa_split_stage_context(fallback,cfg,inventory,key,actions=None):
     used={step.get('selector') for step in (actions or {}).get('steps',[])}
     controls=[n for n in inventory.get('controls',[]) if not actions or n.get('selector') in used]
     outputs=[{k:n[k] for k in ('tag','selector','label') if k in n} for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form')]
+    feature_context=cfg.get('_qa_feature_context')
+    if feature and isinstance(feature_context,dict):
+        index=feature_context.get('case_index',0);example=feature_context.get('design_example') or {};cases=example.get('test_cases',[])
+        selected=cases[index] if type(index)is int and isinstance(cases,list) and 0<=index<len(cases) else {}
+        feature_context=dict(condition_index=feature_context.get('condition_index'),case_index=index,
+            design_case={k:selected[k] for k in ('input','action','expected') if isinstance(selected,dict) and k in selected},
+            previous_inputs=[[{k:s[k] for k in ('op','selector','value','label') if k in s} for s in p.get('steps',[]) if s.get('op') in ('fill','select','check')] for p in feature_context.get('previous_cases',[])])
     view=dict(audience=spec.get('audience'),outcome=spec.get('requested_outcome'),conditions_by_index=conditions,
               controls=controls,outputs=outputs,prior=cfg.get('_qa_prior_scenarios',[]),kind=key,
-              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=cfg.get('_qa_feature_context'),
+              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=feature_context,
               display_contracts={k:v for k,v in (cfg.get('_qa_display_contracts') or {}).items() if not actions or k==actions.get('result_selector')})
     return json.dumps(view,ensure_ascii=False,separators=(',',':'))
 
@@ -5234,6 +5331,18 @@ def qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key):
     return qa_require_independent_agreement(events,independent,'保存操作と既存対象の対応')
 
 
+def qa_reference_requirements(spec,cfg):
+    requirements=dict(outcome=spec.get('requested_outcome',''),must_have=list(spec.get('must_have',[])),workflow=list(spec.get('workflow',[])))
+    addenda=cfg.get('qa_requirement_addenda',[])
+    if not isinstance(addenda,list) or len(addenda)>8:raise AutoQAPlanError('実証要求の追加定義が不正です')
+    if addenda:
+        for entry in addenda:
+            if not isinstance(entry,dict) or set(entry)!={'source','text'} or any(not isinstance(entry[k],str) or not 1<=len(entry[k])<=1000 for k in ('source','text')):raise AutoQAPlanError('追加定義には出典と要求本文が必要です')
+            if entry['text'] not in requirements['must_have']:requirements['must_have'].append(entry['text'])
+        requirements['source_addenda']=addenda
+    return requirements
+
+
 def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,key,generate):
     """Bind requirements to a checked projection; compute instead of guessing."""
     selector=actions['result_selector'];contract=formats.get(selector,{})
@@ -5241,7 +5350,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     if type(count)is not int or not 1<=count<=8:raise AutoQAPlanError('参照集計: 数値表示の契約が必要です')
     # Original capability requirements set the rules. Repaired test examples
     # are not records and must never enter the reference data set.
-    requirements=dict(outcome=spec.get('requested_outcome',''),must_have=spec.get('must_have',[]),workflow=spec.get('workflow',[]))
+    requirements=qa_reference_requirements(spec,cfg)
     source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
     steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
     binding_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
@@ -5728,10 +5837,11 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-6-semantic-rule-reuse-view-reload',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-7-source-state-composition',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),
+                requirement_addenda_sha=hashlib.sha256(json.dumps(cfg.get('qa_requirement_addenda',[]),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
                 factored_status_bindings=bool(cfg.get('qa_factored_status_bindings')),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 

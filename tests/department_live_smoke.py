@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 from test_preview import app
 from live_generation_smoke import PRODUCTS
+from returns_status_contract import RETURNS_STATE_POLICY
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
     cfg['qa_mapping_model']=qa_model or oracle_model or cfg['model']
     cfg['qa_factored_status_bindings']=True
     cfg.update(qa_backup_component_contract='native-record-backup-v1',department_backup_protocol='browser-json-file-v1')
+    if key=='returns':cfg['qa_requirement_addenda']=[dict(source='独立した返品6件・全5状態の実証要求',text=RETURNS_STATE_POLICY)]
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):

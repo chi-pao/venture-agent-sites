@@ -7,6 +7,7 @@ on:
       - 'tests/department_live_smoke.py'
       - 'tests/returns_oracle_probe.py'
       - 'tests/saved_count_model_probe.py'
+      - 'tests/returns_status_contract.py'
       - 'tests/saved_repair_replay.py'
       - '.github/workflows/venture-repair-replay.yml'
       - '.github/workflows/venture-departments.yml'

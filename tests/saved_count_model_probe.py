@@ -142,18 +142,19 @@ def main():
             return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
                 _json_transport_evidence=str(evidence/(name+'-transport.json'))),180 if 'audit' in name else 100 if 'projection' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
         aggregate_cfg['qa_factored_status_bindings']=True
-        summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。'
+        from returns_status_contract import RETURNS_STATE_POLICY
+        summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は未完了件数、右側は期限超過件数を表示する。 '+RETURNS_STATE_POLICY
         bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
             dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)
         if bound['exact_check']['value']!='1件 / 超過0件':raise AssertionError('Primary oracle differs from fixed one-record future-deadline result')
         proof['bound_primary_model']=bound
         reference_proof=json.loads((evidence/'one-record-summary-aggregate-proof.json').read_text(encoding='utf-8'))
-        projection_results=[]
+        projection_results=[];proof['semantic_contrasts']=projection_results
         for contrast in contrasts:
             projected=[app.qa_evaluate_projection(contrast['reference_rows'],projection,reference_proof['reference_clock']) for projection in reference_proof['projections']]
-            projection_results.append(dict(total_count=contrast['total_count'],expected=contrast['expected_values'],computed=projected))
-            if projected!=contrast['expected_values']:raise AssertionError('Agreed semantic rules fail fixed native-status input contrast')
-        proof['semantic_contrasts']=projection_results;proof['semantic_binding_passed']=True
+            projection_results.append(dict(total_count=contrast['total_count'],expected=contrast['expected_values'],computed=projected,passed=projected==contrast['expected_values'],declared_inputs=contrast['reference_rows']))
+        if any(not row['passed'] for row in projection_results):raise AssertionError('Agreed semantic rules fail fixed native-status input contrast: '+json.dumps([dict(total_count=row['total_count'],expected=row['expected'],computed=row['computed']) for row in projection_results if not row['passed']],ensure_ascii=False))
+        proof['semantic_binding_passed']=True
         proof['passed']=True
     except Exception as exc:
         proof['error']=type(exc).__name__+': '+str(exc);raise

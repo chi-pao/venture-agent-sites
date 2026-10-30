@@ -12,6 +12,55 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_feature_context_keeps_complete_condition_and_selected_case_without_repeated_artifacts(self):
+        condition='開始09:00、終了17:00、休憩90分で390分になることを独立確認する。'
+        cfg=dict(_qa_spec=dict(acceptance=[condition]),_qa_feature_context=dict(condition_index=0,case_index=1,previous_cases=[dict(steps=[dict(op='fill',selector='#name',value='A')],checks=[dict(value='old oracle must not become a new expected value')])],design_example=dict(outputs='redundant artifact '*1000,test_cases=[dict(input='first case'),dict(input='second case',action='save it',expected='second case outcome')])) )
+        result=json.loads(qa.qa_split_stage_context('',cfg,dict(controls=[],outputs=[]),'feature-0-1'))
+        self.assertEqual(result['conditions_by_index']['0'],condition)
+        self.assertEqual(result['feature_case']['design_case']['input'],'second case')
+        self.assertNotIn('first case',str(result));self.assertNotIn('redundant artifact',str(result));self.assertNotIn('old oracle',str(result))
+        self.assertEqual(result['feature_case']['previous_inputs'][0][0]['value'],'A')
+
+    def test_experiment_rule_addenda_keep_original_requirements_and_provenance(self):
+        spec=dict(requested_outcome='返品対応を整理する',must_have=['返金計算と保存'],workflow=['登録','確認'])
+        addendum=dict(source='独立した全状態の固定実証要求',text='返金済み・対象外を除く未完了件数。')
+        cfg=dict(qa_requirement_addenda=[addendum])
+        requirements=qa.qa_reference_requirements(spec,cfg)
+        self.assertEqual(spec['must_have'],['返金計算と保存'])
+        self.assertEqual(requirements['must_have'],spec['must_have']+[addendum['text']])
+        self.assertEqual(requirements['source_addenda'],[addendum])
+        self.assertNotEqual(qa.qa_compilation_identity({}),qa.qa_compilation_identity(cfg))
+        with self.assertRaises(ValueError):qa.qa_reference_requirements(spec,dict(qa_requirement_addenda=[dict(text='出典のない条件')]))
+
+    def test_source_named_state_set_is_composed_with_explicit_date_condition(self):
+        controls=[dict(selector='#state',options=[dict(value=v) for v in ['受付','返送待ち','確認中','返金済み','対象外']]),dict(selector='#due',type='date',label='対応期限')]
+        requirements=dict(outcome='左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。')
+        wrong=dict(metric='count',where='before_date',field='#due',members=[],also=dict(field='#state',members=['確認中']))
+        def must_not_reclassify(*args):raise AssertionError('An explicit shared source definition must not be reinterpreted per column')
+        rule,audit=qa.qa_resolve_status_partition(wrong,wrong,requirements,dict(target_label='期限超過'),controls,must_not_reclassify,'1')
+        self.assertEqual(rule['where'],'before_date');self.assertEqual(rule['field'],'#due')
+        self.assertEqual(rule['also']['members'],['受付','返送待ち','確認中'])
+        self.assertEqual(audit['original_proposed'],wrong);self.assertIn('not model consensus',audit['method'])
+        rows=[{'#state':s,'#due':'2000-01-01'} for s in ['受付','返送待ち','確認中','返金済み','対象外']]+[{'#state':'受付','#due':'2026-10-30'}]
+        self.assertEqual(qa.qa_evaluate_projection(rows,rule,dict(date='2026-10-30')),'3')
+        direct=qa.qa_source_state_composition(requirements,dict(target_label='未完了'),controls,dict(metric='count',where='in',field='#state',members=[]),'#state')
+        self.assertEqual(direct[0]['members'],['受付','返送待ち','確認中'])
+
+    def test_source_state_grammar_declines_unknown_scopes_and_rejects_contradictions(self):
+        controls=[dict(selector='#state',options=[dict(value=v) for v in ['受付','返金済み','対象外']]),dict(selector='#due',type='date',label='対応期限')]
+        base=dict(metric='count',where='before_date',field='#due',members=[])
+        def bind(text,ctrl=controls,target='期限超過'):
+            return qa.qa_source_state_composition(dict(outcome=text),dict(target_label=target),ctrl,base,'#state')
+        self.assertIsNone(bind('返金済み・対象外を除く未完了件数。対応期限が今日より後かつ未完了の期限超過件数'))
+        self.assertIsNone(bind('未知状態を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数'))
+        self.assertIsNone(bind('返金済み・対象外を除く未完了件数。非対応期限が今日より前かつ未完了の期限超過件数'))
+        self.assertIsNone(bind('返金済み・対象外を除く未完了件数ではない。対応期限が今日より前かつ未完了の期限超過件数'))
+        self.assertIsNone(bind('返金済み・対象外を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数',target='別の数量'))
+        duplicate=controls+[dict(controls[0],selector='#otherState')]
+        self.assertIsNone(bind('返金済み・対象外を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数',duplicate))
+        with self.assertRaisesRegex(ValueError,'定義が矛盾'):
+            bind('返金済みを除く未完了件数。対象外を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数')
+
     def test_declared_backup_protocol_requires_native_controls_and_never_invents_inline_buttons(self):
         inventory,cfg=self.component_fixture()
         inventory=dict(inventory,controls=inventory['controls']+qa.compact_qa_inventory('<button id="downloadJson">JSON保存</button><input id="restoreFile" type="file">')['controls'])

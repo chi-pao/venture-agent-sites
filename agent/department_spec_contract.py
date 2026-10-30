@@ -5,6 +5,37 @@ import re
 DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
+def department_duration_correction(condition):
+    """Correct only an unambiguous declared same-day start/end/break equation."""
+    from decimal import Decimal
+    starts=set(re.findall(r'開始(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
+    ends=set(re.findall(r'終了(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
+    breaks=set(re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',condition))
+    matches=list(re.finditer(r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?',condition))
+    if len(starts)!=1 or len(ends)!=1 or len(breaks)!=1 or len(matches)!=1:return None
+    def minute(t):h,m=map(int,t.split(':'));return Decimal(h*60+m)
+    pause,unit=next(iter(breaks));pause=Decimal(pause)*(60 if unit=='時間' else 1)
+    computed=minute(next(iter(ends)))-minute(next(iter(starts)))-pause
+    if computed<0 or computed!=computed.to_integral_value():return None
+    match=matches[0];declared=Decimal(match['n'])*(60 if match['unit']=='時間' else 1)+Decimal(match['mins']or 0)
+    if declared==computed:return None
+    if match['mins'] is not None or match['unit']=='時間':
+        hours,mins=divmod(int(computed),60);replacement=str(hours)+'時間'+str(mins).zfill(2)+'分'
+    else:replacement=str(int(computed))+'分'
+    start=match.start('n');end=match.end()
+    return dict(before=condition,after=condition[:start]+replacement+condition[end:],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
+
+
+def department_difference_issue(condition):
+    from decimal import Decimal
+    number=r'-?\d+(?:\.\d+)?';unit=r'(?:時間|分)'
+    pattern=r'差分\s*[:：]\s*('+number+r')\s*('+unit+r')\s*[（(]\s*('+number+r')\s*('+unit+r')\s*[-−]\s*('+number+r')\s*('+unit+r')\s*[）)]'
+    for match in re.finditer(pattern,condition):
+        values=match.groups();minutes=[Decimal(values[i])*(60 if values[i+1]=='時間' else 1) for i in (0,2,4)]
+        if minutes[0]!=minutes[1]-minutes[2]:return '差分の定義式と正解が矛盾しています: '+match.group()
+    return ''
+
+
 def department_unrequested_file_contract(text,source):
     named=bool(re.search(r'ファイル名.{0,40}(?:YYYY|HH.?MM|\.csv)|(?:バックアップ名|復元名)\s*[=＝]|バックアップ一覧画面',str(text),re.I))
     return named and not re.search(r'ファイル名|命名|バックアップ名|復元名|バックアップ一覧',str(source))
@@ -25,6 +56,10 @@ def department_spec_contract_issue(spec,rationale):
         return '具体値・利用操作・正解がない抽象的な完成条件です'
     vague=[str(c) for c in spec.get('acceptance',[]) if re.search(r'完了し[、,て].*(?:表示される|ダウンロードされる|保存・復元される)$',str(c)) and not re.search(r'[0-9０-９=＝「」]',str(c))]
     if vague:return '具体入力と照合値がなく、機能名を完了・表示と言い換えた完成条件です'
+    if any(department_duration_correction(str(c)) for c in spec.get('acceptance',[])):return '時間算術: 開始・終了・休憩と稼働可能時間の正解が矛盾しています'
+    for c in spec.get('acceptance',[]):
+        difference=department_difference_issue(str(c))
+        if difference:return difference
     return ''
 
 
@@ -76,6 +111,15 @@ def ensure_department_product_spec(name,cfg):
     rows=query('SELECT source FROM venture_product_specs WHERE idea=?',(name,))
     if rows and str(rows[0]['source']).startswith('ユーザー'):
         raise AutoQAPlanError('ユーザー指定の完成条件に確認が必要です: '+issue)
+    if issue.startswith('時間算術:'):
+        corrected=[];proof=[]
+        for index,condition in enumerate(spec.get('acceptance',[])):
+            fix=department_duration_correction(str(condition));corrected.append(fix['after'] if fix else condition)
+            if fix:proof.append(dict(fix,acceptance_index=index))
+        saved=store_product_spec(name,dict(spec,acceptance=corrected,arithmetic_contract_corrections=list(spec.get('arithmetic_contract_corrections',[]))+proof),source='AI設計・元の時刻と休憩の算術だけを訂正')
+        remaining=department_spec_contract_issue(saved,rationale)
+        if remaining:raise AutoQAPlanError('時刻算術は訂正済み。残る仕様の不一致を企画担当で修復してください: '+remaining)
+        return saved
     signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,issue=issue,spec=spec,
         rationale=rationale,model=cfg['model']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'spec-contracts'/signature;folder.mkdir(parents=True,exist_ok=True)
@@ -95,6 +139,9 @@ def ensure_department_product_spec(name,cfg):
                 raise AutoQAPlanError('指定されていない共同編集を追加しないでください')
             if department_unrequested_file_contract(' '.join(value.values()),original+' '+str(rationale)):
                 raise AutoQAPlanError('元要件にないファイル名・名前付きバックアップ画面を完成条件へ追加しないでください')
+            if department_duration_correction('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected']):raise AutoQAPlanError('開始・終了・休憩と稼働可能時間の計算が矛盾しています')
+            difference=department_difference_issue(value['expected'])
+            if difference:raise AutoQAPlanError(difference)
             return value
         value=None
         if path.exists():

@@ -1045,6 +1045,47 @@ def qa_projection_witnesses(rows,left,right,controls,clock):
     return result
 
 
+def qa_source_state_composition(requirements,descriptor,controls,base,field):
+    """Compile only explicit finite-set definitions and their named conjunction.
+
+    This bounded Japanese grammar is requirement-side set algebra, not an
+    interpretation of renderer code or observed quantities. Unsupported text
+    falls back to the independent semantic mapper.
+    """
+    nodes={n['selector']:n for n in controls};node=nodes.get(field,{})
+    options=list(dict.fromkeys(o.get('value') for o in node.get('options',[]) if o.get('value') and not o.get('disabled')))
+    if not 2<=len(options)<=5:return None
+    source=' '.join([str(requirements.get('outcome',''))]+list(map(str,requirements.get('must_have',[])))+list(map(str,requirements.get('workflow',[]))))
+    atom='(?:'+'|'.join(re.escape(v) for v in sorted(options,key=len,reverse=True))+')'
+    pattern=re.compile(r'(?:^|[。 、:：は])(?P<excluded>'+atom+r'(?:・'+atom+r')*)を除く(?P<name>[^\s。、「」,]{1,30}?)件数(?=[。 、,]|を表示|を数え|$)')
+    definitions={}
+    for match in pattern.finditer(source):
+        if re.match(r'を(?:表示|数え)(?:しない|ない|ません)',source[match.end():]):return None
+        name=match['name'];excluded=match['excluded'].split('・');members=[v for v in options if v not in excluded]
+        owners=[n['selector'] for n in controls if set(excluded)<={o.get('value') for o in n.get('options',[]) if o.get('value') and not o.get('disabled')}]
+        if owners!=[field]:return None
+        if name in definitions and definitions[name]['members']!=members:raise AutoQAPlanError('元仕様で同じ状態条件の定義が矛盾しています: '+name)
+        definitions[name]=dict(name=name,field=field,members=members,excluded=excluded,source_excerpt=match.group().lstrip('。 、:：は'))
+    matches=[];target=str(descriptor.get('target_label',''))
+    for name,definition in definitions.items():
+        if base.get('where')=='in' and target==name:
+            matches.append((definition,definition['source_excerpt']))
+        elif base.get('where')=='before_date':
+            date_node=nodes.get(base.get('field'),{});label=date_node.get('label','')
+            if date_node.get('type')!='date' or not label:continue
+            expression=r'(?:^|[。 、:：は])'+re.escape(label)+r'が(?:今日|基準日)より前かつ'+re.escape(name)+'の'+re.escape(target)+r'件数(?=[。 、,]|を表示|を数え|$)'
+            found=re.search(expression,source)
+            if found:
+                if re.match(r'を(?:表示|数え)(?:しない|ない|ません)',source[found.end():]):return None
+                matches.append((definition,found.group().lstrip('。 、:：は')))
+    if len(matches)!=1:return None
+    definition,expression=matches[0];result=dict(base);result.pop('status_family',None)
+    if result['where']=='in':result['members']=definition['members']
+    else:result['also']=dict(field=field,members=definition['members'])
+    result['basis']='元仕様で明示された集合「'+definition['name']+'」と条件の合成'
+    return result,dict(valid=True,method='bounded explicit requirement set definition and named conjunction; not model consensus or observed values',source_definition=definition,source_expression=expression,classified_states={v:int(v in definition['members']) for v in options})
+
+
 def qa_resolve_status_partition(left,right,requirements,descriptor,controls,generate,key):
     """Rebuild a disputed subset from every native status, not two bad sets."""
     stable=('metric','where','field','reference_input','rounding','places')
@@ -1060,6 +1101,8 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
     node=next((n for n in controls if n.get('selector')==field),{})
     options=list(dict.fromkeys(o['value'] for o in node.get('options',[]) if o.get('value') and not o.get('disabled')))
     if not 2<=len(options)<=5:return None
+    explicit=qa_source_state_composition(requirements,descriptor,controls,base,field)
+    if explicit is not None:return explicit[0],dict(explicit[1],original_proposed=left,original_independent=right)
     clauses=[str(requirements.get('outcome',''))]+list(requirements.get('must_have',[]))+list(requirements.get('workflow',[]))
     clauses=[v for v in clauses if v.strip()]+['画面で宣言された項目名: '+descriptor['target_label']]
     schema=dict(type='object',properties=dict(membership=dict(type='array',items=dict(type='integer',enum=[-1,0,1]),minItems=len(options),maxItems=len(options)),evidence_id=dict(type='integer',enum=list(range(len(clauses))))),required=['membership','evidence_id'],additionalProperties=False)
@@ -1610,9 +1653,16 @@ def qa_split_stage_context(fallback,cfg,inventory,key,actions=None):
     used={step.get('selector') for step in (actions or {}).get('steps',[])}
     controls=[n for n in inventory.get('controls',[]) if not actions or n.get('selector') in used]
     outputs=[{k:n[k] for k in ('tag','selector','label') if k in n} for n in inventory.get('outputs',[]) if n.get('tag') not in ('main','section','header','form')]
+    feature_context=cfg.get('_qa_feature_context')
+    if feature and isinstance(feature_context,dict):
+        index=feature_context.get('case_index',0);example=feature_context.get('design_example') or {};cases=example.get('test_cases',[])
+        selected=cases[index] if type(index)is int and isinstance(cases,list) and 0<=index<len(cases) else {}
+        feature_context=dict(condition_index=feature_context.get('condition_index'),case_index=index,
+            design_case={k:selected[k] for k in ('input','action','expected') if isinstance(selected,dict) and k in selected},
+            previous_inputs=[[{k:s[k] for k in ('op','selector','value','label') if k in s} for s in p.get('steps',[]) if s.get('op') in ('fill','select','check')] for p in feature_context.get('previous_cases',[])])
     view=dict(audience=spec.get('audience'),outcome=spec.get('requested_outcome'),conditions_by_index=conditions,
               controls=controls,outputs=outputs,prior=cfg.get('_qa_prior_scenarios',[]),kind=key,
-              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=cfg.get('_qa_feature_context'),
+              reference_clock=cfg.get('_qa_reference_clock',{}),feature_case=feature_context,
               display_contracts={k:v for k,v in (cfg.get('_qa_display_contracts') or {}).items() if not actions or k==actions.get('result_selector')})
     return json.dumps(view,ensure_ascii=False,separators=(',',':'))
 
@@ -1882,6 +1932,18 @@ def qa_blind_record_event_audit(steps,events,source,selector,cfg,folder,key):
     return qa_require_independent_agreement(events,independent,'保存操作と既存対象の対応')
 
 
+def qa_reference_requirements(spec,cfg):
+    requirements=dict(outcome=spec.get('requested_outcome',''),must_have=list(spec.get('must_have',[])),workflow=list(spec.get('workflow',[])))
+    addenda=cfg.get('qa_requirement_addenda',[])
+    if not isinstance(addenda,list) or len(addenda)>8:raise AutoQAPlanError('実証要求の追加定義が不正です')
+    if addenda:
+        for entry in addenda:
+            if not isinstance(entry,dict) or set(entry)!={'source','text'} or any(not isinstance(entry[k],str) or not 1<=len(entry[k])<=1000 for k in ('source','text')):raise AutoQAPlanError('追加定義には出典と要求本文が必要です')
+            if entry['text'] not in requirements['must_have']:requirements['must_have'].append(entry['text'])
+        requirements['source_addenda']=addenda
+    return requirements
+
+
 def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,key,generate):
     """Bind requirements to a checked projection; compute instead of guessing."""
     selector=actions['result_selector'];contract=formats.get(selector,{})
@@ -1889,7 +1951,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     if type(count)is not int or not 1<=count<=8:raise AutoQAPlanError('参照集計: 数値表示の契約が必要です')
     # Original capability requirements set the rules. Repaired test examples
     # are not records and must never enter the reference data set.
-    requirements=dict(outcome=spec.get('requested_outcome',''),must_have=spec.get('must_have',[]),workflow=spec.get('workflow',[]))
+    requirements=qa_reference_requirements(spec,cfg)
     source=json.dumps(requirements,ensure_ascii=False,separators=(',',':'))
     steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions['steps']
     binding_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
@@ -2376,10 +2438,11 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-6-semantic-rule-reuse-view-reload',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-7-source-state-composition',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),
+                requirement_addenda_sha=hashlib.sha256(json.dumps(cfg.get('qa_requirement_addenda',[]),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),
                 factored_status_bindings=bool(cfg.get('qa_factored_status_bindings')),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 

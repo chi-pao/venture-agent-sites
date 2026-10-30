@@ -8,6 +8,21 @@ from test_preview import app
 
 
 class DepartmentSpecContractTests(TestCase):
+    def test_ai_duration_typo_is_corrected_from_same_inputs_only(self):
+        wrong='入力: 日付=2023-10-05, 開始時間=09:00, 終了時間=17:00, 休憩時間=1.5時間 / 操作: 稼働枠を保存 / 期待結果: 稼働可能時間: 7.5時間 (17:00 - 09:00 - 1.5時間)'
+        spec=dict(self.spec,acceptance=[wrong,'保存後に同じ入力値が再表示される','CSVに保存値が含まれる'])
+        fix=app.department_duration_correction(wrong)
+        self.assertEqual(fix['computed_minutes'],'390');self.assertIn('6時間30分',fix['after'])
+        with patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'store_product_spec',side_effect=lambda name,value,**kw:value),patch.object(app,'ai_json',side_effect=AssertionError('Unambiguous arithmetic does not require another model vote')):
+            fixed=app.ensure_department_product_spec('在宅ワーク',self.cfg)
+        self.assertEqual(fixed['acceptance'][1:],spec['acceptance'][1:]);self.assertEqual(fixed['must_have'],spec['must_have'])
+        self.assertIsNone(app.department_duration_correction(fix['after']))
+        self.assertIsNone(app.department_duration_correction(wrong.replace('終了時間=17:00','終了時間=08:00')))
+        self.assertIsNone(app.department_duration_correction(wrong+' 別の入力: 開始時間=10:00'))
+        self.assertIn('矛盾',app.department_difference_issue('差分: -0.5時間 (6時間 - 5.5時間)'))
+        self.assertEqual(app.department_difference_issue('差分: 0.5時間 (6時間 - 5.5時間)'), '')
+        self.assertEqual(app.department_difference_issue('差分: -30分 (330分 - 6時間)'), '')
+
     def test_declared_backup_lifecycle_compiles_data_without_named_screens(self):
         spec=dict(delivery_mode='browser_local',must_have=['受講者名簿のローカル保存','バックアップと復元機能'])
         cfg=dict(department_backup_protocol='browser-json-file-v1')
