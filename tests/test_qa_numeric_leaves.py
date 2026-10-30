@@ -37,3 +37,19 @@ class NumericLeafBrowserTests(unittest.TestCase):
                 rule=dict(metric='duration',where='inputs',start_input='#start',end_input='#end',break_input='#pause')
                 self.assertEqual(app.qa_evaluate_projection([],rule,dict(input_values=defaults)),'405')
             finally:browser.close()
+
+    def test_browser_hour_minute_format_keeps_zero_padded_remainder(self):
+        with sync_playwright() as p:
+            browser=p.chromium.launch(headless=True)
+            try:
+                page=browser.new_page();page.set_content('<div><span>使える稼働時間</span><strong id="time">7時間00分</strong></div>')
+                formats=app.capture_qa_display_contracts(page)
+                self.assertEqual(formats['#time']['number_widths'],[0,2])
+                rule=dict(metric='duration',start_input='#start',end_input='#end',break_input='#pause')
+                clock=dict(input_values={'#start':'09:00','#end':'17:05','#pause':'60'})
+                values=[app.qa_evaluate_projection([],dict(metric='time_component',component=component,source_rule=rule),clock) for component in ('hours','minutes')]
+                expected=app.qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector='#time',expected_values=values,expected_literals=['','時間','分'])),'#time',formats)
+                self.assertEqual(expected['exact_check']['value'],'7時間05分')
+                page.locator('#time').evaluate('(node)=>node.textContent="7時間05分"')
+                self.assertEqual(page.locator('#time').inner_text(),expected['exact_check']['value'])
+            finally:browser.close()

@@ -755,3 +755,66 @@ class ReferenceAggregateTests(unittest.TestCase):
         qa.validate_qa_inventory_actions(case,inventory,'invalid')
         self.assertIsNone(qa.qa_component_invalid_case(dict(cfg,qa_component_contract='unknown'),inventory,[workflow,prior],1))
         self.assertIsNone(qa.qa_component_invalid_case(cfg,inventory,[workflow,dict(prior,steps=[])],1))
+
+    def test_hour_minute_slots_derive_from_one_independent_minute_rule(self):
+        controls,inputs,choices=self.time_fixture()
+        formats=qa.qa_display_contracts_from_nodes([dict(selector='#time',text='7時間00分',label='使える稼働時間')])
+        calls=[]
+        def generate(name,prompt,schema,validate,dependency):
+            calls.append(name)
+            return validate(dict(choice=next(i for i,p in enumerate(dependency['candidates']) if p['metric']=='duration' and p.get('break_input'))))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=[]),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
+            result=qa.qa_reference_primary_expectation(dict(result_selector='#time',steps=[]),formats,dict(requested_outcome='開始終了から休憩を引いた分数を時間と分で表示'),dict(model='x',_qa_input_defaults=inputs),dict(controls=controls),Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'7時間00分')
+        self.assertEqual(proof['values'],['7','0'])
+        self.assertEqual(proof['projection_audits'][1]['derived_from'],0)
+        self.assertEqual(len(calls),2)
+        changed=dict(input_values=dict(inputs,**{'#start':'09:30','#pause':'45'}))
+        self.assertEqual([qa.qa_evaluate_projection([],p,changed) for p in proof['projections']],['6','45'])
+
+    def test_zero_padding_formats_independent_numbers_without_copying_display(self):
+        formats=qa.qa_display_contracts_from_nodes([dict(selector='#time',text='7時間00分',label='時間')])
+        self.assertEqual(formats['#time']['number_widths'],[0,2])
+        raw=dict(exact_check=dict(op='text_equals',selector='#time',expected_values=['8','5'],expected_literals=['','時間','分']))
+        self.assertEqual(qa.qa_compile_bound_primary(raw,'#time',formats)['exact_check']['value'],'8時間05分')
+        source=dict(metric='duration',start_input='#start',end_input='#end',break_input='#pause')
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([],dict(metric='time_component',component='bad',source_rule=source),{})
+        with self.assertRaises(ValueError):qa.qa_evaluate_projection([{'#n':'-5'}],dict(metric='time_component',component='hours',source_rule=dict(metric='sum',where='all',field='#n')),{})
+
+    def test_feature_create_submissions_use_the_same_required_input_repair(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls'].extend([dict(selector='#date',tag='input',type='date',required=True,form='#recordForm'),dict(selector='#status',tag='select',required=True,form='#recordForm',options=[dict(value='open')])])
+        raw=dict(steps=[dict(op='fill',selector='#title',value='保存A'),dict(op='click',selector='#saveRecord')])
+        def repair(value,*args):
+            return dict(value,steps=value['steps'][:-1]+[dict(op='fill',selector='#date',value='2026-10-30'),dict(op='select',selector='#status',value='open')]+value['steps'][-1:])
+        with patch.object(qa,'repair_qa_missing_initial_inputs',side_effect=repair) as fix:
+            result=qa.qa_prepare_native_submissions(raw,inventory,'feature',cfg)
+        fix.assert_called_once()
+        self.assertEqual(result['steps'][-1]['selector'],'#saveRecord')
+        self.assertEqual(result['steps'][1]['selector'],'#date')
+        self.assertEqual(result['steps'][2]['selector'],'#status')
+
+    def test_feature_multiple_record_overwrites_reject_but_explicit_draft_edit_remains_valid(self):
+        inventory,cfg=self.component_fixture()
+        raw=dict(steps=[dict(op='fill',selector='#title',value='Aさん'),dict(op='fill',selector='#title',value='Bさん'),dict(op='click',selector='#saveRecord')])
+        with self.assertRaisesRegex(ValueError,'上書き'):qa.qa_prepare_native_submissions(raw,inventory,'feature',cfg)
+        edit_cfg=dict(cfg,_qa_feature_context=dict(condition_index=0),_qa_spec=dict(acceptance=['名前の誤入力を修正して保存する']))
+        self.assertEqual(qa.qa_prepare_native_submissions(raw,inventory,'feature',edit_cfg),raw)
+        unknown=dict(cfg,qa_component_contract='unknown')
+        self.assertEqual(qa.qa_prepare_native_submissions(raw,inventory,'feature',unknown),raw)
+
+    def test_unknown_vector_state_requires_positive_inverse_confirmation_before_pass(self):
+        controls=[dict(selector='#state',options=[dict(value='open'),dict(value='closed')])]
+        rule=dict(metric='count',where='in',field='#state',members=['open'])
+        names=[]
+        def generate(name,prompt,schema,validate,dependency):
+            names.append(name)
+            if '-state-' in name:return validate(dict(decision=1 if dependency['question']=='excluded' else 0,evidence_id=0))
+            return validate(dict(membership=[-1 if s=='closed' else 1 for s in dependency['ordered_statuses']],evidence_id=0))
+        projection,audit=qa.qa_resolve_status_partition(rule,rule,dict(outcome='closedを除く'),dict(target_label='未完了'),controls,generate,'0')
+        self.assertEqual(projection['members'],['open'])
+        self.assertEqual(audit['initial_classifications'][0]['closed'],-1)
+        self.assertEqual(audit['classified_states']['closed'],0)
+        self.assertEqual(len(names),4)

@@ -644,6 +644,7 @@ def qa_fixed_quantity_format(template,label,projections):
     if prefix and (prefix.strip()!=label.strip() or not re.search(r'(?:率|数|合計|比率)$',label.strip())):return False
     body=template[len(prefix):]
     if re.fullmatch(r'\{n0\}\s*(?:件|人|名|円|問|分|時間)?',body):return True
+    if body=='{n0}時間{n1}分' and len(projections)==2 and all(p.get('metric')=='time_component' for p in projections):return True
     if len(projections)==2 and all(p['metric']=='count' for p in projections) and re.fullmatch(r'\{n0\}件\s*[/／]\s*[^{}0-9]{1,30}\{n1\}件',body):return True
     if len(projections) in (3,4) and projections[0]['metric']=='percent' and projections[1]['metric']=='count' and projections[2]['where']=='all':
         same={k:v for k,v in projections[0].items() if k not in ('metric','basis')}=={k:v for k,v in projections[1].items() if k not in ('metric','basis')}
@@ -657,14 +658,15 @@ def qa_display_contracts_from_nodes(nodes):
     for node in nodes:
         text=str(node.get('text','')).strip();selector=node.get('selector','')
         if not selector.startswith('#') or not text or len(text)>180:continue
-        slots=[];styles=[]
+        slots=[];styles=[];widths=[]
         def slot(match):
-            key='{n'+str(len(slots))+'}';slots.append(key);styles.append('grouped' if ',' in match.group() else 'plain');return key
+            key='{n'+str(len(slots))+'}';slots.append(key);styles.append('grouped' if ',' in match.group() else 'plain');widths.append(len(match.group()) if re.fullmatch(r'0[0-9]+',match.group()) else 0);return key
         template=re.sub(r'-?\d+(?:,\d{3})*(?:\.\d+)?',slot,text)
         if not 1<=len(slots)<=8:continue
         label=re.sub(r'-?\d+(?:\.\d+)?','数値',str(node.get('label','')))[:80]
         contracts[selector]=dict(template=template,slots=len(slots),label=label)
         if any(style=='grouped' for style in styles):contracts[selector]['number_styles']=styles
+        if any(widths):contracts[selector]['number_widths']=widths
         for key in ('tag','ancestor_selectors'):
             if key in node:contracts[selector][key]=node[key]
         if len(contracts)>=24:break
@@ -727,6 +729,8 @@ def compile_qa_formatted_expectation(value,formats):
         raise AutoQAPlanError('expected_literals: 数値や未解決の書式記号を文字列に混ぜないでください。数値はexpected_valuesに分離してください')
     styles=contract.get('number_styles',[])
     displayed=[format(decimal.Decimal(v),',f') if i<len(styles) and styles[i]=='grouped' else v for i,v in enumerate(values)]
+    widths=contract.get('number_widths',[])
+    displayed=[v.zfill(widths[i]) if i<len(widths) and type(widths[i])is int and 1<widths[i]<=6 and re.fullmatch(r'[0-9]+',v) else v for i,v in enumerate(displayed)]
     text=literals[0]+''.join(v+literals[i+1] for i,v in enumerate(displayed))
     qa_validate_explicit_percentage(text)
     # Both numbers and surrounding business-state text come from independent
@@ -967,6 +971,7 @@ def qa_component_events(steps,cfg):
 def qa_normalize_component_inputs(value):
     seen={};steps=[]
     for step in value.get('steps',[]):
+        if step.get('op')=='click' and step.get('selector')=='#clearForm' and steps and steps[-1]==step:continue
         if step.get('op') in ('fill','select','check'):
             identity={k:step.get(k) for k in ('op','value','label','nth') if k in step}
             css=step.get('selector')
@@ -1040,14 +1045,14 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
                      fixed_condition={k:base[k] for k in ('where','field','reference_input') if k in base} if base['where']!='in' else None)
         def validate(value):
             membership=value.get('membership') if isinstance(value,dict) else None
-            if not isinstance(membership,list) or len(membership)!=len(ordered) or any(type(v)is not int or v not in (0,1) for v in membership) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('状態ごとの集計対象を元要件から確定できません。未確定は合格にしません')
+            if not isinstance(membership,list) or len(membership)!=len(ordered) or any(type(v)is not int or v not in (-1,0,1) for v in membership) or type(value.get('evidence_id'))is not int or not 0<=value['evidence_id']<len(clauses):raise AutoQAPlanError('状態ごとの集計対象を元要件から確定できません。未確定は合格にしません')
             return value
         prompt=('独立した意味判定。出力項目「'+descriptor['target_label']+'」の集計対象を、ordered_statusesの各状態について個別に決める。含める=1、除外=0、要件不足=-1。membershipは提示順と同じ長さ。固定の日付条件があれば変更せず、その条件を満たす記録の各状態を判定する。今回入力済みの状態だけに限定しない。前の候補は示さない。原文の根拠番号evidence_idも返す。JSON {membership:[1,0],evidence_id:0}。\n'+json.dumps(context,ensure_ascii=False,separators=(',',':')))
         answer=generate('primary-projection-membership-'+key+('-reverse' if reverse else '-forward'),prompt,schema,validate,context)
         mappings.append(dict(zip(ordered,answer['membership'])));responses.append(answer)
     final=dict(mappings[0]);resolved=[]
     for status_index,status in enumerate(options):
-        if mappings[0][status]==mappings[1][status]:continue
+        if mappings[0][status]==mappings[1][status] and mappings[0][status]in (0,1):continue
         bit_schema=dict(type='object',properties=dict(decision=dict(type='integer',enum=[-1,0,1]),evidence_id=schema['properties']['evidence_id']),required=['decision','evidence_id'],additionalProperties=False)
         votes=[]
         for excluded in (False,True):
@@ -1061,6 +1066,7 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
             votes.append(dict(included=1-answer['decision'] if excluded else answer['decision'],response=answer))
         qa_require_independent_agreement(votes[0]['included'],votes[1]['included'],descriptor['target_label']+'の状態'+status+'の正逆質問')
         final[status]=votes[0]['included'];resolved.append(dict(status=status,votes=votes))
+    if any(value not in (0,1) for value in final.values()):raise AutoQAPlanError('未確定の状態が残るため集計を合格にできません')
     agreement=dict(valid=True,scope=descriptor['target_label']+'の全状態の独立分類',initial_classifications=mappings,resolved_disagreements=resolved)
     members=[v for v in options if final[v]]
     if base['where']=='in':base['members']=members
@@ -1657,6 +1663,11 @@ def qa_evaluate_projection(rows,projection,reference_clock,_depth=0):
     """Small explicit aggregate language, with no eval or model arithmetic."""
     if _depth>3:raise AutoQAPlanError('参照集計: 計算式が深すぎます')
     metric=projection.get('metric');where=projection.get('where');field=projection.get('field');members=projection.get('members',[])
+    if metric=='time_component':
+        if projection.get('component')not in ('hours','minutes') or not isinstance(projection.get('source_rule'),dict):raise AutoQAPlanError('参照集計: 時間・分の対応が不正です')
+        total=decimal.Decimal(qa_evaluate_projection(rows,projection['source_rule'],reference_clock,_depth+1))
+        if total<0 or total!=total.to_integral_value():raise AutoQAPlanError('参照集計: 負数・端数分の時間表示規則は未確定です')
+        return str(int(total)//60 if projection['component']=='hours' else int(total)%60)
     if metric in ('duration','difference'):
         D=decimal.Decimal
         if metric=='duration':
@@ -1847,12 +1858,17 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     evaluation_context=dict(cfg.get('_qa_reference_clock',{}),input_values=input_values)
     row_fields=set.intersection(*(set(row) for row in rows)) if rows else set()
     values=[];projections=[];audits=[]
+    hours_minutes=count==2 and template=='{n0}時間{n1}分'
     for index in range(count):
+        if hours_minutes and index==1:
+            projection=dict(metric='time_component',component='minutes',source_rule=projections[0]['source_rule'],basis='同じ独立した分数から60で割った余り')
+            values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='minute remainder of the same independently bound duration',derived_from=0));continue
         if qa_ratio_display(template) and index in (1,2) and projections and projections[0]['metric']=='percent':
             projection=dict(projections[0],metric='count') if index==1 else dict(metric='count',where='all',field='',members=[],rounding='exact',places=0,basis='割合の全保存記録の分母')
             values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='algebraic fraction identity from independently agreed percentage',derived_from=0))
             continue
         candidates=qa_projection_candidates(controls,template,index,contract,input_values,row_fields)
+        if hours_minutes:candidates=[p for p in candidates if p['metric']in ('duration','difference','sum')]
         if selector=='#recordCount' and len(candidates)==1 and qa_component_events(steps,binding_cfg) is not None:
             projection=candidates[0]
             values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='declared component registration-total quantity, not AI inference'))
@@ -1876,6 +1892,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             if partition is not None:projection,audit=partition
             else:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
         else:projection,audit=qa_resolve_projection_binding(projection,independent,requirements,output_descriptor,rows,controls,evaluation_context,generate,str(index))
+        if hours_minutes and index==0:projection=dict(metric='time_component',component='hours',source_rule=projection,basis='独立した分数を60で割った整数時間')
         values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
@@ -1924,6 +1941,23 @@ def qa_primary_component_expectation(selector,formats,context,generate):
         answer=generate('primary-literal-'+str(index),prompt,schema,validate,dict(context=context,selector=selector,index=index,values=values))
         literals.append(validate(answer)['value'])
     return qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+
+
+def qa_prepare_native_submissions(value,inventory,kind,cfg):
+    """Apply submission checks to feature units using the same create actor."""
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    known=qa_component_events(value.get('steps',[]),binding) is not None
+    if not known and kind!='workflow':return value
+    if known:value=qa_normalize_component_inputs(value)
+    feature=cfg.get('_qa_feature_context')or {};spec=cfg.get('_qa_spec')or {}
+    index=feature.get('condition_index');criteria=spec.get('acceptance',[])
+    condition=criteria[index] if type(index)is int and 0<=index<len(criteria) else ''
+    draft_edit=kind=='feature' and bool(re.search(r'誤入力|修正|訂正|上書き|編集',str(condition)))
+    if kind=='workflow' or kind=='feature' and not draft_edit:qa_validate_workflow_overwrites(value)
+    if qa_missing_initial_required_inputs(value,inventory):
+        repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,spec)
+        if repaired is not None:value=repaired
+    return repair_qa_repeated_form_inputs(value,inventory,cfg)
 
 
 def qa_component_invalid_case(cfg,inventory,scenarios,count):
@@ -2104,19 +2138,13 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         if any(not isinstance(step,dict) or step.get('op') not in allowed for step in value['steps']):raise AutoQAPlanError('操作計画には今回の検査に必要な実操作を指定してください')
         value=qa_normalize_duration_inputs(qa_normalize_select_inputs(value,inventory),inventory)
         qa_validate_step_choices(value,action_props['steps']['items'])
-        if kind=='workflow':
-            component_cfg=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
-            if qa_component_events(value['steps'],component_cfg) is not None:value=qa_normalize_component_inputs(value)
-            qa_validate_workflow_overwrites(value)
+        value=qa_prepare_native_submissions(value,inventory,kind,cfg)
+        qa_validate_step_choices(value,action_props['steps']['items'])
         for step in value['steps']:
             node=next((n for n in inventory.get('controls',[]) if n['selector']==step.get('selector')),None)
             if node and step.get('op')=='select' and node.get('options'):
                 options=[o.get('value') for o in node['options']]
                 if step.get('value') not in options:raise AutoQAPlanError('選択値は画面に実在するoptionのvalueから指定してください')
-        if kind=='workflow' and qa_missing_initial_required_inputs(value,inventory):
-            repaired=repair_qa_missing_initial_inputs(value,inventory,cfg,cfg.get('_qa_spec',{}))
-            if repaired is not None:value=repaired
-        if kind=='workflow':value=repair_qa_repeated_form_inputs(value,inventory,cfg)
         if kind=='variant' and qa_variant_repeats_workflow(value,cfg.get('_qa_prior_scenarios',[])):
             raise AutoQAPlanError('variantはworkflowと同一操作です。入力値を変えた別の例で再設計してください')
         return validate_qa_inventory_actions(value,inventory,kind)
@@ -2203,7 +2231,7 @@ def qa_initial_display_context(name,source,directory):
     if path.exists():
         try:
             saved=json.loads(path.read_text(encoding='utf-8'))
-            if saved.get('survey_policy')=='numeric-leaves-3-input-defaults' and saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
+            if saved.get('survey_policy')=='numeric-leaves-4-time-components' and saved.get('source_sha')==digest and saved.get('reference_clock',{}).get('date')==qa_current_reference_clock(saved.get('reference_clock'))['date']:
                 return saved
         except (ValueError,TypeError,KeyError):pass
     from playwright.sync_api import sync_playwright
@@ -2217,7 +2245,7 @@ def qa_initial_display_context(name,source,directory):
             page=context.new_page();page.goto(url,wait_until='networkidle',timeout=15000)
             clock=page.evaluate("() => {const d=new Date();const p=n=>String(n).padStart(2,'0');return {date:d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'browser local clock'};}")
             input_defaults=qa_capture_view_input_defaults(page)
-            result=dict(survey_policy='numeric-leaves-3-input-defaults',input_defaults=input_defaults,source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
+            result=dict(survey_policy='numeric-leaves-4-time-components',input_defaults=input_defaults,source_sha=digest,display_contracts=capture_qa_display_contracts(page),reference_clock=clock,
                         method='numeric-stripped interface survey; no acceptance verdict or observed numeric expectations')
             result=json.loads(json.dumps(result,sort_keys=True,ensure_ascii=False))
             write_framework_json(path,result);context.close()
@@ -2227,7 +2255,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-3-input-arithmetic',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-4-time-components',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
