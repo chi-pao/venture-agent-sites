@@ -12,6 +12,31 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_saved_literal_checks_do_not_expect_cleared_input_or_full_row_layout(self):
+        inventory,cfg=self.component_fixture()
+        actions=dict(steps=[dict(op='fill',selector='#title',value='商品A'),dict(op='click',selector='#saveRecord')])
+        expected=dict(op='text_contains',selector='#recordRows',value='商品A')
+        for css in ['#title','#recordRows']:
+            original=dict(op='text_equals',selector=css,value='商品A')
+            self.assertEqual(qa.qa_secondary_saved_literal(original,actions,inventory,cfg),expected)
+            self.assertEqual(original['selector'],css)
+            self.assertEqual(qa.qa_secondary_saved_literal(original,actions,inventory,dict(cfg,qa_component_contract='unknown')),original)
+        unsaved=dict(op='text_equals',selector='#title',value='未保存B')
+        self.assertEqual(qa.qa_secondary_saved_literal(unsaved,actions,inventory,cfg),unsaved)
+        edited=dict(actions,steps=actions['steps']+[dict(op='fill',selector='#title',value='商品A')])
+        draft=dict(op='text_equals',selector='#title',value='商品A')
+        self.assertEqual(qa.qa_secondary_saved_literal(draft,edited,inventory,cfg),draft)
+
+    def test_yen_prefix_is_a_quantity_format_without_status_affix_generation(self):
+        rule=dict(metric='sum',where='all',field='#amount')
+        self.assertTrue(qa.qa_fixed_quantity_format('¥{n0}','返金予定額',[rule]))
+        self.assertTrue(qa.qa_fixed_quantity_format('￥ {n0}','返金予定額',[rule]))
+        self.assertFalse(qa.qa_fixed_quantity_format('受付{n0}件数','返金予定額',[rule]))
+        self.assertFalse(qa.qa_fixed_quantity_format('¥{n0}','返金予定額',[dict(metric='count')]))
+        formats=qa.qa_display_contracts_from_nodes([dict(selector='#money',text='¥5,000',label='返金予定額')])
+        value=qa.qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector='#money',expected_values=['6000'],expected_literals=['¥',''])),'#money',formats)
+        self.assertEqual(value['exact_check']['value'],'¥6,000')
+
     def test_feature_record_date_does_not_implicitly_change_view_date(self):
         inventory,cfg=self.component_fixture()
         inventory['controls']+=qa.compact_qa_inventory('<input id="recordDate" form="recordForm" type="date"><input id="viewDate" type="date">')['controls']

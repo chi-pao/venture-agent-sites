@@ -1,0 +1,80 @@
+{
+  "kind": "completed real-model mapping and unchanged generated page replay; not full product acceptance",
+  "source_run": 41037812525,
+  "artifact": 12970426351,
+  "source_sha256": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+  "original_secondary": {
+    "op": "text_equals",
+    "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+    "value": "受付5,000件数"
+  },
+  "source_projection": [
+    {
+      "basis": "返金予定額（円）の全保存記録の合計",
+      "field": "#refund_amount",
+      "members": [],
+      "metric": "sum",
+      "places": 0,
+      "rounding": "exact",
+      "where": "all"
+    }
+  ],
+  "independent_projection_audits": [
+    {
+      "independent": {
+        "basis": "返金予定額（円）の全保存記録の合計",
+        "field": "#refund_amount",
+        "members": [],
+        "metric": "sum",
+        "places": 0,
+        "rounding": "exact",
+        "where": "all"
+      },
+      "method": "blind independent semantic binding agreement",
+      "scope": "#returnTotals > div:nth-child(3) > strong:nth-child(2)の数値位置1",
+      "valid": true
+    }
+  ],
+  "recomputed_values": [
+    "5000"
+  ],
+  "compiled_money": {
+    "op": "text_equals",
+    "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+    "value": "¥5,000"
+  },
+  "compiled_saved_literal": {
+    "op": "text_contains",
+    "selector": "#recordRows",
+    "value": "商品A"
+  },
+  "replay": [
+    {
+      "width": 1280,
+      "expected_money": "¥5,000",
+      "actual_money": "¥5,000",
+      "saved_literal": "商品A",
+      "saved_literal_found": true,
+      "cleared_draft": "",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "expected_money": "¥5,000",
+      "actual_money": "¥5,000",
+      "saved_literal": "商品A",
+      "saved_literal_found": true,
+      "cleared_draft": "",
+      "passed": true
+    }
+  ],
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "all feature conditions",
+    "fresh real models",
+    "design and visual comparison",
+    "unknown use case"
+  ]
+}

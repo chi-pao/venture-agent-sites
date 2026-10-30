@@ -4064,6 +4064,7 @@ def qa_ratio_display(template):
 
 def qa_fixed_quantity_format(template,label,projections):
     """Recognize units and linked measurement labels, never dynamic verdicts."""
+    if len(projections)==1 and projections[0].get('metric') in ('sum','difference') and re.fullmatch(r'[¥￥]\s*\{n0\}',template):return True
     prefix=template.split('{n0}',1)[0]
     if prefix and (prefix.strip()!=label.strip() or not re.search(r'(?:率|数|合計|比率)$',label.strip())):return False
     body=template[len(prefix):]
@@ -5469,6 +5470,29 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     return result
 
 
+def qa_secondary_saved_literal(check,actions,inventory,cfg):
+    """Bind submitted text to its saved collection, without inventing row layout."""
+    if check.get('op') not in ('text_equals','text_contains'):return check
+    css=check.get('selector');value=check.get('value')
+    if not isinstance(value,str) or not 2<=len(value)<=250 or value!=value.strip():return check
+    nodes={n['selector']:n for n in inventory.get('controls',[])+inventory.get('outputs',[])}
+    target=nodes.get(css,{})
+    draft=target.get('form')=='#recordForm' and target.get('tag') in ('input','textarea') and target.get('type','text') in ('text','textarea')
+    if css!='#recordRows' and not draft:return check
+    steps=[step for prior in cfg.get('_qa_prior_scenarios',[]) for step in prior.get('steps',[])]+actions.get('steps',[])
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    events=qa_component_events(steps,binding)
+    if events is None:return check
+    if draft:
+        creates=[e['step_index'] for e in events if e.get('effect')=='create']
+        if not creates or any(step.get('selector')==css and step.get('op')in ('fill','select','check') for step in steps[max(creates)+1:]):return check
+    rows=qa_reference_rows(steps,events)
+    fields=[n['selector'] for n in inventory.get('controls',[]) if n.get('form')=='#recordForm' and n.get('tag') in ('input','textarea') and n.get('type','text') in ('text','textarea')]
+    if draft:fields=[css]
+    if not any(row.get(field)==value for row in rows for field in fields):return check
+    return dict(op='text_contains',selector='#recordRows',value=value)
+
+
 def qa_secondary_reference_check(check,actions,formats,spec,cfg,inventory,folder,key,generate):
     """Numeric secondary assertions use the same source-only compiler as primary."""
     selector=check.get('selector');contract=formats.get(selector,{})
@@ -5829,13 +5853,20 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
             check=value.get('check') if isinstance(value,dict) else None
             if not isinstance(check,dict) or check.get('op') not in ('text_equals','text_contains','value_equals','count','invalid','visible') or not isinstance(check.get('selector'),str):raise AutoQAPlanError('補助検査1個の具体的な照合が必要です')
             if check.get('selector') not in options or check==primary or check in checks:raise AutoQAPlanError('補助検査は主結果や前の検査と同一にしないでください')
+            saved=qa_secondary_saved_literal(check,actions,inventory,cfg)
+            if saved!=check:
+                write_framework_json(directory/('secondary-'+str(index)+'-saved-binding.json'),dict(original=check,compiled=saved,method='submitted literal found in independently declared saved records; not cleared draft or guessed row layout'))
+                if saved.get('selector') in excluded:raise AutoQAPlanError('保存先への対応づけが既存の検査先と重複します。別の独立した結果を検査してください')
+                return dict(value,check=saved)
             return value
         dependency=dict(actions=actions,primary=primary,earlier=checks)
         value=stage('secondary-'+str(index),'独立QA。補助検査を1個だけ返す。主結果とは別の表示先で、入力内容または処理後の保存状態を具体的に照合する。画面にない通知文や見出しを創作しない。操作・主結果は変更しない。JSON {check:{op,selector,value}}。\n'+oracle_context+'\n確定済みの操作と検査:'+json.dumps(dependency,ensure_ascii=False,separators=(',',':')),
             check_schema,oracle,220,validate_check,dependency)
         def secondary_component(name,prompt,part_schema,check,dependency):
             return stage('secondary-'+str(index)+'-reference-'+name,prompt,part_schema,oracle,180 if 'audit' in name else 100 if 'projection' in name else 120,check,dependency)
-        checked=qa_secondary_reference_check(value['check'],actions,formats,cfg.get('_qa_spec',{}),cfg,inventory,folder,key+'-secondary-'+str(index),secondary_component)
+        saved=qa_secondary_saved_literal(value['check'],actions,inventory,cfg)
+        if saved!=value['check']:write_framework_json(directory/('secondary-'+str(index)+'-saved-binding.json'),dict(original=value['check'],compiled=saved,method='submitted literal found in independently declared saved records; not cleared draft or guessed row layout'))
+        checked=qa_secondary_reference_check(saved,actions,formats,cfg.get('_qa_spec',{}),cfg,inventory,folder,key+'-secondary-'+str(index),secondary_component)
         checks.append(checked)
     raw=dict(actions,checks=checks,exact_check=primary)
     try:return validator(raw)
@@ -5900,7 +5931,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-9-all-numeric-assertions',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-10-saved-literals-and-currency',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),
