@@ -8,6 +8,34 @@ from test_preview import app
 
 
 class DepartmentSpecContractTests(TestCase):
+    def test_model_capacity_is_compiled_from_inputs_before_independent_audit(self):
+        value=dict(input='開始時間=09:00,終了時間=17:00,休憩時間=60分,予定時間=6時間,実績時間=5時間30分',action='稼働可能時間は7時間30分（8時間-1時間）と表示する。',expected='稼働可能時間: 7時間30分、予定合計: 6時間、実績: 5時間30分')
+        fixed,proof=app.department_compile_duration_candidate(value)
+        self.assertEqual(fixed['input'],value['input'])
+        self.assertIn('稼働可能時間は7時間00分',fixed['action'])
+        self.assertIn('稼働可能時間: 7時間00分',fixed['expected'])
+        self.assertEqual([x['computed_minutes'] for x in proof],['420','420'])
+        self.assertIn('予定合計: 6時間、実績: 5時間30分',fixed['expected'])
+        self.assertEqual(app.department_compile_duration_candidate(fixed),(fixed,[]))
+        compound=dict(value,input=value['input'].replace('休憩時間=60分','休憩時間=1時間30分'))
+        duration,proof=app.department_compile_duration_candidate(compound)
+        self.assertEqual([x['computed_minutes'] for x in proof],['390','390'])
+        self.assertIn('6時間30分',duration['expected'])
+        ambiguous=dict(value,input=value['input']+' 別の入力: 休憩時間=90分')
+        self.assertEqual(app.department_compile_duration_candidate(ambiguous),(ambiguous,[]))
+
+    def test_compiled_capacity_still_requires_independent_coverage_audit(self):
+        audits=[]
+        def answer(prompt,cfg,tokens,**kw):
+            if prompt.startswith('完成条件の独立監査。'):
+                audits.append(prompt)
+                return kw['validator'](dict(valid=False,issues=['時間算術は正しいが元の必須機能を検査していない']))
+            return kw['validator'](dict(input='開始時間=09:00、終了時間=17:00、休憩時間=60分',action='入力して稼働可能時間は7時間30分と表示する',expected='稼働可能時間: 7時間30分を表示する'))
+        with patch.object(app,'ensure_product_spec',return_value=self.spec),patch.object(app,'idea_details',return_value=self.rationale),patch.object(app,'query',return_value=[dict(source='AI設計')]),patch.object(app,'ai_json',side_effect=answer),patch.object(app,'store_product_spec') as save:
+            with self.assertRaisesRegex(app.AutoQAPlanError,'独立監査'):app.ensure_department_product_spec('在宅ワーク',self.cfg)
+        self.assertIn('7時間00分',audits[0]);save.assert_not_called()
+        self.assertTrue(list(self.root.rglob('0-arithmetic-compilation.json')))
+
     def test_requested_class_timestamp_missing_in_date_only_native_page_is_development_gap(self):
         page='<form id="recordForm"><input id="class_date" type="date"><label for="class_date">授業日</label><button id="saveRecord" type="submit">保存</button></form><strong id="recordCount">0</strong><tbody id="recordRows"></tbody>'
         inventory=app.compact_qa_inventory(page)

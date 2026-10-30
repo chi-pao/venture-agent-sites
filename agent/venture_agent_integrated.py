@@ -3194,9 +3194,9 @@ def department_duration_correction(condition):
     inputs=re.split(r'/\s*操作\s*[:：]|期待結果\s*[:：]',condition,maxsplit=1)[0]
     starts=set(re.findall(r'開始(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
     ends=set(re.findall(r'終了(?:時間|時刻)?\s*[=＝:：]?\s*((?:[01]\d|2[0-3]):[0-5]\d)',condition))
-    pauses={Decimal(n)*(60 if unit=='時間' else 1) for n,unit in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)',inputs)}
+    pauses={Decimal(n)*(60 if unit=='時間' else 1)+Decimal(mins or 0) for n,unit,mins in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)(?:\s*(\d+)分)?',inputs)}
     pauses.update(Decimal(int(h)*60+int(m)) for h,m in re.findall(r'休憩(?:時間)?\s*[=＝:：]?\s*(\d{1,3}):([0-5]\d)(?![0-9])',inputs))
-    pattern=r'(?:稼働可能時間|使える稼働時間)\s*[:：=＝]\s*(?:(?P<h>\d{1,3}):(?P<m>[0-5]\d)(?![0-9])|(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?)'
+    pattern=r'(?:稼働可能時間|使える稼働時間)\s*(?:[:：=＝]|は)\s*(?:(?P<h>\d{1,3}):(?P<m>[0-5]\d)(?![0-9])|(?P<n>\d+(?:\.\d+)?)\s*(?P<unit>時間|分)(?:\s*(?P<mins>\d+)分)?)'
     matches=list(re.finditer(pattern,condition))
     if len(starts)!=1 or len(ends)!=1 or len(pauses)!=1 or len(matches)!=1:return None
     def minute(t):h,m=map(int,t.split(':'));return Decimal(h*60+m)
@@ -3214,6 +3214,24 @@ def department_duration_correction(condition):
         else:replacement=str(int(computed))+'分'
         start=match.start('n')
     return dict(before=condition,after=condition[:start]+replacement+condition[match.end():],start=next(iter(starts)),end=next(iter(ends)),break_minutes=str(pause),declared_minutes=str(declared),computed_minutes=str(int(computed)),method='same-day source input arithmetic; no observed output or model consensus')
+
+
+def department_compile_duration_candidate(value):
+    """Normalize AI-authored capacity claims from declared inputs before audit.
+
+    Input examples and operations remain model proposals. Only a uniquely
+    determined same-day capacity numeral is computed here; no browser values
+    or model votes are used, and independent coverage audit is still required.
+    """
+    result=dict(value);proof=[]
+    for key in ('action','expected'):
+        # Keep input parsing isolated from equations in the prose operation.
+        prefix='入力: '+value['input']+' / 操作: '
+        fix=department_duration_correction(prefix+result[key])
+        if fix:
+            result[key]=fix['after'][len(prefix):]
+            proof.append(dict(field=key,**fix))
+    return result,proof
 
 
 def department_difference_issue(condition):
@@ -3337,7 +3355,9 @@ def ensure_department_product_spec(name,cfg):
                 raise AutoQAPlanError('指定されていない共同編集を追加しないでください')
             if department_unrequested_file_contract(' '.join(value.values()),original+' '+str(rationale)):
                 raise AutoQAPlanError('元要件にないファイル名・名前付きバックアップ画面を完成条件へ追加しないでください')
-            if department_duration_correction('入力: '+value['input']+' / 操作: '+value['action']+' / 期待結果: '+value['expected']):raise AutoQAPlanError('開始・終了・休憩と稼働可能時間の計算が矛盾しています')
+            value,arithmetic=department_compile_duration_candidate(value)
+            if arithmetic:
+                write_framework_json(folder/(str(index)+'-arithmetic-compilation.json'),dict(corrections=arithmetic,candidate=value,independent_audit_required=True))
             difference=department_difference_issue(value['expected'])
             if difference:raise AutoQAPlanError(difference)
             return value
