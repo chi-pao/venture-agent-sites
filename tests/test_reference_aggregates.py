@@ -12,6 +12,46 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_feature_record_date_does_not_implicitly_change_view_date(self):
+        inventory,cfg=self.component_fixture()
+        inventory['controls']+=qa.compact_qa_inventory('<input id="recordDate" form="recordForm" type="date"><input id="viewDate" type="date">')['controls']
+        raw=dict(steps=[dict(op='fill',selector='#title',value='A'),dict(op='fill',selector='#recordDate',value='2023-10-10'),dict(op='click',selector='#saveRecord')])
+        with self.assertRaisesRegex(ValueError,'対象日も明示'):qa.qa_prepare_native_submissions(raw,inventory,'feature',cfg)
+        explicit=dict(raw,steps=[dict(op='fill',selector='#viewDate',value='2023-10-10')]+raw['steps'])
+        self.assertEqual(qa.qa_prepare_native_submissions(explicit,inventory,'feature',cfg),explicit)
+        other=dict(raw,steps=[dict(op='fill',selector='#viewDate',value='2023-10-11')]+raw['steps'])
+        self.assertEqual(qa.qa_prepare_native_submissions(other,inventory,'feature',cfg),other)
+
+    def test_numeric_secondary_ignores_free_form_value_and_keeps_actions(self):
+        actions=dict(steps=[dict(op='click',selector='#save')],result_selector='#primary')
+        fault=dict(op='text_contains',selector='#secondary',value='wrong 0件')
+        exact=dict(op='text_equals',selector='#secondary',value='1件')
+        with patch.object(qa,'qa_reference_primary_expectation',return_value=dict(exact_check=exact)) as compile:
+            result=qa.qa_secondary_reference_check(fault,actions,{'#secondary':dict(slots=1)},dict(must_have=['期限超過']) ,dict(qa_reference_aggregates=True),dict(outputs=[dict(selector='#secondary')]),Path('.'),'case',None)
+        self.assertEqual(result,exact);self.assertEqual(actions['result_selector'],'#primary')
+        self.assertEqual(compile.call_args.args[0]['steps'],actions['steps'])
+        self.assertNotIn('wrong 0件',str(compile.call_args))
+        self.assertEqual(qa.qa_secondary_reference_check(fault,actions,{'#secondary':dict(slots=1)}, {},dict(qa_reference_aggregates=True),dict(outputs=[]),Path('.'),'case',None),fault)
+
+    def test_multiple_hour_minute_pairs_share_their_own_minute_rules(self):
+        controls=[dict(selector='#planned',tag='input',type='number',label='予定分'),dict(selector='#actual',tag='input',type='number',label='実績分')]
+        events=[dict(step_index=2,effect='create',target=None)]
+        actions=dict(result_selector='#totals',steps=[dict(op='fill',selector='#planned',value='420'),dict(op='fill',selector='#actual',value='390'),dict(op='click',selector='#save')])
+        formats=qa.qa_display_contracts_from_nodes([dict(selector='#totals',text='0時間00分 / 0時間00分',label='予定 / 実績')])
+        self.assertEqual([qa.qa_quantity_scope(formats['#totals'],i) for i in range(4)],['予定','予定','実績','実績'])
+        def generate(name,prompt,schema,validate,dependency):
+            if 'candidates' not in dependency:return validate(dict(valid=True,reason='単位と区切り文字のみで状態の判定文は含まない'))
+            field='#planned' if dependency['output']['target_label']=='予定' else '#actual'
+            return validate(dict(choice=next(i for i,p in enumerate(dependency['candidates']) if p['metric']=='sum' and p['field']==field and p['where']=='all')))
+        qa.write_framework_json=lambda p,v:p.write_text(json.dumps(v,ensure_ascii=False))
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'qa_bind_record_clicks',return_value=events),patch.object(qa,'qa_blind_record_event_audit',return_value=dict(valid=True)):
+            result=qa.qa_reference_primary_expectation(actions,formats,dict(requested_outcome='予定と実績を時間と分で表示'),dict(model='x'),dict(controls=controls),Path(t),'case',generate)
+            proof=json.loads((Path(t)/'case-aggregate-proof.json').read_text())
+        self.assertEqual(result['exact_check']['value'],'7時間00分 / 6時間30分')
+        self.assertEqual(proof['values'],['7','0','6','30'])
+        self.assertEqual(proof['projection_audits'][3]['derived_from'],2)
+        self.assertFalse(qa.qa_duration_pair_format(dict(slots=4,template='{n0}時間{n1}分 {n2}円{n3}件')))
+
     def test_source_definition_resolves_count_family_disagreement(self):
         controls=[dict(selector='#state',options=[dict(value=v) for v in ['受付','返送待ち','確認中','返金済み','対象外']]),dict(selector='#due',type='date',label='対応期限')]
         requirements=dict(outcome='返金済み・対象外を除く未完了件数。対応期限が今日より前かつ未完了の期限超過件数を表示する。')

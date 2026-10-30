@@ -4406,10 +4406,18 @@ def qa_normalize_component_inputs(value):
     return dict(value,steps=steps)
 
 
+def qa_duration_pair_format(contract):
+    count=contract.get('slots');template=contract.get('template','')
+    if type(count)is not int or not 2<=count<=8 or count%2:return False
+    pairs=[r'\{n'+str(i)+r'\}時間\{n'+str(i+1)+r'\}分' for i in range(0,count,2)]
+    return re.fullmatch(r'\s*[/／]\s*'.join(pairs),template) is not None
+
+
 def qa_quantity_scope(contract,index):
     template=contract.get('template','');label=contract.get('label','').strip()
     groups=[part.strip() for part in re.split(r'\s*[/／]\s*',label)]
     if len(groups)==contract.get('slots') and len(groups)>1 and all(groups):return groups[index]
+    if qa_duration_pair_format(contract) and len(groups)*2==contract.get('slots') and all(groups):return groups[index//2]
     before=template.split('{n'+str(index)+'}',1)[0]
     suffix=re.split(r'[,、（(}/]',before)[-1].strip()
     if index and suffix and not re.search(r'\{n\d+',suffix):return suffix
@@ -5400,11 +5408,11 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
         write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(previous,steps=steps,events=events,event_audit=event_audit,rows=rows,values=values,expected=result['exact_check'],reference_clock=evaluation_context,reused_binding_from='base-workflow; independently audited rule only, not observed values or browser acceptance'))
         return result
     values=[];projections=[];audits=[]
-    hours_minutes=count==2 and template=='{n0}時間{n1}分'
+    hours_minutes=qa_duration_pair_format(contract)
     for index in range(count):
-        if hours_minutes and index==1:
-            projection=dict(metric='time_component',component='minutes',source_rule=projections[0]['source_rule'],basis='同じ独立した分数から60で割った余り')
-            values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='minute remainder of the same independently bound duration',derived_from=0));continue
+        if hours_minutes and index%2==1:
+            projection=dict(metric='time_component',component='minutes',source_rule=projections[index-1]['source_rule'],basis='同じ独立した分数から60で割った余り')
+            values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='minute remainder of the same independently bound duration',derived_from=index-1));continue
         if qa_ratio_display(template) and index in (1,2) and projections and projections[0]['metric']=='percent':
             projection=dict(projections[0],metric='count') if index==1 else dict(metric='count',where='all',field='',members=[],rounding='exact',places=0,basis='割合の全保存記録の分母')
             values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='algebraic fraction identity from independently agreed percentage',derived_from=0))
@@ -5440,7 +5448,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             if partition is None:raise AutoQAPlanError('状態の計算方式だけでは合格にできません。全状態の対象判定が未確定です')
             projection,state_audit=partition
             audit=dict(state_audit,family_selection_audit=audit)
-        if hours_minutes and index==0:projection=dict(metric='time_component',component='hours',source_rule=projection,basis='独立した分数を60で割った整数時間')
+        if hours_minutes and index%2==0:projection=dict(metric='time_component',component='hours',source_rule=projection,basis='独立した分数を60で割った整数時間')
         values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
     if len(literals)!=count+1:raise AutoQAPlanError('参照集計: 表示位置の形式が不正です')
@@ -5459,6 +5467,20 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     else:result=qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
     write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,binding_identity=qa_compilation_identity(cfg),display_contract=contract,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=evaluation_context,method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
     return result
+
+
+def qa_secondary_reference_check(check,actions,formats,spec,cfg,inventory,folder,key,generate):
+    """Numeric secondary assertions use the same source-only compiler as primary."""
+    selector=check.get('selector');contract=formats.get(selector,{})
+    if not cfg.get('qa_reference_aggregates') or check.get('op') not in ('text_equals','text_contains'):return check
+    if not any(n.get('selector')==selector for n in inventory.get('outputs',[])):return check
+    count=contract.get('slots')
+    if type(count)is not int or not 1<=count<=8:return check
+    isolated=dict(actions,result_selector=selector)
+    result=qa_reference_primary_expectation(isolated,formats,spec,cfg,inventory,folder,key,generate)
+    exact=result.get('exact_check',{})
+    if exact.get('selector')!=selector or exact.get('op')!='text_equals':raise AutoQAPlanError('補助数値の独立計算で照合先が変化しました')
+    return exact
 
 
 def qa_primary_component_expectation(selector,formats,context,generate):
@@ -5507,6 +5529,15 @@ def qa_prepare_native_submissions(value,inventory,kind,cfg):
                 css=step['selector']
                 if css in passive:raise AutoQAPlanError('入力変更・保存のない出力/クリアの反復です。必要な操作だけで検査を再設計してください: '+css)
                 passive.add(css)
+    if known and kind=='feature':
+        # A feature starts from a fresh browser context. Record dates do not
+        # change an independent date filter or capacity date outside the form.
+        dates=[n for n in inventory.get('controls',[]) if n.get('tag')=='input' and n.get('type')=='date' and not n.get('disabled') and not n.get('readonly')]
+        record_dates=[n for n in dates if n.get('form')=='#recordForm']
+        view_dates=[n for n in dates if n.get('form')!='#recordForm']
+        filled={step.get('selector') for step in value.get('steps',[]) if step.get('op')=='fill'}
+        if len(record_dates)==len(view_dates)==1 and record_dates[0]['selector'] in filled and view_dates[0]['selector'] not in filled:
+            raise AutoQAPlanError('記録の日付と集計の対象日は別の入力です。機能検査では対象日も明示してください: '+view_dates[0]['selector']+'。同じ日の集計を検査するなら記録の日付と揃え、別の日を検査するならその入力から正解を独立計算してください')
     feature=cfg.get('_qa_feature_context')or {};spec=cfg.get('_qa_spec')or {}
     index=feature.get('condition_index');criteria=spec.get('acceptance',[])
     condition=criteria[index] if type(index)is int and 0<=index<len(criteria) else ''
@@ -5802,7 +5833,10 @@ def qa_split_unit_generation(context,cfg,folder,key,input_sha,schema,validator,i
         dependency=dict(actions=actions,primary=primary,earlier=checks)
         value=stage('secondary-'+str(index),'独立QA。補助検査を1個だけ返す。主結果とは別の表示先で、入力内容または処理後の保存状態を具体的に照合する。画面にない通知文や見出しを創作しない。操作・主結果は変更しない。JSON {check:{op,selector,value}}。\n'+oracle_context+'\n確定済みの操作と検査:'+json.dumps(dependency,ensure_ascii=False,separators=(',',':')),
             check_schema,oracle,220,validate_check,dependency)
-        checks.append(value['check'])
+        def secondary_component(name,prompt,part_schema,check,dependency):
+            return stage('secondary-'+str(index)+'-reference-'+name,prompt,part_schema,oracle,180 if 'audit' in name else 100 if 'projection' in name else 120,check,dependency)
+        checked=qa_secondary_reference_check(value['check'],actions,formats,cfg.get('_qa_spec',{}),cfg,inventory,folder,key+'-secondary-'+str(index),secondary_component)
+        checks.append(checked)
     raw=dict(actions,checks=checks,exact_check=primary)
     try:return validator(raw)
     except Exception:
@@ -5866,7 +5900,7 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-8-source-family-and-input-gates',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-9-all-numeric-assertions',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
                 backup_component=cfg.get('qa_backup_component_contract'),
