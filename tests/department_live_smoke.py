@@ -36,6 +36,7 @@ def main():
     if oracle_model:cfg.update(qa_oracle_model=oracle_model,qa_oracle_timeout=300)
     if qa_model=='qwen2.5:14b':cfg.update(qa_part_timeout=300,qa_part_timeout_ceiling=480)
     cfg['qa_mapping_model']=qa_model or oracle_model or cfg['model']
+    cfg['qa_factored_status_bindings']=True
     results=[];started=time.monotonic()
     try:
         for iteration in range(3):

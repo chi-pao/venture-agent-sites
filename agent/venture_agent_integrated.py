@@ -3187,12 +3187,19 @@ import re
 DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
+def department_unrequested_file_contract(text,source):
+    named=bool(re.search(r'ファイル名.{0,40}(?:YYYY|HH.?MM|\.csv)|(?:バックアップ名|復元名)\s*[=＝]|バックアップ一覧画面',str(text),re.I))
+    return named and not re.search(r'ファイル名|命名|バックアップ名|復元名|バックアップ一覧',str(source))
+
+
 def department_spec_contract_issue(spec,rationale):
     criteria=' / '.join(map(str,spec.get('acceptance',[])))
     if any(x in criteria for x in ('実装済みとは書かない','外部リンクやコピーに縮小しない')):
         return '生成指示の文章が製品の完成条件に混入しています'
     source=' '.join(str(rationale.get(k,'')) for k in ('mvp_scope','customer_pain','hypothesis','differentiation'))
     source+=' '+str(spec.get('requested_outcome',''))+' '+' '.join(map(str,spec.get('must_have',[])))
+    if department_unrequested_file_contract(criteria,source):
+        return '元の要件にないファイル命名規則・名前付きバックアップ画面が完成条件に混入しています'
     if '共同編集' in criteria and '共同編集' not in source:
         return '元の事業要件にない共同編集が完成条件に混入しています'
     generic=('入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')
@@ -3209,10 +3216,14 @@ def department_spec_source_requirements(spec,rationale=None):
     if original is None:original=[] if spec.get('acceptance_contract_policy') else spec.get('acceptance',[])
     requirements=list(spec.get('acceptance_source_requirements') or spec.get('must_have') or [])
     source=' '.join(map(str,spec.get('must_have',[])))+' '+str(spec.get('requested_outcome',''))+' '+str(rationale or {})
+    requirements=[r for r in requirements if not department_unrequested_file_contract(r,source)]
+    for requirement in spec.get('must_have',[]):
+        if requirement not in requirements:requirements.append(requirement)
     for requirement in original:
         if not isinstance(requirement,str):continue
         if any(x in requirement for x in ('実装済みとは書かない','外部リンクやコピーに縮小しない','入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')):continue
         if '共同編集' in requirement and '共同編集' not in source:continue
+        if department_unrequested_file_contract(requirement,source):continue
         if isinstance(requirement,str) and requirement.strip() and requirement not in requirements:requirements.append(requirement)
     return requirements
 
@@ -3227,7 +3238,7 @@ def ensure_department_product_spec(name,cfg):
     rows=query('SELECT source FROM venture_product_specs WHERE idea=?',(name,))
     if rows and str(rows[0]['source']).startswith('ユーザー'):
         raise AutoQAPlanError('ユーザー指定の完成条件に確認が必要です: '+issue)
-    signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,spec=spec,
+    signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,issue=issue,spec=spec,
         rationale=rationale,model=cfg['model']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'spec-contracts'/signature;folder.mkdir(parents=True,exist_ok=True)
     requirements=department_spec_source_requirements(spec,rationale)
@@ -3244,6 +3255,8 @@ def ensure_department_product_spec(name,cfg):
             original=str(requirement)
             if '共同編集' in ' '.join(value.values()) and '共同編集' not in original and '共同編集' not in str(rationale):
                 raise AutoQAPlanError('指定されていない共同編集を追加しないでください')
+            if department_unrequested_file_contract(' '.join(value.values()),original+' '+str(rationale)):
+                raise AutoQAPlanError('元要件にないファイル名・名前付きバックアップ画面を完成条件へ追加しないでください')
             return value
         value=None
         if path.exists():
@@ -4379,6 +4392,7 @@ def qa_resolve_status_partition(left,right,requirements,descriptor,controls,gene
     if base['where']=='in':base['members']=members
     elif set(members)!=set(options):base['also']=dict(field=field,members=members)
     base['basis']=descriptor['target_label']+'の元要件に基づく全状態の独立分類'
+    base.pop('status_family',None)
     return base,dict(agreement,method='independent complete native-status classification in reversed order; no prior subsets disclosed',original_proposed=left,original_independent=right,classified_states=final,responses=responses)
 
 
@@ -5112,6 +5126,21 @@ def qa_projection_candidates(controls,template,index,output=None,input_values=No
     return candidates
 
 
+def qa_factor_status_candidates(candidates,controls):
+    """Choose a calculation family before classifying states, avoiding 2**N menus."""
+    fields={n['selector'] for n in controls if 2<=len({o.get('value') for o in n.get('options',[]) if o.get('value') and not o.get('disabled')})<=5}
+    result=[];seen=set()
+    for item in candidates:
+        p=dict(item)
+        if p.get('where')=='in' and p.get('field') in fields:
+            p.update(members=[],status_family=True,basis='状態ごとの対象判定を次工程で独立に行う')
+        elif p.get('also',{}).get('field') in fields:
+            p.update(also=dict(field=p['also']['field'],members=[]),status_family=True,basis='日付条件と状態ごとの対象判定を独立に行う')
+        signature=json.dumps(p,sort_keys=True,ensure_ascii=False)
+        if signature not in seen:result.append(p);seen.add(signature)
+    return result
+
+
 def qa_compact_projection_choices(candidates,controls):
     """Lossless short meanings keep finite semantic choices within CPU budgets."""
     labels={n['selector']:n.get('label')or n['selector'] for n in controls}
@@ -5121,6 +5150,10 @@ def qa_compact_projection_choices(candidates,controls):
         field=labels.get(p.get('value_field',p.get('field')),p.get('value_field',p.get('field','')))
         filter_field=labels.get(p.get('field'),p.get('field',''))
         where=p['where']
+        if p.get('status_family'):
+            if where=='in':return ('割合' if p['metric']=='percent' else '件数')+'('+filter_field+'の対象状態を次工程で全状態ごとに判定)'
+            date_condition=filter_field+('<基準日' if where=='before_date' else '=今日(基準日)' if where=='on_reference_date' else '=入力['+labels.get(p.get('reference_input'),p.get('reference_input',''))+']')
+            extra=p['also'];return ('割合' if p['metric']=='percent' else '件数')+'('+date_condition+' AND '+labels.get(extra['field'],extra['field'])+'の対象状態を次工程で判定)'
         condition=('全保存記録' if where=='all' else field+'∈{'+','.join(p.get('members',[]))+'}' if where=='in' else field+'<基準日' if where=='before_date' else field+'=今日(基準日)' if where=='on_reference_date' else filter_field+'=入力['+labels.get(p.get('reference_input'),p.get('reference_input',''))+']')
         if p.get('also'):
             extra=p['also'];condition+=' AND '+labels.get(extra['field'],extra['field'])+'∈{'+','.join(extra['members'])+'}'
@@ -5164,6 +5197,25 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
     input_values=dict(cfg.get('_qa_input_defaults',{}));input_values.update({step['selector']:str(step.get('value','')) for step in steps if step.get('op') in ('fill','select')})
     evaluation_context=dict(cfg.get('_qa_reference_clock',{}),input_values=input_values)
     row_fields=set.intersection(*(set(row) for row in rows)) if rows else set()
+    previous=cfg.get('_qa_workflow_projection_proof') or {}
+    reusable=(key=='base-variant' and previous.get('binding_identity')==qa_compilation_identity(cfg)
+        and previous.get('requirements')==requirements and previous.get('display_contract')==contract
+        and previous.get('expected',{}).get('selector')==selector
+        and previous.get('affix_audit',{}).get('valid') is True
+        and len(previous.get('projections',[]))==count
+        and len(previous.get('projection_audits',[]))==count
+        and all(a.get('valid') is True for a in previous['projection_audits'])
+        and not any(p.get('where')=='in' or p.get('also') for p in previous.get('projections',[])))
+    if reusable:
+        # These are already independently audited semantics for this source,
+        # specification and model policy, not a previous observed result.
+        # Recompute every number from the new declared state, then execute
+        # Chromium again. Do not ask models to rediscover 63 subsets.
+        values=[qa_evaluate_projection(rows,p,evaluation_context) for p in previous['projections']]
+        literals=re.split(r'\{n\d+\}',template)
+        result=qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
+        write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(previous,steps=steps,events=events,event_audit=event_audit,rows=rows,values=values,expected=result['exact_check'],reference_clock=evaluation_context,reused_binding_from='base-workflow; independently audited rule only, not observed values or browser acceptance'))
+        return result
     values=[];projections=[];audits=[]
     hours_minutes=count==2 and template=='{n0}時間{n1}分'
     for index in range(count):
@@ -5175,6 +5227,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(dict(valid=True,method='algebraic fraction identity from independently agreed percentage',derived_from=0))
             continue
         candidates=qa_projection_candidates(controls,template,index,contract,input_values,row_fields)
+        if cfg.get('qa_factored_status_bindings'):candidates=qa_factor_status_candidates(candidates,controls)
         if hours_minutes:candidates=[p for p in candidates if p['metric']in ('duration','difference','sum')]
         if selector=='#recordCount' and len(candidates)==1 and qa_component_events(steps,binding_cfg) is not None:
             projection=candidates[0]
@@ -5199,6 +5252,11 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             if partition is not None:projection,audit=partition
             else:audit=qa_require_independent_agreement(projection,independent,selector+'の数値位置'+str(index+1))
         else:projection,audit=qa_resolve_projection_binding(projection,independent,requirements,output_descriptor,rows,controls,evaluation_context,generate,str(index))
+        if projection.get('status_family'):
+            partition=qa_resolve_status_partition(projection,projection,requirements,output_descriptor,controls,generate,str(index)+'-family')
+            if partition is None:raise AutoQAPlanError('状態の計算方式だけでは合格にできません。全状態の対象判定が未確定です')
+            projection,state_audit=partition
+            audit=dict(state_audit,family_selection_audit=audit)
         if hours_minutes and index==0:projection=dict(metric='time_component',component='hours',source_rule=projection,basis='独立した分数を60で割った整数時間')
         values.append(qa_evaluate_projection(rows,projection,evaluation_context));projections.append(projection);audits.append(audit)
     literals=re.split(r'\{n\d+\}',template)
@@ -5216,7 +5274,7 @@ def qa_reference_primary_expectation(actions,formats,spec,cfg,inventory,folder,k
             return generate(name,prompt,part_schema,check,dependency)
         result=qa_primary_component_expectation(selector,formats,json.dumps(dict(requirements=requirements,steps=steps,reference_rows=rows,reference_values=values),ensure_ascii=False),reuse_numbers)
     else:result=qa_compile_bound_primary(dict(exact_check=dict(op='text_equals',selector=selector,expected_values=values,expected_literals=literals)),selector,formats)
-    write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=evaluation_context,method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
+    write_framework_json(Path(folder)/(key+'-aggregate-proof.json'),dict(requirements=requirements,binding_identity=qa_compilation_identity(cfg),display_contract=contract,steps=steps,events=events,event_audit=event_audit,rows=rows,projections=projections,projection_audits=audits,values=values,affix_audit=fixed,expected=result['exact_check'],reference_clock=evaluation_context,method='audited requirement projections; independent code arithmetic; browser acceptance still required'))
     return result
 
 
@@ -5317,6 +5375,17 @@ def qa_duration_variant_inputs(cfg,inventory,prior):
     # independent window; do not reuse unrelated record form inputs.
     explicit=[s for s in prior['steps'] if s.get('op')=='fill' and s.get('selector')not in fields and nodes.get(s.get('selector'),{}).get('type')=='date' and nodes[s['selector']].get('form')!='#recordForm']
     return [dict(s) for s in explicit]+[dict(op='fill',selector=f,value=changed[f]) for f in fields]+[dict(op='click',selector=buttons[0])]
+
+
+def qa_reload_view_steps(scenarios,inventory,cfg):
+    """Reopen the same date after reload without rewriting saved business data."""
+    workflow=next((s for s in scenarios if s.get('kind')=='workflow'),None)
+    if not workflow:return [dict(op='reload')]
+    binding=dict(cfg,_qa_binding_controls=inventory.get('controls',[]),_qa_binding_outputs=inventory.get('outputs',[]))
+    if qa_component_events(workflow.get('steps',[]),binding) is None:return [dict(op='reload')]
+    views={n['selector'] for n in inventory.get('controls',[]) if n.get('tag')=='input' and n.get('type')=='date' and n.get('form')!='#recordForm' and not n.get('disabled') and not n.get('readonly')}
+    values={s['selector']:s['value'] for prior in scenarios for s in prior.get('steps',[]) if s.get('op')=='fill' and s.get('selector') in views}
+    return [dict(op='reload')]+[dict(op='fill',selector=css,value=value) for css,value in values.items()]
 
 
 def qa_component_variant_actions(cfg,inventory):
@@ -5602,9 +5671,10 @@ def qa_initial_display_context(name,source,directory):
 
 def qa_compilation_identity(cfg):
     """Whole-unit receipts must not bypass a newly selected compiler/role."""
-    return dict(policy='2026-10-30-survey-before-plan-5-causal-variant-fixed-status-labels',split=bool(cfg.get('qa_split_units')),
+    return dict(policy='2026-10-30-survey-before-plan-6-semantic-rule-reuse-view-reload',split=bool(cfg.get('qa_split_units')),
                 reference_aggregates=bool(cfg.get('qa_reference_aggregates')),
                 component=cfg.get('qa_component_contract'),passive_buttons=cfg.get('qa_component_passive_buttons',[]),
+                factored_status_bindings=bool(cfg.get('qa_factored_status_bindings')),
                 action_model=cfg.get('qa_action_model'),mapping_model=cfg.get('qa_mapping_model'),oracle_model=cfg.get('qa_oracle_model'))
 
 
@@ -5822,7 +5892,10 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             if type(previous_streak)is not int:previous_streak=0
             timeout_streak=previous_streak+1 if re.search(r'\b(?:TimeoutError|timed out)\b',detail,re.I) else 0
             write_framework_json(error_path,dict(error=detail,seconds=round(qa_time.monotonic()-started,2),prompt_chars=len(request),model=retry_model,oracle_model=retry_oracle,timeout=attempt_timeout,timeout_streak=timeout_streak,**qa_failure_memory(failure,detail),checked=now()))
-            raise AutoQAPlanError('検査工程 '+key+' / '+detail) from exc
+            if isinstance(exc,TimeoutError):raise TimeoutError('検査工程 '+key+' / '+detail) from exc
+            if isinstance(exc,AutoQAPlanError):raise AutoQAPlanError('検査工程 '+key+' / '+detail) from exc
+            if hasattr(exc,'add_note'):exc.add_note('検査工程 '+key)
+            raise
 
     scenarios=[]
     instructions={
@@ -5853,7 +5926,7 @@ def checkpointed_independent_qa_plan(name,page,cfg,spec,quotes):
             binding_prompt=('再読込の完成条件番号だけをJSON {"acceptance":[0]}で返す。直前の期待値が再読込後にも同じことを確かめる。該当しない条件は含めない。'
                 '\n完成条件:'+json.dumps(acceptance,ensure_ascii=False)+'\n直前の独立検査:'+json.dumps(last['checks'],ensure_ascii=False,separators=(',',':')))
             binding=part('reload-binding',binding_prompt,validate_reload_binding,tokens=250,include_context=False,schema=binding_schema)
-            same_state=dict(steps=[dict(op='reload')],checks=last['checks'],acceptance=binding['acceptance'],
+            same_state=dict(steps=qa_reload_view_steps(scenarios,full_inventory,cfg),checks=last['checks'],acceptance=binding['acceptance'],
                 rationale='再読込後も直前に独立して指定した同じ結果を確認する')
             value=part('base-reload',prompt,lambda v:validate_qa_unit(v,'reload',count),tokens=0,
                 schema=qa_unit_schema(count,'reload'),supplied=same_state)

@@ -5,12 +5,19 @@ import re
 DEPARTMENT_SPEC_POLICY='2026-10-29-source-grounded-acceptance-3'
 
 
+def department_unrequested_file_contract(text,source):
+    named=bool(re.search(r'ファイル名.{0,40}(?:YYYY|HH.?MM|\.csv)|(?:バックアップ名|復元名)\s*[=＝]|バックアップ一覧画面',str(text),re.I))
+    return named and not re.search(r'ファイル名|命名|バックアップ名|復元名|バックアップ一覧',str(source))
+
+
 def department_spec_contract_issue(spec,rationale):
     criteria=' / '.join(map(str,spec.get('acceptance',[])))
     if any(x in criteria for x in ('実装済みとは書かない','外部リンクやコピーに縮小しない')):
         return '生成指示の文章が製品の完成条件に混入しています'
     source=' '.join(str(rationale.get(k,'')) for k in ('mvp_scope','customer_pain','hypothesis','differentiation'))
     source+=' '+str(spec.get('requested_outcome',''))+' '+' '.join(map(str,spec.get('must_have',[])))
+    if department_unrequested_file_contract(criteria,source):
+        return '元の要件にないファイル命名規則・名前付きバックアップ画面が完成条件に混入しています'
     if '共同編集' in criteria and '共同編集' not in source:
         return '元の事業要件にない共同編集が完成条件に混入しています'
     generic=('入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')
@@ -27,10 +34,14 @@ def department_spec_source_requirements(spec,rationale=None):
     if original is None:original=[] if spec.get('acceptance_contract_policy') else spec.get('acceptance',[])
     requirements=list(spec.get('acceptance_source_requirements') or spec.get('must_have') or [])
     source=' '.join(map(str,spec.get('must_have',[])))+' '+str(spec.get('requested_outcome',''))+' '+str(rationale or {})
+    requirements=[r for r in requirements if not department_unrequested_file_contract(r,source)]
+    for requirement in spec.get('must_have',[]):
+        if requirement not in requirements:requirements.append(requirement)
     for requirement in original:
         if not isinstance(requirement,str):continue
         if any(x in requirement for x in ('実装済みとは書かない','外部リンクやコピーに縮小しない','入力画面が使いやすい','データの保存と共有が容易','検索機能が効果的')):continue
         if '共同編集' in requirement and '共同編集' not in source:continue
+        if department_unrequested_file_contract(requirement,source):continue
         if isinstance(requirement,str) and requirement.strip() and requirement not in requirements:requirements.append(requirement)
     return requirements
 
@@ -45,7 +56,7 @@ def ensure_department_product_spec(name,cfg):
     rows=query('SELECT source FROM venture_product_specs WHERE idea=?',(name,))
     if rows and str(rows[0]['source']).startswith('ユーザー'):
         raise AutoQAPlanError('ユーザー指定の完成条件に確認が必要です: '+issue)
-    signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,spec=spec,
+    signature=hashlib.sha256(json.dumps(dict(policy=DEPARTMENT_SPEC_POLICY,issue=issue,spec=spec,
         rationale=rationale,model=cfg['model']),sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     folder=OUT/'knowledge'/'spec-contracts'/signature;folder.mkdir(parents=True,exist_ok=True)
     requirements=department_spec_source_requirements(spec,rationale)
@@ -62,6 +73,8 @@ def ensure_department_product_spec(name,cfg):
             original=str(requirement)
             if '共同編集' in ' '.join(value.values()) and '共同編集' not in original and '共同編集' not in str(rationale):
                 raise AutoQAPlanError('指定されていない共同編集を追加しないでください')
+            if department_unrequested_file_contract(' '.join(value.values()),original+' '+str(rationale)):
+                raise AutoQAPlanError('元要件にないファイル名・名前付きバックアップ画面を完成条件へ追加しないでください')
             return value
         value=None
         if path.exists():

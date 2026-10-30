@@ -141,6 +141,7 @@ def main():
         def component(name,prompt,schema,check,dependency):
             return app.ai_json(prompt,dict(cfg,model=cfg['qa_oracle_model'],_schema_in_prompt=True,_bounded_json_retry=True,
                 _json_transport_evidence=str(evidence/(name+'-transport.json'))),180 if 'audit' in name else 100 if 'projection' in name else 120,schema=schema,max_attempts=1,request_timeout=300,validator=check)
+        aggregate_cfg['qa_factored_status_bindings']=True
         summary_rule=rule+' recordCountは状態にかかわらず全保存記録件数。summaryValueの左側は返金済み・対象外を除く未完了件数、右側は対応期限が今日より前かつ未完了の期限超過件数を表示する。'
         bound=app.qa_reference_primary_expectation(dict(result_selector='#summaryValue',steps=native['steps']),formats,
             dict(requested_outcome=summary_rule,must_have=[summary_rule]),aggregate_cfg,inventory,evidence,'one-record-summary',component)

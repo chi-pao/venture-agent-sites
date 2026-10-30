@@ -8,6 +8,13 @@ from test_preview import app
 
 
 class DepartmentSpecContractTests(TestCase):
+    def test_unrequested_file_names_and_backup_screens_are_detected_without_removing_scope(self):
+        source=dict(must_have=['受講者名簿のローカル保存','授業日時と出欠状態の連動','CSV出力機能','バックアップと復元機能'],requested_outcome='名簿登録から保存とCSV出力までを行う',acceptance=['3名を保存する。ファイル名は「名簿_YYYY-MM-DD_HH-MM.csv」である','バックアップ名=午前10時の記録をバックアップ一覧画面から復元する'])
+        self.assertIn('命名規則',app.department_spec_contract_issue(source,{}))
+        self.assertEqual(app.department_spec_source_requirements(source),source['must_have'])
+        explicit=dict(source,must_have=source['must_have']+['ファイル名を名簿_YYYY-MM-DD_HH-MM.csvにする。バックアップ名を一覧で管理する'])
+        self.assertEqual(app.department_spec_contract_issue(explicit,{}),'')
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.previous=app.OUT;app.OUT=self.root
         self.spec=dict(audience='在宅勤務者',requested_outcome='予定と実績の差を確認する',

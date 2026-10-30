@@ -12,6 +12,45 @@ qa.AutoQAPlanError=ValueError
 
 
 class ReferenceAggregateTests(unittest.TestCase):
+    def test_factored_status_menu_keeps_rule_families_and_requires_all_state_classification(self):
+        controls=[dict(selector='#state',label='対応状況',required=True,options=[dict(value=s) for s in ['受付','返送待ち','確認中','返金済み','対象外']]),dict(selector='#due',type='date',label='期限')]
+        raw=qa.qa_projection_candidates(controls,'{n0}件',0,row_fields={'#state','#due'})
+        factored=qa.qa_factor_status_candidates(raw,controls)
+        self.assertGreater(len(raw),60);self.assertEqual(len(factored),4)
+        self.assertTrue(any(p.get('also') for p in factored))
+        rules=[p for p in factored if p.get('where')=='in'];self.assertEqual(len(rules),1)
+        self.assertIn('次工程',str(qa.qa_compact_projection_choices(factored,controls)))
+        def classify(name,prompt,schema,validate,dependency):
+            return validate(dict(membership=[int(s not in ('返金済み','対象外')) for s in dependency['ordered_statuses']],evidence_id=0))
+        rule,audit=qa.qa_resolve_status_partition(rules[0],rules[0],dict(outcome='返金済み・対象外以外が未完了'),dict(target_label='未完了'),controls,classify,'0')
+        self.assertNotIn('status_family',rule);self.assertEqual(rule['members'],['受付','返送待ち','確認中'])
+        self.assertEqual(qa.qa_evaluate_projection([{'#state':o['value']} for o in controls[0]['options']],rule,{}),'3')
+
+    def test_reload_reopens_view_date_without_rewriting_saved_inputs(self):
+        inventory,cfg=self.component_fixture()
+        inventory=dict(inventory,controls=inventory['controls']+qa.compact_qa_inventory('<input id="viewDate" type="date"><form id="recordForm"><input id="recordDate" type="date"></form>')['controls'])
+        prior=dict(kind='workflow',steps=[dict(op='fill',selector='#title',value='記録A'),dict(op='fill',selector='#recordDate',value='2020-01-01'),dict(op='click',selector='#saveRecord'),dict(op='fill',selector='#viewDate',value='2020-01-01')])
+        self.assertEqual(qa.qa_reload_view_steps([prior],inventory,cfg),[dict(op='reload'),dict(op='fill',selector='#viewDate',value='2020-01-01')])
+        self.assertEqual(qa.qa_reload_view_steps([prior],inventory,dict(cfg,qa_component_contract='unknown')),[dict(op='reload')])
+
+    def test_semantic_rule_reuse_recomputes_changed_records_and_rejects_model_identity_change(self):
+        inventory,cfg=self.component_fixture();cfg=dict(cfg,qa_reference_aggregates=True)
+        first=dict(result_selector='#recordCount',steps=[dict(op='fill',selector='#title',value='A'),dict(op='click',selector='#saveRecord')])
+        second=dict(result_selector='#recordCount',steps=[dict(op='fill',selector='#title',value='B'),dict(op='click',selector='#saveRecord')])
+        formats={'#recordCount':dict(template='{n0}',slots=1,label='登録数')}
+        spec=dict(requested_outcome='全保存記録の件数を数える',must_have=['保存と件数表示'])
+        def no_model(*args):raise AssertionError('Declared total must use independent arithmetic')
+        with tempfile.TemporaryDirectory() as t,patch.object(qa,'write_framework_json',side_effect=lambda p,v:p.write_text(json.dumps(v)),create=True):
+            root=Path(t)
+            qa.qa_reference_primary_expectation(first,formats,spec,cfg,inventory,root,'base-workflow',no_model)
+            proof=json.loads((root/'base-workflow-aggregate-proof.json').read_text());proof['expected']['value']='999'
+            subsequent=dict(cfg,_qa_workflow_projection_proof=proof,_qa_prior_scenarios=[dict(first,kind='workflow')])
+            answer=qa.qa_reference_primary_expectation(second,formats,spec,subsequent,inventory,root,'base-variant',no_model)
+            self.assertEqual(answer['exact_check']['value'],'2')
+            self.assertIn('reused_binding_from',json.loads((root/'base-variant-aggregate-proof.json').read_text()))
+            qa.qa_reference_primary_expectation(second,formats,spec,dict(subsequent,qa_oracle_model='changed'),inventory,root,'base-variant',no_model)
+            self.assertNotIn('reused_binding_from',json.loads((root/'base-variant-aggregate-proof.json').read_text()))
+
     def test_state_uses_submitted_records_not_pending_fields(self):
         steps=[dict(op='fill',selector='#status',value='出席'),dict(op='click',selector='#save'),dict(op='fill',selector='#status',value='欠席'),dict(op='click',selector='#save'),dict(op='fill',selector='#status',value='出席'),dict(op='click',selector='#edit'),dict(op='fill',selector='#status',value='遅刻'),dict(op='click',selector='#save')]
         events=[dict(step_index=1,effect='create',target=None),dict(step_index=3,effect='create',target=None),dict(step_index=5,effect='none',target=None),dict(step_index=7,effect='update',target=1)]

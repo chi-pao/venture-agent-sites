@@ -1,0 +1,58 @@
+{
+  "kind": "archived real-generated source and actual Chromium regression; not product acceptance",
+  "source_run": 40993205974,
+  "artifact_id": 12950174535,
+  "source_sha": "1fb408f8105321d6542040284f32a8b209aa99919dfab1d57702e538306c216e",
+  "reload_steps": [
+    {
+      "op": "reload"
+    },
+    {
+      "op": "fill",
+      "selector": "#workdayDate",
+      "value": "2023-10-01"
+    }
+  ],
+  "passed": false,
+  "partial_passed": true,
+  "scenarios": [
+    {
+      "width": 1280,
+      "kind": "workflow",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "variant",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "reload",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "workflow",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "variant",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "reload",
+      "passed": true,
+      "checks": 3
+    }
+  ],
+  "scope": "Workflow, variant and reload at 1280px and 390px. No new Ollama inference in this replay. No full feature, competitor or visual acceptance claim.",
+  "visual_limit": "Local browser lacks Japanese fonts; screenshots are not visual-quality acceptance evidence."
+}
