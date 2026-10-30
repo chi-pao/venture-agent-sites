@@ -77,6 +77,23 @@ class ContinuationTests(unittest.TestCase):
   self.assertIn('検査失敗に対する自動回復',model.call_args_list[1].args[0])
   self.assertIn('別経路で完成条件からHTMLを作り直します',model.call_args_list[1].args[0])
 
+ def test_development_defect_bypasses_cached_component_and_prior_pass_message(self):
+  old='<!doctype html><html><body><h1>授業の日付だけ</h1></body></html>'
+  fixed=old.replace('日付だけ','日付と時刻')
+  feedback='実装不足: 授業日時14:00を入力・保存・再読込する時刻欄がありません'
+  app.execute('INSERT INTO agent_assets(job_id,idea,kind,path,validation,created) VALUES(?,?,?,?,?,?)',(1,self.name,'品質改善候補HTML','unused','構造化部品の簡易操作検査合格',app.now()))
+  with patch.object(app,'product_operation',return_value='attendance'),patch.object(app,'product_checkpoint',return_value=('',{})),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'structured_product_fallback',side_effect=AssertionError('Do not return the same cached interface')) as seed,patch.object(app,'incremental_product_repair',return_value=(fixed,'time input added')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'browser passed')),patch.object(app,'review_generated_product',return_value=(True,'review passed')),patch.object(app,'event'):
+   page,detail,passed=app.build(1,self.name,dict(app.DEFAULT,_department_repair_feedback=feedback),'requirements',existing_page=old)
+  self.assertTrue(passed);self.assertIn('日付と時刻',page)
+  self.assertEqual(repair.call_args.args[3],feedback);seed.assert_not_called()
+
+ def test_development_defect_cannot_fall_back_to_same_components_after_generation_failure(self):
+  page='<!doctype html><html><body><h1>未修復の候補</h1></body></html>'
+  with patch.object(app,'product_operation',return_value='attendance'),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'structured_product_fallback',side_effect=AssertionError('Known defective definition is not a recovery route')) as seed,patch.object(app,'ai',return_value=page) as model,patch.object(app,'validate_html',return_value=['missing required feature']),patch.object(app,'event'):
+   result,detail,passed=app.build(1,self.name,dict(app.DEFAULT,_department_repair_feedback='実装不足: 時刻欄がない',max_revisions=1),'x'*3000)
+  self.assertIn('実装不足: 時刻欄がない',model.call_args_list[0].args[0])
+  self.assertFalse(passed);self.assertTrue(result);seed.assert_not_called();self.assertGreater(model.call_count,0)
+
  def test_partial_build_never_passes_release(self):
   app.store_product_spec(self.name,dict(self.spec,delivery_mode='connected',dependencies=['経路API']))
   with patch.object(app,'ensure_autoqa_environment'),patch.object(app,'ai',return_value='<!doctype html><html><body>接続未実装</body></html>') as model,patch.object(app,'validate_html',return_value=['未実装の痕跡']),patch.object(app,'browser_test',return_value=(True,'操作検査合格')),patch.object(app,'recent_failure_notes',return_value=''),patch.object(app,'event'):
@@ -142,5 +159,16 @@ class ContinuationTests(unittest.TestCase):
    result=app.ensure_implementation_plan(self.name,dict(app.DEFAULT),bp)
   self.assertEqual(model.call_count,2)
   self.assertEqual(len(result['features']),len(spec['acceptance']))
+
+
+ def test_patch_timeout_keeps_old_source_and_switches_route_in_same_cycle(self):
+  old='<!doctype html><html><body><h1>保持する旧候補</h1></body></html>'
+  new='<!doctype html><html><body><h1>別経路の候補</h1></body></html>'
+  spec=app.get_product_spec(self.name)
+  with patch.object(app,'product_operation',return_value='custom_workflow'),patch.object(app,'ensure_product_spec',return_value=spec),patch.object(app,'product_checkpoint',return_value=('',{})),patch.object(app,'ai',return_value=new) as model,patch.object(app,'incremental_product_repair',side_effect=TimeoutError('timed out')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'legacy_placeholder_reason',return_value=''),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'操作検査合格')),patch.object(app,'review_generated_product',return_value=(True,'品質検査合格')),patch.object(app,'event'):
+   page,detail,passed=app.build(1,self.name,dict(app.DEFAULT,max_revisions=2),'',existing_page=old)
+  self.assertTrue(passed);self.assertIn('別経路の候補',page)
+  self.assertEqual(repair.call_count,1);self.assertEqual(model.call_count,1)
+  self.assertIn('timed out',model.call_args.args[0])
 
 if __name__=='__main__':unittest.main()

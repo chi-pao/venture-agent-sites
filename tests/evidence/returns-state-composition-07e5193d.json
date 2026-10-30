@@ -1,0 +1,384 @@
+{
+  "source_run": 41000344552,
+  "artifact_id": 12954807935,
+  "source_sha": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+  "before": [
+    {
+      "basis": "未処理の元要件に基づく全状態の独立分類",
+      "field": "#return_status",
+      "members": [
+        "受付",
+        "返送待ち",
+        "確認中"
+      ],
+      "metric": "count",
+      "places": 0,
+      "rounding": "exact",
+      "where": "in"
+    },
+    {
+      "also": {
+        "field": "#return_status",
+        "members": [
+          "確認中"
+        ]
+      },
+      "basis": "期限超過の元要件に基づく全状態の独立分類",
+      "field": "#response_deadline",
+      "members": [],
+      "metric": "count",
+      "places": 0,
+      "rounding": "exact",
+      "where": "before_date"
+    }
+  ],
+  "after": [
+    {
+      "basis": "未処理の元要件に基づく全状態の独立分類",
+      "field": "#return_status",
+      "members": [
+        "受付",
+        "返送待ち",
+        "確認中"
+      ],
+      "metric": "count",
+      "places": 0,
+      "rounding": "exact",
+      "where": "in"
+    },
+    {
+      "also": {
+        "field": "#return_status",
+        "members": [
+          "受付",
+          "返送待ち",
+          "確認中"
+        ]
+      },
+      "basis": "元仕様で明示された集合「未完了」と条件の合成",
+      "field": "#response_deadline",
+      "members": [],
+      "metric": "count",
+      "places": 0,
+      "rounding": "exact",
+      "where": "before_date"
+    }
+  ],
+  "source_audit": {
+    "valid": true,
+    "method": "bounded explicit requirement set definition and named conjunction; not model consensus or observed values",
+    "source_definition": {
+      "name": "未完了",
+      "field": "#return_status",
+      "members": [
+        "受付",
+        "返送待ち",
+        "確認中"
+      ],
+      "excluded": [
+        "返金済み",
+        "対象外"
+      ],
+      "source_excerpt": "返金済み・対象外を除く未完了件数"
+    },
+    "source_expression": "対応期限が今日より前かつ未完了の期限超過件数",
+    "classified_states": {
+      "受付": 1,
+      "返送待ち": 1,
+      "確認中": 1,
+      "返金済み": 0,
+      "対象外": 0
+    }
+  },
+  "contrasts": [
+    {
+      "total": "1",
+      "before": [
+        "1",
+        "0"
+      ],
+      "after": [
+        "1",
+        "0"
+      ],
+      "expected": [
+        "1",
+        "0"
+      ]
+    },
+    {
+      "total": "2",
+      "before": [
+        "2",
+        "0"
+      ],
+      "after": [
+        "2",
+        "1"
+      ],
+      "expected": [
+        "2",
+        "1"
+      ]
+    },
+    {
+      "total": "3",
+      "before": [
+        "2",
+        "0"
+      ],
+      "after": [
+        "2",
+        "1"
+      ],
+      "expected": [
+        "2",
+        "1"
+      ]
+    },
+    {
+      "total": "4",
+      "before": [
+        "3",
+        "0"
+      ],
+      "after": [
+        "3",
+        "1"
+      ],
+      "expected": [
+        "3",
+        "1"
+      ]
+    },
+    {
+      "total": "5",
+      "before": [
+        "4",
+        "1"
+      ],
+      "after": [
+        "4",
+        "2"
+      ],
+      "expected": [
+        "4",
+        "2"
+      ]
+    },
+    {
+      "total": "6",
+      "before": [
+        "4",
+        "1"
+      ],
+      "after": [
+        "4",
+        "2"
+      ],
+      "expected": [
+        "4",
+        "2"
+      ]
+    }
+  ],
+  "kind": "Requirement-side shared-state conjunction replay and actual archived-source Chromium; not full product acceptance",
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "browser_checks": [
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "1",
+      "expected": "1件 / 超過0件",
+      "actual": "1件 / 超過0件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "1",
+      "expected": "1件 / 超過0件",
+      "actual": "1件 / 超過0件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "2",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "2",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "3",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "3",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "4",
+      "expected": "3件 / 超過1件",
+      "actual": "3件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "4",
+      "expected": "3件 / 超過1件",
+      "actual": "3件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "5",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "5",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "saved",
+      "total": "6",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "state": "reloaded",
+      "total": "6",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "1",
+      "expected": "1件 / 超過0件",
+      "actual": "1件 / 超過0件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "1",
+      "expected": "1件 / 超過0件",
+      "actual": "1件 / 超過0件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "2",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "2",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "3",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "3",
+      "expected": "2件 / 超過1件",
+      "actual": "2件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "4",
+      "expected": "3件 / 超過1件",
+      "actual": "3件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "4",
+      "expected": "3件 / 超過1件",
+      "actual": "3件 / 超過1件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "5",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "5",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "saved",
+      "total": "6",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "state": "reloaded",
+      "total": "6",
+      "expected": "4件 / 超過2件",
+      "actual": "4件 / 超過2件",
+      "passed": true
+    }
+  ],
+  "scope": "All five native states, six cumulative records, save/reload at PC/mobile. Existing independent fixed expectations were not changed. No full feature, visual or competitor acceptance."
+}

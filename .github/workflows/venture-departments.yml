@@ -1,0 +1,147 @@
+name: Department coordinator real generation proof
+on:
+  push:
+    branches: [codex/department-pipeline]
+    paths:
+      - 'agent/**'
+      - 'tests/department_live_smoke.py'
+      - 'tests/returns_oracle_probe.py'
+      - 'tests/saved_count_model_probe.py'
+      - 'tests/returns_status_contract.py'
+      - 'tests/saved_repair_replay.py'
+      - '.github/workflows/venture-repair-replay.yml'
+      - '.github/workflows/venture-departments.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: venture-departments-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live-model-and-browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [attendance, workday, returns]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OLLAMA_HOST: http://127.0.0.1:11435
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app and browser dependencies
+        run: python -m pip install --upgrade pip streamlit pandas pillow playwright
+      - name: Prepare real Chromium with dependency fallback
+        run: |
+          python -m playwright install chromium
+          if ! python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()'; then
+            python -m playwright install-deps chromium
+          fi
+          if [ -z "$(fc-list :lang=ja family)" ]; then
+            sudo apt-get update
+            sudo apt-get install -y fonts-ipafont-gothic
+          fi
+      - name: Find the latest available real browser evidence
+        id: prior
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          names = {"department-generation-evidence-" + os.environ["PRODUCT"]}
+          artifact_name = ""
+          run_id = ""
+          available = []
+          for page in range(1, 11):
+              url = f"https://api.github.com/repos/{os.environ['REPOSITORY']}/actions/artifacts?per_page=100&page={page}"
+              req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  artifacts = json.load(response)["artifacts"]
+              available.extend(item for item in artifacts if item["name"] in names and not item["expired"] and item["size_in_bytes"] > 50000)
+              if len(artifacts) < 100:
+                  break
+          if available:
+              match = max(available, key=lambda item: (item["created_at"], item["id"]))
+              run_id = str(match["workflow_run"]["id"])
+              artifact_name = match["name"]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("run_id=" + run_id + "\n")
+              output.write("artifact_name=" + artifact_name + "\n")
+          print("Prior evidence run:", run_id or "none; full generation QA must provide new evidence")
+          PY
+      - uses: actions/download-artifact@v4
+        if: steps.prior.outputs.run_id != ''
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.prior.outputs.run_id }}
+          name: ${{ steps.prior.outputs.artifact_name }}
+          path: department-live-artifacts
+      - name: Check independent record-count oracle against saved real-generated page
+        if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
+        env:
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/returns
+        run: python tests/returns_oracle_probe.py
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start local Ollama service
+        run: |
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11435/api/tags >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/ollama.log"
+          exit 1
+      - name: Pull the same coding and visual models used by the local app
+        run: |
+          for model in qwen2.5-coder:7b qwen2.5vl:3b qwen2.5:7b qwen2.5:14b; do
+            ready=false
+            for attempt in 1 2 3; do
+              if ollama pull "$model"; then ready=true; break; fi
+              if [ "$attempt" -lt 3 ]; then sleep $((attempt * 5)); fi
+            done
+            if [ "$ready" != true ]; then
+              echo "Model download unavailable after 3 attempts: $model"
+              exit 1
+            fi
+          done
+      - name: Replay fixed count with real semantic models and saved Chromium page
+        id: saved_count
+        if: matrix.product == 'returns' && steps.prior.outputs.run_id != ''
+        env:
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/returns
+        run: python -u tests/saved_count_model_probe.py
+      - name: Compile production code and live test
+        if: success() || (failure() && steps.saved_count.outcome == 'failure')
+        env:
+          PYTHONPATH: tests
+          VENTURE_LIVE_MODEL: qwen2.5-coder:7b
+          VENTURE_LIVE_VISION_MODEL: qwen2.5vl:3b
+          VENTURE_LIVE_QA_MODEL: qwen2.5:14b
+          VENTURE_LIVE_ORACLE_MODEL: qwen2.5:14b
+          VENTURE_LIVE_PROPOSAL_MODEL: qwen2.5:14b
+          VENTURE_LIVE_DATA_HOME: department-live-artifacts/${{ matrix.product }}
+          VENTURE_LIVE_PRODUCT: ${{ matrix.product }}
+          OLLAMA_HOST: http://127.0.0.1:11435
+        run: |
+          python -m py_compile agent/venture_agent_integrated.py tests/department_live_smoke.py
+          python tests/department_live_smoke.py
+      - name: Preserve generated pages, logs, and QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: department-generation-evidence-${{ matrix.product }}
+          path: department-live-artifacts/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,72 @@
+{
+  "source_run": 41090527439,
+  "source_sha": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+  "original_failed_check": {
+    "op": "text_equals",
+    "selector": "#refund_amount",
+    "value": "1000"
+  },
+  "original_steps": [
+    {
+      "op": "fill",
+      "selector": "#return_item",
+      "value": "商品A"
+    },
+    {
+      "op": "fill",
+      "selector": "#order_number",
+      "value": "123456"
+    },
+    {
+      "op": "fill",
+      "selector": "#response_deadline",
+      "value": "2023-11-01"
+    },
+    {
+      "op": "select",
+      "selector": "#return_status",
+      "value": "受付"
+    },
+    {
+      "op": "fill",
+      "selector": "#refund_amount",
+      "value": "1000"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    }
+  ],
+  "excluded_post_save_controls": [
+    "#order_number",
+    "#refund_amount",
+    "#response_deadline",
+    "#return_item",
+    "#return_notes",
+    "#return_status"
+  ],
+  "browser_replays": [
+    {
+      "width": 1280,
+      "draft": "",
+      "saved_rows": "商品A\t123456\t2023-11-01\t受付\t1000\t\t期限超過\t編集 削除",
+      "money": "¥1,000",
+      "count": "1"
+    },
+    {
+      "width": 390,
+      "draft": "",
+      "saved_rows": "商品A\t123456\t2023-11-01\t受付\t1000\t\t期限超過\t編集 削除",
+      "money": "¥1,000",
+      "count": "1"
+    }
+  ],
+  "partial_passed": true,
+  "product_passed": false,
+  "fresh_model_inference": false,
+  "limits": [
+    "This proves the observed form reset and saved record on the unchanged real-generated source",
+    "The old numeric check is rejected, not rewritten to match the observed value",
+    "Fresh model choice of valid secondary targets, complete features, design/comparison and unknown-use quality remain unproven"
+  ]
+}

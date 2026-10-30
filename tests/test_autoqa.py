@@ -65,6 +65,14 @@ def design_brief(name):
  return dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),sources=[dict(url=u,content_sha='a'*64) for u in urls],visual_observations=observations,content_comparison=content_comparison,design_patterns=[dict(source_url=u,source_quote=text,evidence_type='official_text',pattern='同じ作業の入力から結果までを一画面で整理します。',adapt='対象者の予定入力と結果をまとめる構成を実装します。',improvement='不要な入力を減らし誤入力から復帰できる導線を設計。',acceptance='具体的な予定を入力して結果とエラーが見えるか確認。') for u in urls])
 
 class AutomaticQATests(ContinuationTests):
+ def test_department_qa_reuses_validated_design_handoff_but_still_runs_independent_tests(self):
+  page=self.install(1)
+  handoff=dict(brief=design_brief(self.name),blueprint=blueprint_fixture(self.name),implementation_plan=implementation_plan_fixture(self.name))
+  with patch.object(app,'ensure_autoqa_environment'),patch.object(app,'ensure_competitive_brief') as research,patch.object(app,'ensure_product_blueprint') as design,patch.object(app,'ensure_implementation_plan') as engineering,patch.object(app,'make_qa_plan',return_value=work_plan()) as planner,patch.object(app,'execute_browser_qa',return_value=dict(scenarios=[],screenshots=[])) as browser,patch.object(app,'review_qa_images',side_effect=app.AutoQAEnvironmentError('unit test stops before image judgement')):
+   passed,detail,stage=app.automated_product_qa(0,self.name,page,dict(app.DEFAULT,_department_documents=handoff))
+  research.assert_not_called();design.assert_not_called();engineering.assert_not_called()
+  planner.assert_called_once();browser.assert_called_once()
+  self.assertFalse(passed);self.assertEqual(stage,'検証環境の準備待ち')
  def install(self,index):
   product=json.loads(Path('product-rebuilds/product-candidates.json').read_text())['products'][index]
   app.store_product_spec(self.name,product['spec']);return Path('product-rebuilds/'+('attendance' if index==0 else 'workday')+'.html').read_text()
@@ -72,9 +80,40 @@ class AutomaticQATests(ContinuationTests):
   for index,plan in ((0,attendance_plan()),(1,work_plan())):
    with self.subTest(product=index):
     page=self.install(index);directory=self.root/str(index);directory.mkdir()
+    old=next(x for x in plan['scenarios'] if x['kind']=='roundtrip');steps=old['steps']
+    csv=next(x for x in steps if x['op']=='download_csv');js=next(x for x in steps if x['op']=='download_json');restore=next(x for x in steps if x['op']=='restore_file')
+    binding=dict(csv_selector=csv['selector'],csv_contains=csv['contains'],json_selector=js['selector'],restore_selector=restore['selector'],mutation_steps=steps[2:next(i for i,x in enumerate(steps) if x['op']=='restore_file')],confirmation_mode='inline',cancel_selector=next(x['selector'] for x in steps if x['op']=='cancel_restore'),confirmation_steps=steps[max(i for i,x in enumerate(steps) if x['op']=='restore_file')+1:],checks=old['checks'],acceptance=old['acceptance'],rationale=old.get('rationale','実バックアップの取得・変更・復元前後を照合する'))
+    plan['scenarios']=[dict(app.compile_qa_roundtrip(binding,len(app.get_product_spec(self.name)['acceptance'])),kind='roundtrip') if x['kind']=='roundtrip' else x for x in plan['scenarios']]
+    old_invalid=next(x for x in plan['scenarios'] if x['kind']=='invalid')
+    invalid_binding=dict(restore_selector=next(x['selector'] for x in old_invalid['steps'] if x['op']=='restore_invalid'),invalid_steps=[x for x in old_invalid['steps'] if x['op']!='restore_invalid'],checks=old_invalid['checks'],acceptance=old_invalid['acceptance'],rationale='不正ファイルと入力が保存記録を変えないことを検証')
+    plan['scenarios']=[dict(app.compile_qa_invalid(invalid_binding,len(app.get_product_spec(self.name)['acceptance'])),kind='invalid') if x['kind']=='invalid' else x for x in plan['scenarios']]
     app.validate_qa_plan(plan,app.get_product_spec(self.name))
     result=app.execute_browser_qa(self.name,page,plan,directory)
     self.assertEqual(len(result['scenarios']),10+4*len(app.get_product_spec(self.name)['acceptance']));self.assertEqual(len(result['screenshots']),4)
+ def test_real_submit_rejection_returns_invalid_field_not_new_oracle(self):
+  page=self.install(1);plan=work_plan();plan['scenarios']=plan['scenarios'][:1];plan['feature_cases']=[]
+  plan['scenarios'][0]['steps']=[s for s in plan['scenarios'][0]['steps'] if s.get('selector')!='#title']
+  directory=self.root/'invalid-submit';directory.mkdir()
+  with self.assertRaisesRegex(ValueError,'送信がブラウザの入力検証で拒否'):
+   app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  observed=json.loads((directory/'browser-observation-failure.json').read_text())
+  self.assertEqual(observed['operation']['selector'],'#taskForm button')
+  self.assertIn('#title',[x['selector'] for x in observed['invalid_fields']])
+  self.assertNotIn('check',observed)
+  self.assertTrue(Path(observed['screenshot']).is_file())
+ def test_real_browser_prefix_never_grants_final_acceptance_and_records_observed_mismatch(self):
+  page=self.install(1);plan=work_plan();plan['scenarios']=plan['scenarios'][:1];plan['feature_cases']=[]
+  directory=self.root/'prefix';directory.mkdir()
+  proof=app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  self.assertFalse(proof['passed']);self.assertTrue(proof['partial_passed']);self.assertEqual(len(proof['scenarios']),2)
+  plan['scenarios'][0]['checks'][1]['value']='999分'
+  with self.assertRaisesRegex(ValueError,'180分'):
+   app.execute_browser_qa(self.name,page,plan,directory,prefix_only=True)
+  observed=json.loads((directory/'browser-observation-failure.json').read_text())
+  self.assertEqual(observed['actual'],'180分');self.assertEqual(observed['check']['value'],'999分')
+  self.assertTrue(Path(observed['screenshot']).is_file())
+  self.assertEqual(observed['display_contracts']['#planned']['template'],'{n0}分')
+  self.assertNotIn('180',str(observed['display_contracts']['#planned']))
  def structured_candidate(self,name):
   spec=dict(audience='小規模事業者・個人利用者',requested_outcome='中心作業を整理し、入力から結果・保存までを一続きで行う',differentiation='専用操作の結果を入力条件に応じて表示する',workflow=['対象情報を入力する','用途別処理を実行して結果を確認する','保存・検索・出力する'],must_have=['必須入力の検証','用途別処理と結果','保存・再読込','CSVとJSONバックアップ'],acceptance=['中心作業の具体値を入力し用途別の結果を確認できる','異なる入力値で結果の変化を確認できる','登録後に再読込して同じ記録を確認できる','CSVとJSONバックアップを取得して復元できる'],delivery_mode='browser_local',dependencies=[])
   app.execute('INSERT OR REPLACE INTO autonomous_ideas(name,rationale,attempts,created,updated) VALUES(?,?,?,?,?)',(name,json.dumps({'customer_pain':'手作業の困りごと','target_customer':'小規模利用者'}),1,app.now(),app.now()))
@@ -331,3 +370,5 @@ class VisualReviewEvidenceTests(__import__('unittest').TestCase):
   with self.assertRaises(app.AutoQAPlanError):app.validate_visual_review_evidence(review,['design'])
 
 if __name__=='__main__':import unittest;unittest.main()
+
+

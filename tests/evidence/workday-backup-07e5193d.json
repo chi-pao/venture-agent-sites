@@ -1,0 +1,79 @@
+{
+  "kind": "archived generated source actual Chromium backup protocol replay; not full product acceptance",
+  "source_run": 41000344552,
+  "artifact_id": 12953164282,
+  "source_sha": "1fb408f8105321d6542040284f32a8b209aa99919dfab1d57702e538306c216e",
+  "targets": {
+    "csv_selector": "#downloadCsv",
+    "json_selector": "#downloadJson",
+    "restore_selector": "#restoreFile",
+    "confirmation_mode": "native",
+    "confirmation_steps": [],
+    "cancel_selector": ""
+  },
+  "passed": false,
+  "partial_passed": true,
+  "scenarios": [
+    {
+      "width": 1280,
+      "kind": "workflow",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "variant",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "reload",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "roundtrip",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 1280,
+      "kind": "invalid",
+      "passed": true,
+      "checks": 4
+    },
+    {
+      "width": 390,
+      "kind": "workflow",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "variant",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "reload",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "roundtrip",
+      "passed": true,
+      "checks": 3
+    },
+    {
+      "width": 390,
+      "kind": "invalid",
+      "passed": true,
+      "checks": 4
+    }
+  ],
+  "scope": "Workflow, changed inputs, same-date reload, real CSV/JSON download, mutation, cancelled restore, confirmed restore, corrupt file and required-field rejection; 1280 and 390 pixels. No fresh Ollama inference or visual/comparison acceptance."
+}

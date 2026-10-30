@@ -1,0 +1,60 @@
+{
+  "source_run": 41104863468,
+  "source_commit": "2248f393cea107e98580241a090789e4cb60c9e6",
+  "artifact_id": 13004006349,
+  "source_sha": "85a8f5a2f3dceec248f74bcd7ab17a3d9502faa4acff47ce9d3da6c14ae894f8",
+  "prior_independent_values": [
+    "1000"
+  ],
+  "old_expected": {
+    "op": "text_equals",
+    "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+    "value": "¥1000"
+  },
+  "compiled": {
+    "op": "text_equals",
+    "selector": "#returnTotals > div:nth-child(3) > strong:nth-child(2)",
+    "value": "¥1,000"
+  },
+  "persisted_metadata": {
+    "contracts": {
+      "#returnTotals": {
+        "number_styles": [
+          "plain",
+          "plain",
+          "grouped"
+        ],
+        "slots": 3,
+        "template": "未完了\n{n0}件\n期限超過\n{n1}件\n返金予定の合計\n¥{n2}"
+      },
+      "#returnTotals > div:nth-child(3) > strong:nth-child(2)": {
+        "number_styles": [
+          "grouped"
+        ],
+        "slots": 1,
+        "template": "¥{n0}"
+      }
+    },
+    "method": "format metadata only; no observed numbers, labels or verdicts",
+    "policy": "masked-number-styles-1"
+  },
+  "browser_replays": [
+    {
+      "width": 1280,
+      "compiled": "¥1,000",
+      "actual": "¥1,000"
+    },
+    {
+      "width": 390,
+      "compiled": "¥1,000",
+      "actual": "¥1,000"
+    }
+  ],
+  "partial_passed": true,
+  "product_passed": false,
+  "fresh_model_inference": false,
+  "method": "Saved independent quantity retained; masked formatting survives deletion of the live failure observation",
+  "limits": [
+    "No new semantic/model decisions; full features, design, comparison and unknown workflows remain unproven"
+  ]
+}

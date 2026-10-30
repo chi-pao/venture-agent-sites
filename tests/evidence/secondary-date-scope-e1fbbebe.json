@@ -1,0 +1,141 @@
+{
+  "kind": "archived real generation and Chromium date-scope replay; not product acceptance",
+  "source_run": 41016542946,
+  "artifact": 12961620103,
+  "source_sha256": "d792af5f77bfed0edb7a29b1dd5039147c00a8845d30c6b6deff50418de2ea63",
+  "original_steps": [
+    {
+      "op": "fill",
+      "selector": "#work_date",
+      "value": "2023-10-10"
+    },
+    {
+      "op": "fill",
+      "selector": "#workdayStart",
+      "value": "10:00"
+    },
+    {
+      "op": "fill",
+      "selector": "#workdayEnd",
+      "value": "18:00"
+    },
+    {
+      "op": "fill",
+      "selector": "#workdayBreak",
+      "value": "90"
+    },
+    {
+      "op": "fill",
+      "selector": "#task_title",
+      "value": "Web開発"
+    },
+    {
+      "op": "fill",
+      "selector": "#planned_minutes",
+      "value": "420"
+    },
+    {
+      "op": "fill",
+      "selector": "#actual_minutes",
+      "value": "390"
+    },
+    {
+      "op": "click",
+      "selector": "#saveWorkday"
+    },
+    {
+      "op": "select",
+      "selector": "#task_status",
+      "value": "完了"
+    },
+    {
+      "op": "click",
+      "selector": "#saveRecord"
+    }
+  ],
+  "original_wrong_secondary": [
+    {
+      "op": "text_equals",
+      "selector": "#workdayTotals > div:nth-child(2) > strong:nth-child(2)",
+      "value": "7:00 / 6:30"
+    },
+    {
+      "op": "text_equals",
+      "selector": "#workdayTotals > div:nth-child(3) > strong:nth-child(2)",
+      "value": "-0:30"
+    }
+  ],
+  "new_action_gate": "記録の日付と集計の対象日は別の入力です。機能検査では対象日も明示してください: #workdayDate。同じ日の集計を検査するなら記録の日付と揃え、別の日を検査するならその入力から正解を独立計算してください",
+  "replay": [
+    {
+      "width": 1280,
+      "explicit_view_date": false,
+      "initial_view_date": "2026-10-30",
+      "record_date": "2023-10-10",
+      "expected": [
+        "6時間30分",
+        "0時間00分 / 0時間00分"
+      ],
+      "actual": [
+        "6時間30分",
+        "0時間00分 / 0時間00分"
+      ],
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "explicit_view_date": true,
+      "initial_view_date": "2026-10-30",
+      "record_date": "2023-10-10",
+      "expected": [
+        "6時間30分",
+        "7時間00分 / 6時間30分"
+      ],
+      "actual": [
+        "6時間30分",
+        "7時間00分 / 6時間30分"
+      ],
+      "passed": true
+    },
+    {
+      "width": 390,
+      "explicit_view_date": false,
+      "initial_view_date": "2026-10-30",
+      "record_date": "2023-10-10",
+      "expected": [
+        "6時間30分",
+        "0時間00分 / 0時間00分"
+      ],
+      "actual": [
+        "6時間30分",
+        "0時間00分 / 0時間00分"
+      ],
+      "passed": true
+    },
+    {
+      "width": 390,
+      "explicit_view_date": true,
+      "initial_view_date": "2026-10-30",
+      "record_date": "2023-10-10",
+      "expected": [
+        "6時間30分",
+        "7時間00分 / 6時間30分"
+      ],
+      "actual": [
+        "6時間30分",
+        "7時間00分 / 6時間30分"
+      ],
+      "passed": true
+    }
+  ],
+  "oracle_basis": "declared view date versus saved record date; planned420 and actual390 minutes; (18*60-10*60)-90=390; no observed numbers copied into expected",
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "fresh real model generation",
+    "all feature conditions and both independent cases",
+    "comparative design and visual quality",
+    "unknown use case"
+  ]
+}

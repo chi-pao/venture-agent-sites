@@ -1,0 +1,82 @@
+{
+  "kind": "completed real-model failure replay; source arithmetic and distinct saved values, not product acceptance",
+  "source_run": 41058395394,
+  "artifacts": {
+    "workday": 12982546850,
+    "attendance": 12978882143
+  },
+  "workday": {
+    "original": "入力: 日付=2023年10月10日, 開始時間=10:00, 終了時間=18:00, 休憩時間=1:30, 作業名=Web開発, 予定時間=7:00, 実績時間=6:30 / 操作: 日付フィールドに2023年10月10日を入力。開始時間フィールドに10:00を入力。終了時間フィールドに18:00を入力。休憩時間フィールドに1:30を入力。作業名フィールドにWeb開発を入力。予定時間フィールドに7:00を入力。実績時間フィールドに6:30を入力。 / 期待結果: 稼働可能時間: 8:00 (終了時間 - 開始時間 - 休憩時間 = 18:00 - 10:00 - 1:30 = 6:30)、予定合計: 7:00、実績: 6:30、差分: -0:30 (予定合計 - 実績 = 7:00 - 6:30 = 0:30)。これらの値が画面に表示され、ローカルに保存される。再読込後、これらの値が正しく表示され、CSV出力やJSONバックアップも可能である。",
+    "capacity_correction": {
+      "before": "入力: 日付=2023年10月10日, 開始時間=10:00, 終了時間=18:00, 休憩時間=1:30, 作業名=Web開発, 予定時間=7:00, 実績時間=6:30 / 操作: 日付フィールドに2023年10月10日を入力。開始時間フィールドに10:00を入力。終了時間フィールドに18:00を入力。休憩時間フィールドに1:30を入力。作業名フィールドにWeb開発を入力。予定時間フィールドに7:00を入力。実績時間フィールドに6:30を入力。 / 期待結果: 稼働可能時間: 8:00 (終了時間 - 開始時間 - 休憩時間 = 18:00 - 10:00 - 1:30 = 6:30)、予定合計: 7:00、実績: 6:30、差分: -0:30 (予定合計 - 実績 = 7:00 - 6:30 = 0:30)。これらの値が画面に表示され、ローカルに保存される。再読込後、これらの値が正しく表示され、CSV出力やJSONバックアップも可能である。",
+      "after": "入力: 日付=2023年10月10日, 開始時間=10:00, 終了時間=18:00, 休憩時間=1:30, 作業名=Web開発, 予定時間=7:00, 実績時間=6:30 / 操作: 日付フィールドに2023年10月10日を入力。開始時間フィールドに10:00を入力。終了時間フィールドに18:00を入力。休憩時間フィールドに1:30を入力。作業名フィールドにWeb開発を入力。予定時間フィールドに7:00を入力。実績時間フィールドに6:30を入力。 / 期待結果: 稼働可能時間: 6:30 (終了時間 - 開始時間 - 休憩時間 = 18:00 - 10:00 - 1:30 = 6:30)、予定合計: 7:00、実績: 6:30、差分: -0:30 (予定合計 - 実績 = 7:00 - 6:30 = 0:30)。これらの値が画面に表示され、ローカルに保存される。再読込後、これらの値が正しく表示され、CSV出力やJSONバックアップも可能である。",
+      "start": "10:00",
+      "end": "18:00",
+      "break_minutes": "90",
+      "declared_minutes": "480",
+      "computed_minutes": "390",
+      "method": "same-day source input arithmetic; no observed output or model consensus"
+    },
+    "remaining_proposal_issue": "差分の定義式と正解が矛盾しています: 差分: -0:30 (予定合計 - 実績 = 7:00 - 6:30 = 0:30)"
+  },
+  "attendance": {
+    "original_duplicate": {
+      "op": "text_equals",
+      "selector": "#student",
+      "value": "田中太郎,鈴木花子,山田一郎"
+    },
+    "existing": {
+      "op": "text_contains",
+      "selector": "#recordRows",
+      "value": "田中太郎,鈴木花子,山田一郎"
+    },
+    "excluded_selectors": [
+      "#student"
+    ],
+    "alternative_from_declared_input": {
+      "op": "text_contains",
+      "selector": "#recordRows",
+      "value": "Python入門"
+    },
+    "alternative_is_new_model_response": false,
+    "replay": [
+      {
+        "width": 1280,
+        "distinct_expected_values": [
+          "田中太郎,鈴木花子,山田一郎",
+          "Python入門"
+        ],
+        "saved_values_found": true,
+        "record_count": "2",
+        "time_input_count": 0,
+        "passed": true
+      },
+      {
+        "width": 390,
+        "distinct_expected_values": [
+          "田中太郎,鈴木花子,山田一郎",
+          "Python入門"
+        ],
+        "saved_values_found": true,
+        "record_count": "2",
+        "time_input_count": 0,
+        "passed": true
+      }
+    ],
+    "native_capability_gap": {
+      "details": "実装不足: 完成条件は授業日時の時刻(HH:MM)の設定と保持を要求していますが、宣言済み記録画面には授業の日付型入力しかなく、編集可能な時刻入力がありません。時刻の入力・保存・再読込を開発担当で実装してください",
+      "owner": "development",
+      "source_condition": "入力: 受講者名簿=3名,授業名=Python入門,日時=2023-10-05 14:00 / 操作: 1. 受講者名簿に3名の受講者を登録する。\n2. 授業名を「Python入門」と入力する。\n3. 授業日時を「2023-10-05 14:00」に設定する。\n4. 「保存」ボタンをクリックし、ローカルに保存する。\n5. 保存したファイルを再度ロードする。\n6. ロードした名簿と設定内容が正しいことを確認する。 / 期待結果: ローカルに保存した名簿と設定内容が、再読込後も「受講者名簿=3名,授業名=Python入門,日時=2023-10-05 14:00」と完全に一致すること。\n\n具体的な照合値:\n- 受講者名簿の人数: 3名\n- 授業名: Python入門\n- 授業日時: 2023-10-05 14:00\n\nこれらの値が再読込後も変更なく保持されていることを確認する。"
+    }
+  },
+  "fresh_model_inference": false,
+  "passed": false,
+  "partial_passed": true,
+  "remaining": [
+    "Three combined names do not prove individual roster management",
+    "Required class time14:00 has no native time input in current page",
+    "All feature conditions and independent audits",
+    "fresh real models",
+    "unknown use case and visual comparison"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "kind": "Source arithmetic correction and unchanged generated page Chromium; not product acceptance",
+  "source_run": 41003108386,
+  "artifact_id": 12956946179,
+  "source_sha": "1fb408f8105321d6542040284f32a8b209aa99919dfab1d57702e538306c216e",
+  "source_correction": {
+    "before": "入力: 日付=2023-10-05, 開始時間=09:00, 終了時間=17:00, 休憩時間=1.5時間, 作業名=デザイン作業, 予定時間=6時間, 実績時間=5.5時間 / 操作: ユーザーは日付、開始時間、終了時間、休憩時間、作業名、予定時間、実績時間を入力します。システムはこれらの情報を元に、稼働可能時間、予定合計、実績、差分を計算します。具体的な操作は以下の通りです。\n1. 日付を2023-10-05に設定。\n2. 開始時間を09:00に設定。\n3. 終了時間を17:00に設定。\n4. 休憩時間を1.5時間に設定。\n5. 作業名を「デザイン作業」と入力。\n6. 予定時間を6時間に設定。\n7. 実績時間を5.5時間に設定。\n8. システムは稼働可能時間、予定合計、実績、差分を自動的に計算します。 / 期待結果: 稼働可能時間: 7.5時間 (17:00 - 09:00 - 1.5時間)\n予定合計: 6時間\n実績: 5.5時間\n差分: -0.5時間 (6時間 - 5.5時間)\nこれらの値は画面に表示され、ローカルに保存されます。再読込やCSV出力、JSONバックアップと復元も可能であることを確認します。",
+    "after": "入力: 日付=2023-10-05, 開始時間=09:00, 終了時間=17:00, 休憩時間=1.5時間, 作業名=デザイン作業, 予定時間=6時間, 実績時間=5.5時間 / 操作: ユーザーは日付、開始時間、終了時間、休憩時間、作業名、予定時間、実績時間を入力します。システムはこれらの情報を元に、稼働可能時間、予定合計、実績、差分を計算します。具体的な操作は以下の通りです。\n1. 日付を2023-10-05に設定。\n2. 開始時間を09:00に設定。\n3. 終了時間を17:00に設定。\n4. 休憩時間を1.5時間に設定。\n5. 作業名を「デザイン作業」と入力。\n6. 予定時間を6時間に設定。\n7. 実績時間を5.5時間に設定。\n8. システムは稼働可能時間、予定合計、実績、差分を自動的に計算します。 / 期待結果: 稼働可能時間: 6時間30分 (17:00 - 09:00 - 1.5時間)\n予定合計: 6時間\n実績: 5.5時間\n差分: -0.5時間 (6時間 - 5.5時間)\nこれらの値は画面に表示され、ローカルに保存されます。再読込やCSV出力、JSONバックアップと復元も可能であることを確認します。",
+    "start": "09:00",
+    "end": "17:00",
+    "break_minutes": "90.0",
+    "declared_minutes": "450.0",
+    "computed_minutes": "390",
+    "method": "same-day source input arithmetic; no observed output or model consensus"
+  },
+  "browser_checks": [
+    {
+      "width": 1280,
+      "computed_minutes": "390",
+      "expected": "6時間30分",
+      "actual": "6時間30分",
+      "passed": true
+    },
+    {
+      "width": 390,
+      "computed_minutes": "390",
+      "expected": "6時間30分",
+      "actual": "6時間30分",
+      "passed": true
+    }
+  ],
+  "passed": false,
+  "partial_passed": true,
+  "fresh_model_inference": false,
+  "remaining_source_issues": [
+    "差分の定義式と正解が矛盾しています: 差分: -0.5時間 (6時間 - 5.5時間)"
+  ],
+  "arithmetic_scope": "Same-day capacity only. A contradictory difference formula is rejected for proposal repair; its sign convention is not guessed from the renderer."
+}
