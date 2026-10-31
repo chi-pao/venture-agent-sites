@@ -7683,6 +7683,9 @@ def coding_config(cfg,task='new'):
                 or report.get('task_signature')!=benchmark_task_signature()
                 or report.get('baseline')!=baseline or not report.get('candidate')):
             return dict(cfg,model=baseline)
+        # The owner pressed "元の制作モデルに戻す" for this comparison: stop routing its winner.
+        if report.get('run_id') and cfg.get('code_model_routing_opt_out')==report.get('run_id'):
+            return dict(cfg,model=baseline)
         installed=benchmark_model_digests(cfg)
         if any(installed.get(m)!=report.get('installed',{}).get(m) for m in (baseline,report['candidate'])):
             return dict(cfg,model=baseline)
@@ -7860,11 +7863,13 @@ def adopt_benchmark_candidate(cfg):
     if state()['enabled'] or benchmark_active():raise ValueError('継続運転・比較が停止した状態で切り替えてください')
     report=benchmark_state();current=config()
     if not benchmark_candidate_wins(report):raise ValueError('改善を確認した比較結果がありません。同点・未完了では切り替えません')
-    if coding_config(current)['model']!=report['baseline'] or current['model']!=report['general_model']:raise ValueError('比較後に現在の設定が変わりました。再比較してください')
+    # Compare the configured model, not coding_config(): task routing already sends a winning
+    # candidate's tasks to it, which made this check fail for every winning comparison.
+    if (current.get('code_model') or current['model'])!=report['baseline'] or current['model']!=report['general_model']:raise ValueError('比較後に現在の設定が変わりました。再比較してください')
     installed=benchmark_model_digests(current)
     if any(installed.get(m)!=report['installed'].get(m) for m in (report['baseline'],report['candidate'])):raise ValueError('比較したモデルの内容が変わりました。再比較してください')
     execute('INSERT OR REPLACE INTO agent_settings(key,value) VALUES(?,?)',('code_model_previous_config',json.dumps(current,ensure_ascii=False)))
-    current['code_model']=report['candidate']
+    current['code_model']=report['candidate'];current.pop('code_model_routing_opt_out',None)
     execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(current,ensure_ascii=False),))
     return report['candidate']
 
@@ -7876,6 +7881,9 @@ def restore_previous_code_model():
     previous=json.loads(rows[0]['value']);current=config()
     if previous.get('code_model'):current['code_model']=previous['code_model']
     else:current.pop('code_model',None)
+    # Without this, task routing kept sending tasks to the comparison winner after "restore".
+    run_id=benchmark_state().get('run_id')
+    if run_id:current['code_model_routing_opt_out']=run_id
     execute('UPDATE autonomous_control SET config=? WHERE id=1',(json.dumps(current,ensure_ascii=False),))
     return coding_config(current)['model']
 
