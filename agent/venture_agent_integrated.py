@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.10.26.6'
+APP_VERSION='2026.10.31.1'
 
 BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
@@ -52,8 +52,19 @@ DEFAULT = {'model':'qwen2.5:7b','url':'http://localhost:11434','interval':180,'m
 
 def now(): return datetime.now().astimezone().isoformat(timespec='seconds')
 
+class _ClosingConnection(sqlite3.Connection):
+    """`with db() as c:` commits or rolls back as before, then also closes the handle.
+
+    The standard sqlite3 context manager never closes, which leaves file handles open
+    across the UI, worker, benchmark and research processes sharing this DB.
+    """
+    def __exit__(self,*exc):
+        try:return super().__exit__(*exc)
+        finally:self.close()
+
+
 def db():
-    c=sqlite3.connect(DB,timeout=30)
+    c=sqlite3.connect(DB,timeout=30,factory=_ClosingConnection)
     c.row_factory=sqlite3.Row
     c.execute('PRAGMA busy_timeout=30000')
     return c
@@ -5843,6 +5854,22 @@ def stop():
     execute('UPDATE autonomous_control SET enabled=0 WHERE id=1')
 
 
+WORKER_INTERRUPTED='アプリの再起動等で継続運転が中断されていました。再開する場合は「継続運転を開始」を押してください'
+
+
+def reconcile_worker_state():
+    """Turn a stale ON flag into an honest OFF after the worker thread is gone.
+
+    The worker runs inside the Streamlit process, so a restart ends it while the DB
+    still says enabled=1. That stale flag displayed ON and blocked the benchmark.
+    Never restart work automatically here; the owner resumes explicitly.
+    """
+    with THREAD_GUARD:
+        if not state()['enabled'] or running_pid():return False
+        execute('UPDATE autonomous_control SET enabled=0,last_error=? WHERE id=1 AND enabled=1',(WORKER_INTERRUPTED,))
+        return True
+
+
 
 def portfolio_opportunity_preview():
     rows = query('SELECT name FROM autonomous_ideas WHERE attempts>0 ORDER BY updated DESC LIMIT 100')
@@ -7893,6 +7920,7 @@ def render_dashboard():
     st.set_page_config(page_title='AI事業開発 継続運転',page_icon='🚀',layout='wide')
     st.title('アプリ開発の状況')
     st.caption('表示版: '+APP_VERSION+' ／ AI一次選別→作り込み→実物確認→OK後に運営')
+    reconcile_worker_state()
     s=state(); cfg=config()
     sync_messages=sync_review_candidates(cfg)
     with st.sidebar:

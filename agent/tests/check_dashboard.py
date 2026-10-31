@@ -16,10 +16,13 @@ with tempfile.TemporaryDirectory() as directory:
   app.store_product_spec(name,dict(audience='旅行者',requested_outcome='検索して旅程を保存する',differentiation='休憩を入れる',workflow=['検索','計画','保存'],must_have=['検索','計画','保存'],acceptance=['検索結果','計画結果','保存結果'],delivery_mode='connected',dependencies=['場所検索API','共同編集サーバー']))
  app.set_owner_decision('中止試作','中止','検証後に追加開発を止める判断')
  app.record_connection_followup('検索連携試作','実データで動作確認済み','次は実際の利用者に操作してもらい反応を確認する','テスト用の接続確認記録。実際の検索と保存の結果を確認したものとする')
+ app.execute('UPDATE autonomous_control SET enabled=1 WHERE id=1')  # stale ON left by a previous process
  with patch.object(urllib.request,'urlopen',side_effect=urllib.error.URLError('offline UI fixture')):
   at=AppTest.from_file(str(source),default_timeout=40).run()
   assert not at.exception,[x.message for x in at.exception]
-  assert any('2026.10.24.12' in x.value for x in at.caption)
+  assert any(app.APP_VERSION in x.value for x in at.caption)
+  assert any('OFF' in x.value for x in at.markdown),'stale ON must be shown as OFF'
+  assert any(app.WORKER_INTERRUPTED in x.value for x in at.error)
   assert not at.tabs
   api=next(x.value for x in at.dataframe if '対象アプリ' in x.value.columns)
   assert set(api['対象アプリ'])=={'友人間旅行計画アプリ','検索連携試作'},api
@@ -43,4 +46,4 @@ with tempfile.TemporaryDirectory() as directory:
  with urllib.request.urlopen(url,timeout=5) as response:markup=response.read().decode()
  assert '試作Aの最新保存画面' in markup
  assert not app.query('SELECT * FROM venture_product_reviews')
- print('PASS: simple dashboard, stopped reasons, all API statuses, advanced controls, actual saved-page link, no release approval')
+ print('PASS: simple dashboard, stopped reasons, all API statuses, advanced controls, actual saved-page link, no release approval, stale ON reconciled')
