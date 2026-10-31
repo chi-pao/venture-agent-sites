@@ -7739,6 +7739,12 @@ def execute_model_benchmark_page(source,directory):
                 context.route('**/*',lambda route:route.continue_() if route.request.url==url else route.abort())
                 page=context.new_page();page.set_default_timeout(5000);errors=[]
                 page.on('pageerror',lambda error:errors.append(str(error)));page.on('dialog',lambda dialog:dialog.dismiss())
+                def observed(rows):
+                    # Say what the page actually showed, so a failure can be told apart from a checker problem.
+                    count=page.locator('#taskCount')
+                    shown=repr(count.first.inner_text().strip()) if count.count() else '（#taskCountなし）'
+                    detail='一覧の行数: '+str(rows.count())+' / 件数表示: '+shown
+                    return detail+(' / JavaScriptエラー: '+errors[0][:300] if errors else '')
                 try:
                     page.goto(url,wait_until='domcontentloaded',timeout=15000)
                     layout=page.evaluate(QA_LAYOUT_SCRIPT)
@@ -7748,17 +7754,25 @@ def execute_model_benchmark_page(source,directory):
                     for name,priority,date in (('見積もり送付','2','2030-02-01'),('顧客への連絡','5','2030-02-02')):
                         page.locator('#taskName').fill(name);page.locator('#priority').fill(priority);page.locator('#dueDate').fill(date);page.locator('#addTask').click()
                     rows=page.locator('#tasks tr')
-                    if rows.count()!=2 or page.locator('#taskCount').inner_text().strip()!='2':raise ValueError('2件の登録・件数表示が不一致')
+                    # Allow a short re-render after the click; a correct page that updates asynchronously
+                    # used to be failed by the checker itself.
+                    deadline=time.monotonic()+3
+                    while True:
+                        count=page.locator('#taskCount')
+                        settled=rows.count()==2 and count.count()==1 and count.inner_text().strip()=='2'
+                        if settled or time.monotonic()>=deadline:break
+                        page.wait_for_timeout(100)
+                    if not settled:raise ValueError('2件の登録・件数表示が不一致（'+observed(rows)+'）')
                     expected=[['見積もり送付','2','2030-02-01'],['顧客への連絡','5','2030-02-02']]
                     if [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('登録した入力と一覧の値が不一致')
                     result['checks'].append(dict(width=width,check='two_records',passed=True))
                     for invalid_name,priority in (('','3'),('範囲外の作業','9')):
                         page.locator('#taskName').fill(invalid_name);page.locator('#priority').fill(priority);page.locator('#dueDate').fill('2030-03-01');page.locator('#addTask').click()
-                        if rows.count()!=2:raise ValueError('不正入力で記録が増えた')
+                        if rows.count()!=2:raise ValueError('不正入力で記録が増えた（'+observed(rows)+'）')
                     result['checks'].append(dict(width=width,check='invalid_input',passed=True))
                     page.reload(wait_until='domcontentloaded')
                     rows=page.locator('#tasks tr')
-                    if rows.count()!=2 or [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('再読込で登録値が復元されない')
+                    if rows.count()!=2 or [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('再読込で登録値が復元されない（'+observed(rows)+'）')
                     result['checks'].append(dict(width=width,check='reload',passed=True))
                     with page.expect_download() as download:page.locator('#downloadCsv').click()
                     csv_path=directory/('records-'+str(width)+'.csv');download.value.save_as(csv_path)
@@ -7770,6 +7784,14 @@ def execute_model_benchmark_page(source,directory):
                     if layout['overflow'] or layout['smallControls'] or layout['tinyText']:raise ValueError('操作後に画面配置の不足')
                     shot=directory/('result-'+str(width)+'.png');page.screenshot(path=str(shot));result['screenshots'][str(shot)]=hashlib.sha256(shot.read_bytes()).hexdigest()
                     result['checks'].append(dict(width=width,check='result_layout',passed=True))
+                except Exception:
+                    # Evidence for the owner/Claude Code: what the failing page looked like. Kept apart from
+                    # result['screenshots'], which only ever holds the two passing result images.
+                    try:
+                        shot=directory/('failure-'+str(width)+'.png');page.screenshot(path=str(shot),full_page=True)
+                        result['failure_screenshot']=str(shot)
+                    except Exception:pass
+                    raise
                 finally:context.close()
             result['passed']=True
         except Exception as exc:result['error']=type(exc).__name__+': '+str(exc)[:1400]
