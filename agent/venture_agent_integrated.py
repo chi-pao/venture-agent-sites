@@ -35,7 +35,20 @@ import streamlit as st
 
 APP_VERSION='2026.11.01.1'
 
-BASE = Path(os.environ.get('VENTURE_DATA_HOME') or Path(__file__).resolve().parent).expanduser().resolve()
+def _data_home():
+    """Where the owner's DB and outputs live.
+
+    The launcher always sets VENTURE_DATA_HOME. Running the managed copy directly
+    (py code\\current.py --export-diagnostics) used to treat code\\ as the data folder
+    and create a new empty DB there; use the existing data folder above it instead.
+    """
+    if os.environ.get('VENTURE_DATA_HOME'):return Path(os.environ['VENTURE_DATA_HOME'])
+    here=Path(__file__).resolve().parent
+    if here.name=='code' and (here.parent/'venture_agent_integrated.db').exists():return here.parent
+    return here
+
+
+BASE = _data_home().expanduser().resolve()
 BASE.mkdir(parents=True,exist_ok=True)
 DB = BASE / 'venture_agent_integrated.db'  # 過去の実行履歴を継承
 OUT = BASE / 'venture_outputs'
@@ -7412,6 +7425,69 @@ def launch_research_process(once=False):
     return '探索プロセスを起動しました。「表示を更新」で起動状態を確認できます。'
 
 
+DIAGNOSTIC_SECRET_KEY=re.compile(r'(token|secret|password|passwd|api_?key|apikey|webhook|credential|stripe|cookie|session)',re.I)
+DIAGNOSTIC_SECRET_TEXT=re.compile(r'(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[sr]k_(?:live|test)_[A-Za-z0-9]{8,}|Bearer\s+[A-Za-z0-9._~+/=-]{8,}|(?:api_?key|apiKey|token|password)=[^&\s"\']+)')
+
+
+def _diagnostic_scrub(value):
+    if isinstance(value,dict):
+        return {k:('***' if DIAGNOSTIC_SECRET_KEY.search(str(k)) and v not in ('',None,{},[]) else _diagnostic_scrub(v)) for k,v in value.items()}
+    if isinstance(value,list):return [_diagnostic_scrub(v) for v in value]
+    if isinstance(value,str):return DIAGNOSTIC_SECRET_TEXT.sub('***',value)
+    return value
+
+
+def build_diagnostics(max_file_bytes=2_000_000,max_total_bytes=20_000_000):
+    """A zip the owner can hand to Claude Code: state, recent errors and comparison evidence.
+
+    Never includes the DB file, environment variables, saved credentials or other
+    agent_settings rows; secret-looking keys and token-like text are masked.
+    """
+    import io,platform,zipfile
+    def rows(sql,args=()):
+        try:return query(sql,args)
+        except sqlite3.Error as exc:return [{'unavailable':type(exc).__name__}]
+    control=(rows('SELECT enabled,heartbeat,cycle,errors,last_error,config FROM autonomous_control WHERE id=1') or [{}])[0]
+    try:control['config']=json.loads(control.get('config') or '{}')
+    except (ValueError,TypeError):control['config']={}
+    try:import streamlit as _st_version;streamlit_version=_st_version.__version__
+    except Exception:streamlit_version='unknown'
+    benchmark=benchmark_state()
+    summary=dict(app_version=APP_VERSION,generated=now(),python=sys.version.split()[0],platform=platform.platform(),
+        streamlit=streamlit_version,data_home=str(BASE),autonomous_control=control,running_pid=running_pid(),
+        research_control=rows('SELECT * FROM venture_research_control WHERE id=1'),
+        ideas_by_phase=rows('SELECT phase,count(*) AS count FROM autonomous_ideas GROUP BY phase'),
+        recent_jobs=[dict(j,details=str(j.get('details') or '')[-4000:]) for j in rows('SELECT id,started,finished,state,details FROM agent_jobs ORDER BY id DESC LIMIT 20')],
+        product_development=rows('SELECT idea,stage,attempts,details,updated FROM venture_product_development ORDER BY updated DESC LIMIT 50'),
+        model_benchmark=benchmark,
+        note='DB本体・環境変数・保存済み資格情報は含めていません。秘密情報らしい項目は***に置き換えています。')
+    buffer=io.BytesIO();total=0;skipped=[]
+    with zipfile.ZipFile(buffer,'w',zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('summary.json',json.dumps(_diagnostic_scrub(summary),ensure_ascii=False,indent=2,default=str))
+        files=[]
+        for name in ('installed.json','failed_updates.json','pending_check.json'):
+            files.append((BASE/'code'/name,'launcher/'+name))
+        for log in ('research.log','qa-setup.log'):
+            files.append((AGENT/log,'logs/'+log))
+        run_id=str(benchmark.get('run_id') or '')
+        run_dir=OUT/'shared'/'model-benchmarks'/run_id if re.fullmatch(r'[0-9a-f]{32}',run_id) else None
+        if run_dir and run_dir.is_dir():
+            for path in sorted(run_dir.rglob('*')):
+                if path.is_file() and path.suffix.lower() in ('.html','.png','.csv'):
+                    files.append((path,'model-benchmark/'+path.relative_to(run_dir).as_posix()))
+        for path,arcname in files:
+            try:
+                if not path.is_file():continue
+                data=path.read_bytes()
+                if arcname.startswith('logs/'):data=data[-200_000:]
+                if len(data)>max_file_bytes or total+len(data)>max_total_bytes:skipped.append(arcname);continue
+                if arcname.endswith(('.json','.log')):data=DIAGNOSTIC_SECRET_TEXT.sub('***',data.decode('utf-8','replace')).encode('utf-8')
+                archive.writestr(arcname,data);total+=len(data)
+            except OSError:skipped.append(arcname)
+        if skipped:archive.writestr('skipped.txt','\n'.join(skipped))
+    return 'venture-diagnostics-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.zip',buffer.getvalue()
+
+
 def research_cli():
     import argparse
     parser=argparse.ArgumentParser(description='AI事業開発の分野探索。既存DBを継承し、追加の有料契約は行いません。')
@@ -7420,8 +7496,13 @@ def research_cli():
     parser.add_argument('--research-status',action='store_true',help='探索状態を表示')
     parser.add_argument('--stop-research',action='store_true',help='探索プロセスに停止を要求')
     parser.add_argument('--doctor',action='store_true',help='Ollama接続と公開・SNS設定の有無を確認')
+    parser.add_argument('--export-diagnostics',action='store_true',help='Claude Codeに渡す診断ファイル(zip)を作る。DB本体・秘密情報は含めない')
     args=parser.parse_args()
     init()
+    if args.export_diagnostics:
+        name,data=build_diagnostics();target=BASE/'diagnostics'/name
+        target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+        print('診断ファイルを作成しました: '+str(target));return 0
     if args.stop_research:
         execute('UPDATE venture_research_control SET enabled=-1 WHERE id=1')
         print('探索停止を要求しました。進行中のAI処理が終わると停止します。');return 0
@@ -8036,6 +8117,12 @@ def render_dashboard():
                 ranks=portfolio_opportunity_preview()
                 if ranks: st.dataframe(ranks,hide_index=True,width='stretch')
         with t2:
+            st.caption('不具合の相談用: 状態・直近のエラー・比較テストの証拠をzipにまとめます。DB本体・APIキー等は含めません。')
+            if st.button('Claude Code用の診断ファイルを作成',key='build_diagnostics'):
+                st.session_state['diagnostics_zip']=build_diagnostics()
+            if st.session_state.get('diagnostics_zip'):
+                name,data=st.session_state['diagnostics_zip']
+                st.download_button('診断ファイルを保存: '+name,data,file_name=name,mime='application/zip',key='diagnostics_download')
             for j in query('SELECT * FROM agent_jobs ORDER BY id DESC LIMIT 10'):
                 with st.expander(f"#{j['id']} {j['started']} {j['state']}",expanded=False):
                     st.code(j['details'] or '',language='text')
@@ -8100,6 +8187,6 @@ def render_dashboard():
 
 
 if __name__ == "__main__":
-    if any(arg in sys.argv[1:] for arg in ('--research','--research-status','--stop-research','--doctor')):
+    if any(arg in sys.argv[1:] for arg in ('--research','--research-status','--stop-research','--doctor','--export-diagnostics')):
         raise SystemExit(research_cli())
     render_dashboard()
