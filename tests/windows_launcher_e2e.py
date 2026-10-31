@@ -35,7 +35,10 @@ def healthy():
 
 def start(folder, *args):
     out = open(folder / 'console.log', 'a', encoding='utf-8', errors='replace')
-    return subprocess.Popen(['cmd', '/c', 'update-and-start.cmd', *args], cwd=folder, stdin=subprocess.DEVNULL,
+    # On a real console Python prints line by line; redirected to a file it buffers, and the
+    # forced stop would lose the launcher's messages. Unbuffered output keeps them for the checks.
+    env = dict(os.environ, PYTHONUNBUFFERED='1')
+    return subprocess.Popen(['cmd', '/c', 'update-and-start.cmd', *args], cwd=folder, stdin=subprocess.DEVNULL, env=env,
                             stdout=out, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
@@ -84,6 +87,7 @@ def main():
 
     log('2. second instance while running is refused by the lock')
     second = subprocess.run(['cmd', '/c', 'update-and-start.cmd'], cwd=folder, stdin=subprocess.DEVNULL,
+                            env=dict(os.environ, PYTHONUNBUFFERED='1'),
                             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
     assert 'Already running' in second.stdout + second.stderr, second.stdout + second.stderr
     stop(first)
