@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-APP_VERSION='2026.11.01.1'
+APP_VERSION='2026.11.01.2'
 
 def _data_home():
     """Where the owner's DB and outputs live.
