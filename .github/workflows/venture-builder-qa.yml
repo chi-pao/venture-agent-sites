@@ -5,6 +5,8 @@ on:
       - 'agent/**'
       - 'tests/**'
       - 'product-rebuilds/**'
+      - 'functions/**'
+      - 'schema/**'
       - '.github/workflows/venture-builder-qa.yml'
   push:
     branches: [main]
@@ -41,3 +43,14 @@ jobs:
         env:
           PYTHONPATH: tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run legacy agent tests and real-browser checks
+        run: |
+          python -m unittest discover -s agent/tests -p 'test_*.py' -v
+          for check in agent/tests/check_*.py; do echo "== $check"; python "$check"; done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run travel API contract tests
+        run: |
+          node tests/travel/test-search.mjs
+          node tests/travel/test-sharing.mjs
