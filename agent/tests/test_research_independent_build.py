@@ -13,6 +13,9 @@ class ResearchIndependentBuildTests(unittest.TestCase):
     def tearDown(self):
         baseline.FrameworkTests.tearDown(self)
 
+    # setUp/tearDown are borrowed from FrameworkTests; its add() helper must be borrowed too.
+    add = baseline.FrameworkTests.add
+
     def test_internal_design_heuristics_unblock_blueprint_without_competitive_proof(self):
         name = "競合調査中の制作継続"
         self.add(name)
@@ -60,6 +63,7 @@ class ResearchIndependentBuildTests(unittest.TestCase):
 
     def test_related_design_references_need_not_be_exact_competitors(self):
         name = "独自の家族旅行計画アプリ"
+        self.add(name)
         urls = app.competitive_reference_candidates(name)[:2]
         patterns = [
             dict(source_url=url, evidence_type="official_text",
@@ -79,6 +83,8 @@ class ResearchIndependentBuildTests(unittest.TestCase):
                 for url in urls
             ],
             design_patterns=patterns,
+            scope_sha=app.product_scope_sha(name),
+            content_comparison=baseline.content_comparison(app.get_product_spec(name)["acceptance"], urls),
         )
         self.assertTrue(app.competitive_design_ready(brief))
 
