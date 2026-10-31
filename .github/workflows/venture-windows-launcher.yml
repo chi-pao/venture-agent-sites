@@ -1,0 +1,48 @@
+name: Windows launcher and app verification
+on:
+  pull_request:
+    paths:
+      - 'agent/**'
+      - 'tests/test_launcher.py'
+      - 'tests/test_runtime_state.py'
+      - 'tests/windows_launcher_e2e.py'
+      - '.github/workflows/venture-windows-launcher.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agent/**'
+      - '.github/workflows/venture-windows-launcher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: venture-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      STREAMLIT_SERVER_HEADLESS: 'true'
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app dependencies for the setup-python interpreter and for the py launcher
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip streamlit pandas pillow
+          py --version
+          py -m pip install streamlit pandas pillow
+      - name: Compile app and launcher
+        run: python -m py_compile agent/venture_agent_integrated.py agent/launcher.py
+      - name: Launcher recovery and runtime-state tests on Windows (tasklist, msvcrt paths)
+        run: python -m unittest tests/test_launcher.py tests/test_runtime_state.py -v
+      - name: Real update-and-start.cmd end to end
+        run: python -u tests/windows_launcher_e2e.py

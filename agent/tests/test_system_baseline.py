@@ -8,6 +8,12 @@ from unittest.mock import patch
 from datetime import datetime,timezone,timedelta
 import tempfile,unittest,json
 
+def content_comparison(acceptance,urls):
+ """Per-acceptance competitor observations required by competitive_design_ready (policy content-4)."""
+ return [dict(acceptance_index=i,required_feature=req,
+  competitor_observations=[dict(source_url=u,source_quote='公式資料から取得した機能と利用方法の説明',evidence_status='関連語の記載候補。機能提供の断定には使わない。') for u in urls],
+  own_build_and_test='この完成条件を専用機能へ実装し、異なる入力値でブラウザー操作・結果・保存を確認する。') for i,req in enumerate(acceptance)]
+
 class FrameworkTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.old=(app.DB,app.OUT)
@@ -112,7 +118,7 @@ class BlueprintTests(FrameworkTests):
  def fixture(self,name):
   spec=app.get_product_spec(name);urls=['https://nicody.jp/','https://wanderlog.com/']
   item=dict(user_scene='具体的な利用場面で予定と結果を一画面で整理したい人。',first_action='使いたい日付と対象者の条件を最初に入力する。',use_reason='未確認を区別しながら予定を比較して保存できる仮説。',visual_direction='対象者に合う配色と情報階層で入力と結果を区別する。',screen_sections=[dict(purpose='条件を分かりやすく入力する画面',action='日付と具体的な条件を入力する',result='入力した条件と妥当性が表示される') for _ in range(3)],core_flows=[dict(input='具体的な異なる予定条件を入力する',operation='条件を変更して結果を確認し保存する',expected_result='条件に応じた比較結果と保存記録を確認する',acceptance=[i]) for i in range(len(spec['acceptance']))],adaptations=[dict(source_url=u,implementation='入力と結果を同じ画面で対応づける構成を実装する。',improvement='対象者の未確認項目と次の操作を分かりやすくする。') for u in urls])
-  brief=dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),checked=app.now(),sources=[dict(url=u,content_sha='a'*64) for u in urls],design_patterns=[dict(source_url=u,evidence_type='official_text',pattern='入力と結果を一画面でそろえるための設計です。',adapt='利用者に合う項目をまとめた画面を実装します。',improvement='不要な入力を減らして結果を見やすく設計します。',acceptance='異なる条件を入力して結果が変化することを確認。') for u in urls])
+  brief=dict(policy=app.COMPETITIVE_POLICY,scope_sha=app.product_scope_sha(name),checked=app.now(),sources=[dict(url=u,content_sha='a'*64) for u in urls],design_patterns=[dict(source_url=u,evidence_type='official_text',pattern='入力と結果を一画面でそろえるための設計です。',adapt='利用者に合う項目をまとめた画面を実装します。',improvement='不要な入力を減らして結果を見やすく設計します。',acceptance='異なる条件を入力して結果が変化することを確認。') for u in urls],content_comparison=content_comparison(spec['acceptance'],urls))
   return item,brief
  def test_blueprint_covers_all_features_and_real_comparison_sources(self):
   name='用途テスト';self.add(name);item,brief=self.fixture(name)
@@ -133,9 +139,10 @@ class BlueprintTests(FrameworkTests):
   app.execute('UPDATE autonomous_control SET enabled=1')
   name='用途テスト';self.add(name);spec=app.get_product_spec(name);app.store_product_spec(name,dict(spec,delivery_mode='connected',dependencies=['検索API']))
   source='<html><body>'+('existing-function;'*100)+'</body></html>'
-  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'incremental_product_repair',side_effect=lambda *a,**k:(a[2].replace('existing-function;','improved-function;',1), '部分修正')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査合格')),patch.object(app,'review_connected_layout',side_effect=[(False,'画面検査: 要改善 / スマホで主操作が見えない'),(True,'画面検査: 合格（API実動作・主機能の検証は別）')]) as visual,patch.object(app,'event'):
+  with patch.object(app,'ensure_product_blueprint',return_value={}),patch.object(app,'ensure_implementation_plan',return_value={'features':[]}),patch.object(app,'incremental_product_repair',side_effect=lambda *a,**k:(a[2].replace('existing-function;','improved-function;',1), '部分修正')) as repair,patch.object(app,'validate_html',return_value=[]),patch.object(app,'ensure_autoqa_environment'),patch.object(app,'browser_test',return_value=(True,'簡易検査合格')),patch.object(app,'review_connected_layout',side_effect=[(False,'画面検査: 要改善 / スマホで主操作が見えない'),(True,'画面検査: 合格（API実動作・主機能の検証は別）')]) as visual,patch.object(app,'ai',return_value='<html><body>'+('regenerated-function;'*100)+'</body></html>') as model,patch.object(app,'event'):
    page,detail,ready=app.build(1,name,dict(app.DEFAULT,max_revisions=2),'画面の改善',existing_page=source,allow_partial=True)
-  self.assertEqual(repair.call_count,2);self.assertEqual(visual.call_count,2);self.assertFalse(ready);self.assertIn('画面検査: 合格',detail)
+  self.assertEqual(repair.call_count,1);self.assertEqual(model.call_count,1);self.assertIn('スマホで主操作が見えない',model.call_args.args[0])
+  self.assertEqual(visual.call_count,2);self.assertFalse(ready);self.assertIn('画面検査: 合格',detail)
   self.assertIsNone(app.candidate_production_acceptance(name));self.assertEqual(app.query('SELECT * FROM venture_product_reviews'),[])
  def test_connected_screen_fix_resumes_after_three_minutes(self):
   app.execute('UPDATE autonomous_control SET enabled=1')
