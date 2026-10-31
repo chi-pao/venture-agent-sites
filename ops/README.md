@@ -15,8 +15,9 @@
 | 担当 | 行うこと | 行わないこと |
 |---|---|---|
 | のぼるさん | 事業の継続判断、製品ごとの発信OK、課金・外部アカウント・APIキーの設定、Windows実機の確認 | — |
-| Claude Code（司令塔） | 仕様・開発・修正・テスト・GitHub反映・公開管理・リリース。ChatGPTへの発信内容と方針の指示（`ops/chatgpt/`） | のぼるさんのOKなしの発信許可、課金の発生、未検証機能を完成と扱うこと |
-| ChatGPT | `ops/chatgpt/` の指示に従ったSNS投稿、画像生成、動画制作、反応の記録 | コード・仕様の変更、承認されていない投稿、指示にない主張 |
+| Claude Code（司令塔） | 3事業の開発・修正・検証・GitHub管理・公開管理・リリース。ChatGPTへの発信内容と方針の指示（`ops/chatgpt/`）。PC上ではデータの調査と検証（`ops/claude-local/`） | のぼるさんのOKなしの発信許可、課金の発生、未検証機能を完成と扱うこと、自動運転の開始 |
+| ChatGPT | Claude Codeの指示（`ops/chatgpt/`）に基づくSNS投稿、画像生成、動画制作、反応の記録 | コード・仕様の変更、承認されていない投稿、指示にない主張 |
+| 事業開発AI | 事業候補の探索・評価・実績管理（PC上で動作） | 3事業の本番コードの変更（Claude CodeがGitHub経由で行う）。既存の試作生成機能は残すが、3事業の開発経路ではない |
 
 ## 変更のルール（全事業共通）
 
@@ -38,4 +39,5 @@
 
 ## 進め方の記録
 - [Windows実機の確認手順](WINDOWS_CHECK.md)
+- [Claude Codeと事業開発AIの連携（段階A・B）](claude-local/SETUP.md)
 - ChatGPTへの指示: [ops/chatgpt/README.md](chatgpt/README.md)
