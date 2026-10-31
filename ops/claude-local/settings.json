@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Bash(py code/current.py --export-diagnostics)",
+      "Bash(py code\\current.py --export-diagnostics)",
+      "Bash(py code/current.py --research-status)",
+      "Bash(py code\\current.py --research-status)",
+      "Bash(ollama list)",
+      "Bash(py -m streamlit version)"
+    ],
+    "deny": [
+      "Edit(**/*.db)",
+      "Edit(**/*.db-*)",
+      "Write(**/*.db)",
+      "Write(**/*.db-*)",
+      "Edit(code/**)",
+      "Write(code/**)",
+      "Edit(backups/**)",
+      "Write(backups/**)",
+      "Edit(venture_agent_autonomous/**)",
+      "Write(venture_agent_autonomous/**)",
+      "Edit(update-and-start.cmd)",
+      "Write(update-and-start.cmd)",
+      "Bash(update-and-start.cmd:*)",
+      "Bash(cmd /c update-and-start.cmd:*)",
+      "Bash(py -m streamlit run:*)",
+      "Bash(python -m streamlit run:*)",
+      "Bash(py code/current.py --research:*)",
+      "Bash(py code\\current.py --research:*)",
+      "Bash(py code/current.py --stop-research:*)",
+      "Bash(py code\\current.py --stop-research:*)"
+    ]
+  }
+}
