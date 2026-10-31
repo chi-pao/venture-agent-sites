@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.31.1",
-  "sha256": "cd32e44ad6c2a06d3ac95925ca6cfc9e79ce99ef09866aa92c713cca0a430689",
-  "source_url": "https://raw.githubusercontent.com/chi-pao/venture-agent-sites/9a3971dc7ae785ba90986a6e5e042d7509470952/agent/venture_agent_integrated.py"
+  "version": "2026.11.01.1",
+  "sha256": "251449f7a3bb9c5721ecf342114f200738b13333c0526a7657b667a524e3d136",
+  "source_url": "https://raw.githubusercontent.com/chi-pao/venture-agent-sites/ace75fce6904c06ed038e434e4b7cab3ad06ff9a/agent/venture_agent_integrated.py"
 }
