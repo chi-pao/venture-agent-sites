@@ -23,7 +23,8 @@ REF_IN_HTML = re.compile(r'''(?:src|href)\s*=\s*["']([^"'#]+)["']''', re.I)
 REF_IN_JS = re.compile(r'''(?:from\s*|import\s*\(\s*|fetch\s*\(\s*|new\s+URL\s*\(\s*|new\s+Worker\s*\(\s*(?:new\s+URL\s*\(\s*)?)["'`]([^"'`]+)["'`]''')
 FILE_LIKE = re.compile(r'''["'`]((?:\./|\.\./|/)?[A-Za-z0-9_\-./]+\.(?:mjs|js|json|wasm|bin|onnx|gz|traineddata|webmanifest|css|png|svg|ico|webp|csv))(?:\?[^"'`]*)?["'`]''')
 CSS_URL = re.compile(r'''url\(\s*["']?([^"')]+)["']?\s*\)''')
-SKIP_PREFIX = ('/_sites/',)  # platform assets of the current host, not part of the app
+SKIP_PREFIX = ('/_sites/', '/cdn-cgi/')  # hosting-platform assets, not part of the app
+SANE_REF = re.compile(r'^[A-Za-z0-9_./~:%?=&+-]+$')
 
 
 def refs(path, body):
@@ -79,6 +80,7 @@ def mirror(base, out, extra=()):
             req = urllib.request.Request(url, headers={'User-Agent': 'site-mirror (owner migration)'})
             with urllib.request.urlopen(req, timeout=60) as response:
                 body = response.read(MAX_FILE + 1)
+                ctype = response.headers.get_content_type()
         except urllib.error.HTTPError as exc:
             if required or exc.code != 404:
                 skipped.append((url, 'HTTP ' + str(exc.code)))
@@ -86,6 +88,14 @@ def mirror(base, out, extra=()):
         except Exception as exc:  # network errors are reported, not hidden
             skipped.append((url, type(exc).__name__))
             continue
+        # Single-page hosts answer unknown paths with an HTML page and status 200.
+        looks_html = ctype == 'text/html' or body[:200].lstrip().lower().startswith((b'<!doctype html', b'<html'))
+        if looks_html and not rel.endswith(('.html', '.htm')):
+            if required:
+                skipped.append((url, 'not found (host returned an HTML page instead)'))
+            continue
+        if any(r == rel for r, _, _ in saved):
+            continue  # same file requested with a different ?version query
         if len(body) > MAX_FILE or total + len(body) > MAX_TOTAL:
             skipped.append((url, 'too large'))
             continue
@@ -96,7 +106,7 @@ def mirror(base, out, extra=()):
         saved.append((rel, len(body), hashlib.sha256(body).hexdigest()))
         if rel.endswith(TEXT_TYPES) or rel == 'index.html':
             for ref in refs(rel if rel != 'index.html' else '/', body):
-                if ref.startswith(('data:', 'blob:', 'mailto:', 'javascript:')):
+                if ref.startswith(('data:', 'blob:', 'mailto:', 'javascript:')) or not SANE_REF.match(ref.replace('&amp;', '&')):
                     continue
                 if rel.endswith(('.json', '.webmanifest')) and not ref.startswith(('/', 'http')):
                     # A path listed in JSON may be relative to the JSON file or to the site root:

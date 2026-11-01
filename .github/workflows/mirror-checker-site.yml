@@ -3,7 +3,7 @@ on:
   # Runs when this file changes on a claude/* branch (workflow_dispatch only works once on main).
   push:
     branches: ['claude/**']
-    paths: ['.github/workflows/mirror-checker-site.yml']
+    paths: ['.github/workflows/mirror-checker-site.yml', 'tools/mirror_site.py']
   workflow_dispatch:
     inputs:
       source:
