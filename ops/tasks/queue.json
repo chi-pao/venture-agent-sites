@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Claude Code（SNS集客担当）が発行。のぼるさんが status を「承認済み」にしたものだけ ChatGPT 用の依頼書になる（python tools/chatgpt_packets.py --render）。",
+  "note": "Claude Code（SNS集客担当）が発行。のぼるさんが status を「承認済み」にしたものだけ ChatGPT 用の依頼書になる（python tools/chatgpt_packets.py --render）。2026-11-01: 公開先を ChatGPT Sites（https://okaidoku-checker.rightharp65.chatgpt.site/）に変更。facts は旧Streamlit版のコードで確認したもの。新サイトで同じ機能があるか確認するまで承認しない。",
   "tasks": [
     {
       "id": "C-W1-01",
@@ -18,7 +18,7 @@
           "参考価格は統計的な目安で、査定・鑑定ではありません",
           "無料で使えます"
         ],
-        "url": "https://okaidokucyekka.streamlit.app?utm_source=x&utm_medium=social&utm_campaign=w1_soba",
+        "url": "https://okaidoku-checker.rightharp65.chatgpt.site/?utm_source=x&utm_medium=social&utm_campaign=w1_soba",
         "max_chars": 140
       }
     },
@@ -38,7 +38,7 @@
           "参考価格は統計的な目安で、査定・鑑定ではありません",
           "無料で使えます"
         ],
-        "url": "https://okaidokucyekka.streamlit.app?utm_source=x&utm_medium=social&utm_campaign=w1_pinned",
+        "url": "https://okaidoku-checker.rightharp65.chatgpt.site/?utm_source=x&utm_medium=social&utm_campaign=w1_pinned",
         "max_chars": 140
       }
     },
@@ -58,7 +58,7 @@
           "無料で使えます",
           "法律・税金に関わる項目は専門家への確認が必要です"
         ],
-        "url": "https://okaidokucyekka.streamlit.app?utm_source=instagram&utm_medium=social&utm_campaign=w1_checklist",
+        "url": "https://okaidoku-checker.rightharp65.chatgpt.site/?utm_source=instagram&utm_medium=social&utm_campaign=w1_checklist",
         "max_chars": 300
       }
     },

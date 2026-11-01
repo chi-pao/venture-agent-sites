@@ -3,6 +3,13 @@
 作成: 2026-11-01 ／ 司令塔: Claude Code ／ 承認: のぼるさん
 根拠: チームの調査レポート（[収益化](research/monetization.md)・[SNS集客](research/sns.md)・[プロダクト監査](research/product.md)）。数字は出典付きのものだけを使い、確認できないものは「未確認」としている。
 
+## 公開先の更新（2026-11-01）
+- **今の公開サイトは ChatGPT Sites**: https://okaidoku-checker.rightharp65.chatgpt.site/ （10/20〜）。Streamlit Community Cloud（https://okaidokucyekka.streamlit.app）は旧版。Cloudflare Pages は主に事業開発AI側で使用。
+- この計画の調査（research/）と、chi-pao/- の修正 PR #6（査定結果が消える不具合・空白入り住所のOCR）・PR #7（稼働チェック）は**旧Streamlit版**が対象。新サイトには反映されていない／当てはまるかは未確認。
+- 新サイトの中身はまだ確認できていない（この作業環境のネットワーク許可に `rightharp65.chatgpt.site` が無い）。許可後に、事実・PR表記・注意書き・計測・運営者情報を点検し、下の施策を新サイト向けに組み直す。
+- 新サイトのコードがChatGPT上にしか無い場合、サイトの修正は「Claude Codeが仕様と確認項目を書いた依頼書 → ChatGPTが反映 → Claude Codeが公開ページで確認」の形で行う。
+- ChatGPTへの1週目の依頼（ops/tasks/queue.json）はリンクを新サイトに変更済み。ただし使っている事実は旧版のコードで確認したもの。**新サイトで同じ機能を確認するまで承認しない**。
+
 ## チーム（Claude Code 内の役割分担）
 | 役割 | 定義ファイル | 担当 |
 |---|---|---|
