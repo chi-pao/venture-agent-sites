@@ -1,7 +1,22 @@
 # Windows実機の確認手順（のぼるさんのPC）
 
 GitHubのWindows環境（`venture-windows-launcher`）では、`update-and-start.cmd`からの更新・起動確認・自動復旧・二重起動防止・再起動・`--rollback`を自動で試験している。
-ただし、それはGitHubが用意したWindowsであり、**のぼるさんのPC（Pythonの版・Streamlitの版・Ollama・実データ）での確認は未実施**。下の手順で確認するまで「Windows実機: 未検証」と扱う。
+ただし、それはGitHubが用意したWindowsであり、のぼるさんのPCでの確認は別に行う。
+
+## 実機での確認結果（2026-11-01、のぼるさんのPC）
+| # | 結果 | 黒い画面・画面の表示 |
+|---|---|---|
+| 1〜2 | ○ | 古い起動を止めて再起動。`Update installed`（旧`.cmd`のため起動確認なし） |
+| 準備 | ○ | `.cmd`を置き換え。`findstr a20b8ec` で新しい起動プログラムの固定を確認 |
+| 3 | ○ | 表示版 2026.11.01.2 |
+| 4 | ○ | 自動開発の設定: OFF（中断表示なし＝前回もOFF） |
+| 5 | 保留 | 自動運転はまだ開始しない方針のため未実施 |
+| 6 | ○ | 2つ目の起動で `Already running` |
+| 7 | ○ | `Already up to date` で再起動 |
+| 8 | ○ | `--rollback` で `Previous code restored. Data was not overwritten.`（表示版の番号は未記録） |
+| 9 | ○ | `Update installed` → `Checking that the new version starts...` → `Startup check passed`（約4秒） |
+
+結論: 更新・起動確認・二重起動防止・再起動・手動ロールバックは**実機確認済み**。継続運転（5）は未確認。起動確認が**失敗した場合の自動復旧**は実機では起きていない（GitHubのWindows環境で試験済み）。
 
 ## 1回だけ必要な準備
 1. https://github.com/chi-pao/venture-agent-sites/blob/main/agent/update-and-start.cmd を開き、右上の「Download raw file」で保存する。
