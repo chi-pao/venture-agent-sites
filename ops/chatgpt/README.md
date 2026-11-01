@@ -27,7 +27,7 @@
 ## 報告の形式（のぼるさん経由でClaude Codeへ）
 ```
 日付:
-投稿ID（posts.mdのID）:
+依頼ID（依頼書の依頼ID）:
 SNS / 投稿URL:
 24時間後の実数（表示・いいね・返信・リンククリック。表示されない項目は「不明」）:
 寄せられた質問・要望（原文の要約）:
@@ -35,4 +35,4 @@ SNS / 投稿URL:
 ```
 
 ## 承認の手順（のぼるさん）
-`posts.md` の該当行の「状態」を `承認済み（YYYY-MM-DD）` に書き換えてGitHubで保存する。ChatGPTには「posts.mdの承認済みを投稿して」と伝える。
+`ops/tasks/queue.json` の該当依頼の `status` を `承認済み` に書き換えてGitHubで保存する。Claude Codeが依頼書（`ops/chatgpt/outbox/<依頼ID>.md`）を作るので、その内容をChatGPTに渡す。
