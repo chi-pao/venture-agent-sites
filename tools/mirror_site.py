@@ -21,7 +21,7 @@ MAX_TOTAL = 300_000_000
 TEXT_TYPES = ('.html', '.htm', '.js', '.mjs', '.css', '.json', '.webmanifest', '.txt', '.svg')
 REF_IN_HTML = re.compile(r'''(?:src|href)\s*=\s*["']([^"'#]+)["']''', re.I)
 REF_IN_JS = re.compile(r'''(?:from\s*|import\s*\(\s*|fetch\s*\(\s*|new\s+URL\s*\(\s*|new\s+Worker\s*\(\s*(?:new\s+URL\s*\(\s*)?)["'`]([^"'`]+)["'`]''')
-FILE_LIKE = re.compile(r'''["'`]((?:\./|\.\./|/)?[A-Za-z0-9_\-./]+\.(?:mjs|js|json|wasm|bin|onnx|gz|traineddata|webmanifest|css|png|svg|ico|webp|csv))(?:\?[^"'`]*)?["'`]''')
+FILE_LIKE = re.compile(r'''["'`]((?:\./|\.\./|/)?[A-Za-z0-9_\-./]+\.(?:mjs|js|json|wasm|bin|dat|onnx|gz|traineddata|webmanifest|css|png|svg|ico|webp|csv))(?:\?[^"'`]*)?["'`]''')
 CSS_URL = re.compile(r'''url\(\s*["']?([^"')]+)["']?\s*\)''')
 SKIP_PREFIX = ('/_sites/', '/cdn-cgi/')  # hosting-platform assets, not part of the app
 SANE_REF = re.compile(r'^[A-Za-z0-9_./~:%?=&+-]+$')
