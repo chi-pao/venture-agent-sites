@@ -17,7 +17,8 @@
 - 広告は A8.net のリンク3本。
 
 ## 切り替え時に必ず変えるもの（チェックリスト）
-- [ ] 公開URLを決める（例: Cloudflare Pages の専用プロジェクト `okaidoku-checker.pages.dev`、または独自ドメイン）。
+- [x] 公開URLの方針（2026-11-01 のぼるさん決定）: **当面は無料URL**（Cloudflare Pages）。収益化の見込みが立った時点で専用ドメイン（年1,500〜4,000円程度）を取得し、そちらへ移す。専用ドメインへの移行時は、この下の項目（canonical・計測・提携先URL）をもう一度行う。
+- [ ] 無料URLの形を決める: `venture-agent-sites.pages.dev/checker-site/`（設定不要）か、専用プロジェクト `okaidoku-checker.pages.dev`（Cloudflareで5分程度の設定が必要。URLが短く、事業開発AI側と分かれる）。
 - [ ] `index.html` の canonical・og:url・構造化データ（`#website`・`#app`）・OGP画像のURL（`social/launch-20261021.png` は未取得）を新URLに変更。
 - [ ] `analytics.mjs` の計測対象ホスト、`app.mjs` の共有用URLを新URLに変更（このままでは新URLで計測・共有が旧URLを指す）。
 - [ ] `index.html` 末尾の旧ホスト専用スクリプト（`/cdn-cgi/challenge-platform/...`）を削除。
