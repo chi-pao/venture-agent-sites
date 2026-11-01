@@ -9,9 +9,11 @@ Source: https://okaidoku-checker.rightharp65.chatgpt.site/
 | app-icon-512.png | 270622 | 12192586246b41cd4899dd723bef6cf05482cdbb180407448ec58639ae14181b |
 | app-icon.png | 99053 | 7e747b872bd12cda91256022e9a8a39e3788ce4e7b8559ae2af21de93eab8083 |
 | app.mjs | 32760 | 9d027c489c83df9c51679c0aa136dbfc71ec4d3d89efef75f71d5ba5b3f1e700 |
+| eng.traineddata.gz | 10923060 | ed350f3752f81ee8f38769edc14d92d997dababe23b565c59879372cc46a2468 |
 | engine.mjs | 9873 | 28094dc3e86025047e33faa1b90f2af32398c2386d536a3a1f878091f2f96e5e |
-| index.html | 27039 | dba7ee0e29b81dff0d8d79af14d6be4057874e47ce748d9e17c81af3eab11b84 |
+| index.html | 27039 | 1a3bce2d751511face4fba8b0616438e3e4b8921e79ea8b2bad7023ddea4be29 |
 | integrity.mjs | 2363 | d1351a785ae9399083d3d2c89142f7af2bbd4b717b366a1b2f1590814491aab4 |
+| jpn.traineddata.gz | 16163676 | 70304835d33b4feacf5faa60f56176578b64a03de2eeb0801539a3f6e7807ccc |
 | learning.mjs | 2855 | 1600900b844c0aaf69087418198c53676bffbeff4d59d54130a7d66d18bc0886 |
 | manifest.webmanifest | 590 | 74d2b1b2dbf031af51e7675afcbd10593a6ccb83bd1985dc98b1d78771d85356 |
 | model-runtime.mjs | 1755 | a5b9d0dd1860552080befc8465bbfc2789681c303a47494763ea8217d1ecf9df |
@@ -29,7 +31,9 @@ Source: https://okaidoku-checker.rightharp65.chatgpt.site/
 
 - https://metricool.com/privacy-policy/ — other host (kept as a link)
 - https://okaidoku-checker.rightharp65.chatgpt.site/dist/worker.min.js — not found (host returned an HTML page instead)
+- https://okaidoku-checker.rightharp65.chatgpt.site/eng.traineddata — not found (host returned an HTML page instead)
 - https://okaidoku-checker.rightharp65.chatgpt.site/image.png — not found (host returned an HTML page instead)
+- https://okaidoku-checker.rightharp65.chatgpt.site/jpn.traineddata — not found (host returned an HTML page instead)
 - https://okaidoku-checker.rightharp65.chatgpt.site/site-models/manifest.json — not found (host returned an HTML page instead)
 - https://okaidoku-checker.rightharp65.chatgpt.site/tesseract-core-simd-lstm.wasm.js — not found (host returned an HTML page instead)
 - https://okaidoku-checker.rightharp65.chatgpt.site/tesseract-core-simd.wasm.js — not found (host returned an HTML page instead)
