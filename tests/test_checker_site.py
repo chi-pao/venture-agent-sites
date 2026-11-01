@@ -29,6 +29,13 @@ class CheckerSiteTests(unittest.TestCase):
             self.assertEqual(len(data), int(component['bytes']), component['path'])
             self.assertEqual(hashlib.sha256(data).hexdigest(), component['sha256'], component['path'])
 
+    def test_no_reference_to_the_old_host_remains(self):
+        for path in SITE.rglob('*'):
+            if path.suffix in ('.html', '.mjs', '.js', '.json', '.webmanifest', '.css'):
+                text = path.read_text(encoding='utf-8', errors='replace')
+                self.assertNotIn('rightharp65.chatgpt.site', text, path.name)
+                self.assertNotIn('/cdn-cgi/', text, path.name)
+
     def test_example_appraisal_runs_in_chromium(self):
         from playwright.sync_api import sync_playwright
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
@@ -56,6 +63,15 @@ class CheckerSiteTests(unittest.TestCase):
                     self.assertIn('販売価格', result)
                     self.assertRegex(result, r'査定価格との差\s*[+−-][\d,]+万円')
                     self.assertIn('広告・PR', result)
+                    prefs = page.eval_on_selector_all('#prefecture option', 'os => os.map(o => o.textContent).filter(t => /[都道府県]$/.test(t))')
+                    self.assertEqual((len(prefs), prefs[0], prefs[-1]), (47, '北海道', '沖縄県'))
+                    # Entered in tsubo, the area reaches the result in square metres with a long fraction.
+                    page.select_option('#areaUnit', '坪')
+                    page.fill('#area', '21.2')
+                    page.click('#estimate')
+                    page.wait_for_function("/坪|㎡/.test(document.querySelector('#result-location').textContent) && !document.querySelector('#estimate').disabled", timeout=90000)
+                    location = page.inner_text('#result-location')
+                    self.assertRegex(location, r'専有 [\d,]+(\.\d{1,2})?㎡', location)
                     page.close()
                 browser.close()
         finally:

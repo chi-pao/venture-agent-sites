@@ -1,5 +1,5 @@
 // Page visits only. App form values, property data and OCR images are never read.
-const productionOrigin='https://okaidoku-checker.rightharp65.chatgpt.site';
+const productionOrigin='https://okaidoku-checker.pages.dev';
 const trackerHash='e705e5af82ce572ee53bef4fc6e171f3'; // Public Metricool brand tracking identifier.
 export function startVisitTracking(win=window,doc=document){
   if(win.location.origin!==productionOrigin||win.__okaidokuVisitTracking)return false;
