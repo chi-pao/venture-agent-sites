@@ -1,0 +1,37 @@
+name: Mirror the public checker site into the repository
+on:
+  # Runs when this file changes on a claude/* branch (workflow_dispatch only works once on main).
+  push:
+    branches: ['claude/**']
+    paths: ['.github/workflows/mirror-checker-site.yml', 'tools/mirror_site.py']
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Public site URL to copy
+        default: https://okaidoku-checker.rightharp65.chatgpt.site/
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Copy every file the site loads (same host only)
+        run: |
+          rm -rf checker-site
+          # Tesseract builds the language-data URL at run time (langPath = site root), so name it here.
+          python tools/mirror_site.py "${{ inputs.source || 'https://okaidoku-checker.rightharp65.chatgpt.site/' }}" checker-site \
+            jpn.traineddata.gz eng.traineddata.gz jpn.traineddata eng.traineddata
+          cat checker-site/MIRROR_REPORT.md
+      - name: Commit the copy to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add checker-site
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Mirror the public checker site (${{ inputs.source || 'https://okaidoku-checker.rightharp65.chatgpt.site/' }})"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
