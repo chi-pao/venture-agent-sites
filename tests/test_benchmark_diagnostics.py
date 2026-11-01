@@ -89,6 +89,20 @@ class BenchmarkPageDiagnosticsTests(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertTrue(Path(result['failure_screenshot']).is_file())
 
+    def test_saved_records_missing_only_on_the_first_reload_pass_after_one_retry(self):
+        # Reproduces the CI race: the first reload sees the old (empty) storage, a later one sees the saved records.
+        page = GOOD.replace("let tasks=JSON.parse(", "const loads=+(sessionStorage.getItem('loads')||0)+1;sessionStorage.setItem('loads',loads);"
+                            "let tasks=loads===2?[]:JSON.parse(")
+        self.assertNotEqual(page, GOOD)
+        result = self.run_page('race', page)
+        self.assertTrue(result['passed'], result.get('error'))
+        self.assertEqual([c['attempts'] for c in result['checks'] if c['check'] == 'reload'], [2, 2])
+
+    def test_page_that_never_saves_still_fails_after_the_retry(self):
+        page = GOOD.replace("localStorage.setItem('benchmark_records',JSON.stringify(tasks));", "")
+        self.assertNotEqual(page, GOOD)
+        self.assertFailsWith(self.run_page('nosave', page), '再読込で登録値が復元されない', '一覧の行数: 0')
+
     def test_reset_after_add_still_passes(self):
         result = self.run_page('reset', GOOD.replace("render()};", "render();this.reset()};"))
         self.assertTrue(result['passed'], result.get('error'))

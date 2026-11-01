@@ -7855,11 +7855,20 @@ def execute_model_benchmark_page(source,directory):
                     # Reloading within milliseconds of the last write can start a fresh renderer
                     # that reads the old state (seen in CI as "0 rows after reload" while the same
                     # page passed elsewhere). A person never reloads that fast; wait briefly.
-                    page.wait_for_timeout(500)
-                    page.reload(wait_until='domcontentloaded')
-                    rows=page.locator('#tasks tr')
-                    if rows.count()!=2 or [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('再読込で登録値が復元されない（'+observed(rows)+'）')
-                    result['checks'].append(dict(width=width,check='reload',passed=True))
+                    # The wait alone still lost the race on a slow CI runner, so a reload that shows
+                    # nothing is retried once after a longer pause. A page that does not save fails
+                    # both attempts; the attempt count is kept in the check record.
+                    restored=False
+                    for attempt,pause in enumerate((500,1500),1):
+                        page.wait_for_timeout(pause)
+                        page.reload(wait_until='domcontentloaded')
+                        rows=page.locator('#tasks tr')
+                        deadline=time.monotonic()+2
+                        while rows.count()<2 and time.monotonic()<deadline:page.wait_for_timeout(100)
+                        restored=rows.count()==2 and [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]==expected
+                        if restored or rows.count()>2:break
+                    if not restored:raise ValueError('再読込で登録値が復元されない（'+observed(rows)+'）')
+                    result['checks'].append(dict(width=width,check='reload',passed=True,attempts=attempt))
                     with page.expect_download() as download:page.locator('#downloadCsv').click()
                     csv_path=directory/('records-'+str(width)+'.csv');download.value.save_as(csv_path)
                     records=list(csv.reader(csv_path.read_text(encoding='utf-8-sig').splitlines()))
