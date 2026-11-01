@@ -7,7 +7,7 @@
 | 事業 | リポジトリ | 公開先 | 現在の段階 | 詳細 |
 |---|---|---|---|---|
 | 自律型AI事業開発システム（事業開発AI） | `chi-pao/venture-agent-sites` の `agent/` | のぼるさんのWindows PC（Streamlit, 8501） | 運用中・正常化作業中 | [agent-system.md](businesses/agent-system.md) |
-| お買い得物件チェッカー | `chi-pao/-` | https://okaidokucyekka.streamlit.app | 公開中 | [property-checker.md](businesses/property-checker.md) |
+| お買い得物件チェッカー | ChatGPT Sites（旧Streamlit版のコードは `chi-pao/-`） | https://okaidoku-checker.rightharp65.chatgpt.site/ （2026-10-20〜） | 公開中 | [property-checker.md](businesses/property-checker.md) |
 | 旅行計画アプリ（旅のペースノート） | `chi-pao/venture-agent-sites` の `agent/review-products/travel.html` と `functions/api/travel/` | https://venture-agent-sites.pages.dev/agent/review-products/travel | 開発確認版・API接続待ち | [travel-planner.md](businesses/travel-planner.md) |
 
 ## 役割分担

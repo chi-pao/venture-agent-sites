@@ -1,8 +1,10 @@
 # お買い得物件チェッカー
 
-リポジトリ: https://github.com/chi-pao/-（公開） ／ サイト: https://okaidokucyekka.streamlit.app
+公開サイト: **https://okaidoku-checker.rightharp65.chatgpt.site/**（ChatGPT Sites、2026-10-20〜） ／ 旧版: https://okaidokucyekka.streamlit.app（Streamlit Community Cloud、コードは https://github.com/chi-pao/-）
 
-> 2026-11-01時点、Claude Codeはこのリポジトリを**読むことだけ**できる（書き込み・テスト実行は権限待ち）。以下はコードを読んで整理した内容で、動作確認はしていない。
+> 2026-11-01 のぼるさんより: 10/20以降の公開版はChatGPT Sites。以下の「仕様」はStreamlit旧版のコードを読んで整理したもので、新サイトの機能・表示は**未確認**（この環境から新サイトへの接続が許可されていない）。
+
+> chi-pao/- （旧Streamlit版）は 2026-11-01 から Claude Code が書き込み・テスト可能。修正済み: PR #6（査定結果が消える不具合・空白入り住所のOCR）、PR #7（稼働チェック）。
 
 ## 仕様（コードから整理）
 

@@ -7851,6 +7851,11 @@ def execute_model_benchmark_page(source,directory):
                         page.locator('#taskName').fill(invalid_name);page.locator('#priority').fill(priority);page.locator('#dueDate').fill('2030-03-01');page.locator('#addTask').click()
                         if rows.count()!=2:raise ValueError('不正入力で記録が増えた（'+observed(rows)+'）')
                     result['checks'].append(dict(width=width,check='invalid_input',passed=True))
+                    # Chromium hands a localStorage write to the browser process asynchronously.
+                    # Reloading within milliseconds of the last write can start a fresh renderer
+                    # that reads the old state (seen in CI as "0 rows after reload" while the same
+                    # page passed elsewhere). A person never reloads that fast; wait briefly.
+                    page.wait_for_timeout(500)
                     page.reload(wait_until='domcontentloaded')
                     rows=page.locator('#tasks tr')
                     if rows.count()!=2 or [rows.nth(i).locator('td').all_inner_texts() for i in range(2)]!=expected:raise ValueError('再読込で登録値が復元されない（'+observed(rows)+'）')
