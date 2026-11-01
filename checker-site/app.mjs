@@ -6,7 +6,7 @@ let townData,townPromise,townRequest=0,townSelectionFocus=false;
 const areaFields=['landArea','buildingArea','area'];
 const pricePickerFields=['priceOku','priceHundreds','priceRemainder'];
 const contactAddress='okaidokuhudousannchecker@gmail.com';
-const publicSiteUrl='https://okaidoku-checker.rightharp65.chatgpt.site/';
+const publicSiteUrl='https://okaidoku-checker.pages.dev/';
 const shareData={title:'お買い得物件チェッカー',text:'気になる物件の価格、目安を確かめてみませんか？スクショ・手入力で参考査定価格と割安度を無料チェック。',url:publicSiteUrl+'?utm_source=share&utm_medium=referral&utm_campaign=user_share'};
 function contactMail(values){
   const body=['お買い得物件チェッカーへのお問い合わせ','種類：'+values.category,'内容：',values.message.trim(),'','使ってみた感想：'+(values.usefulness||'未回答'),'知ったきっかけ：'+(values.source||'未回答'),'お名前：'+(values.name.trim()||'未記入'),'返信希望：'+(values.reply?'はい':'いいえ'),'返信先：'+(values.email.trim()||'未記入')].join('\n');
@@ -20,6 +20,7 @@ function formatAreaInput(id,unit=$('areaUnit').value){const sqm=readArea(id,unit
 const townKanaGroups=[['あ','あいうえおぁぃぅぇぉ'],['か','かきくけこゕゖ'],['さ','さしすせそ'],['た','たちつてとっ'],['な','なにぬねの'],['は','はひふへほ'],['ま','まみむめも'],['や','やゆよゃゅょ'],['ら','らりるれろ'],['わ','わをんゎゐゑ'],['他','']];
 function townGroup(reading){const first=kanaKey(reading).normalize('NFD').replace(/\p{M}/gu,'')[0];return townKanaGroups.find(([,chars])=>chars.includes(first))?.[0]||'他';}
 const names={type:'物件種別',prefecture:'都道府県',city:'市区町村',district:'町名',price:'価格',year:'建築年',landArea:'土地面積',buildingArea:'建物面積',area:'専有面積',structure:'構造',layout:'間取り',stationMinutes:'駅徒歩'};
+const displayArea=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('ja-JP',{maximumFractionDigits:2}):v;
 const typeLabels={used_house:'中古戸建て',used_condo:'中古マンション',new_house:'新築戸建て'};
 const fmt=n=>new Intl.NumberFormat('ja-JP',{maximumFractionDigits:0}).format(n);
 function status(id,text,tone=''){const el=$(id);el.textContent=text;el.className='status '+tone;}
@@ -109,7 +110,7 @@ function fill(p,clear=false){
 function applyText(){if(!municipalities)return;const parsed=parseScreenshot($('ocr-text').value,municipalities);const keys=Object.keys(parsed.values);if(keys.length){fill(parsed.values,true);autoEstimatePending=true;status('ocr-status','読み取り完了：'+keys.map(k=>names[k]||k).join('・')+'。認識に誤りがあれば下の欄で修正してください。','success');if(parsed.warnings.length)status('ocr-status',$('ocr-status').textContent+' '+parsed.warnings.join(' / '));guideAutoEstimate({start:true});}else status('ocr-status',parsed.warnings.join(' / ')||'物件情報を読み取れませんでした。','error');}
 async function loadData(){
   try{const responses=await Promise.all([fetch('models/catalog.json'),fetch('municipalities.json')]);if(responses.some(r=>!r.ok))throw Error('data');[catalog,municipalities]=await Promise.all(responses.map(r=>r.json()));
-    const prefs=[...new Set(Object.values(municipalities).map(x=>x[0]))];prefs.forEach(p=>option($('prefecture'),p));
+    const prefs=[...new Set(Object.entries(municipalities).sort(([x],[y])=>x.localeCompare(y)).map(([,x])=>x[0]))];prefs.forEach(p=>option($('prefecture'),p));
     for(const [id,field] of [['structure','Structure'],['planning','CityPlanning'],['layout','FloorPlan']]){
       const all=new Set();for(const m of Object.values(catalog.models))for(const c of m.components){const i=c.categorical.indexOf(field);if(i>=0)c.categories[i].forEach(x=>{if(x!=='__missing__'&&x!=='不明')all.add(x)});}
       [...all].sort((a,b)=>a.localeCompare(b,'ja')).forEach(x=>option($(id),x));
@@ -148,7 +149,7 @@ function renderResult(yen,input,{moveFocus=true,modelInfo}={}){
   $('result-badge').textContent=c.label;$('result-badge').className='badge '+c.tone;
   const max=Math.max(price,estimate);$('sale-bar').style.width=price/max*100+'%';$('estimate-bar').style.width=estimate/max*100+'%';$('sale-bar-text').textContent=fmt(price)+'万円';$('estimate-bar-text').textContent=fmt(estimate)+'万円';
   $('result-description').textContent=c.discount>=0?'販売価格は参考査定より約'+fmt(c.difference)+'万円低い結果です。建物の状態や修繕費をあわせて確認してください。':'販売価格は参考査定より約'+fmt(-c.difference)+'万円高い結果です。立地・設備・リフォームの内容もあわせて確認してください。';
-  const city=municipalities[input.city]?.[1]||input.city;$('result-location').textContent=typeLabels[input.type]+' / '+input.prefecture+city+(input.district||'')+' / '+(input.type==='used_condo'?'専有 '+input.area+'㎡':'土地 '+input.landArea+'㎡・建物 '+input.buildingArea+'㎡')+' / '+input.year+'年築';
+  const city=municipalities[input.city]?.[1]||input.city;$('result-location').textContent=typeLabels[input.type]+' / '+input.prefecture+city+(input.district||'')+' / '+(input.type==='used_condo'?'専有 '+displayArea(input.area)+'㎡':'土地 '+displayArea(input.landArea)+'㎡・建物 '+displayArea(input.buildingArea)+'㎡')+' / '+input.year+'年築';
   $('model-name').textContent='使用モデル：'+model.name+'。'+(model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで旧モデルとの比較を行い、改善を確認して採用しました。':'保存済みの学習モデルを使用しています。');
   const metric=model.metrics?.median_ape_pct;$('validation-metric').textContent=metric!=null?(model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで比較した際の誤差中央値：':'保存モデルの検証時の誤差中央値：')+Number(metric).toFixed(1)+'%。'+(model.releaseKind==='reviewed_existing_transactions'?'完全な未使用データでの独立検証ではありません。':'')+'この物件の誤差や最新時点での精度を保証する値ではありません。':'このモデルの最新時点での予測精度は未確認です。';
   const row=features(input),unknown=modelInfo?.learned?[...modelInfo.unknownFields]:[];for(const c2 of model.components||[])for(const field of ['MunicipalityCode','DistrictName','Structure','CityPlanning']){const i=c2.categorical.indexOf(field);if(i>=0&&row[field]&&!c2.categories[i].includes(row[field]))unknown.push(({MunicipalityCode:'市区町村',DistrictName:'町名',Structure:'構造',CityPlanning:'用途地域'})[field]);}
