@@ -23,7 +23,9 @@ jobs:
       - name: Copy every file the site loads (same host only)
         run: |
           rm -rf checker-site
-          python tools/mirror_site.py "${{ inputs.source || 'https://okaidoku-checker.rightharp65.chatgpt.site/' }}" checker-site
+          # Tesseract builds the language-data URL at run time (langPath = site root), so name it here.
+          python tools/mirror_site.py "${{ inputs.source || 'https://okaidoku-checker.rightharp65.chatgpt.site/' }}" checker-site \
+            jpn.traineddata.gz eng.traineddata.gz jpn.traineddata eng.traineddata
           cat checker-site/MIRROR_REPORT.md
       - name: Commit the copy to this branch
         run: |
