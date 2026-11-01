@@ -2,7 +2,7 @@
 
 発行: Claude Code（開発の司令塔） ／ 承認者: のぼるさん ／ 最終更新: 2026-11-01
 
-このファイルとその隣の `posts.md` が、ChatGPTの作業指示の正本です。
+このファイルが、ChatGPTの作業ルールの正本です。個別の依頼は `ops/chatgpt/outbox/<依頼ID>.md`（のぼるさんが承認した依頼だけが入る）で渡します。依頼の一覧は `ops/tasks/queue.json`。`posts.md` は旧方式で、今後は使いません。
 最新版: https://github.com/chi-pao/venture-agent-sites/blob/main/ops/chatgpt/README.md
 
 ## あなた（ChatGPT）の担当
