@@ -4,6 +4,8 @@ on:
     paths:
       - 'agent/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'ops/tasks/**'
       - 'product-rebuilds/**'
       - 'functions/**'
       - 'schema/**'
@@ -13,6 +15,8 @@ on:
     paths:
       - 'agent/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'ops/tasks/**'
       - 'product-rebuilds/**'
       - '.github/workflows/venture-builder-qa.yml'
   workflow_dispatch:
