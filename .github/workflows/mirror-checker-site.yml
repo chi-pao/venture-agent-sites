@@ -1,0 +1,31 @@
+name: Mirror the public checker site into the repository
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Public site URL to copy
+        default: https://okaidoku-checker.rightharp65.chatgpt.site/
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Copy every file the site loads (same host only)
+        run: |
+          rm -rf checker-site
+          python tools/mirror_site.py "${{ inputs.source }}" checker-site
+          cat checker-site/MIRROR_REPORT.md
+      - name: Commit the copy to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add checker-site
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Mirror the public checker site (${{ inputs.source }})"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
