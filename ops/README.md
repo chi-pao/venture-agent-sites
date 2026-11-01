@@ -40,4 +40,5 @@
 ## 進め方の記録
 - [Windows実機の確認手順](WINDOWS_CHECK.md)
 - [Claude Codeと事業開発AIの連携（段階A・B）](claude-local/SETUP.md)
-- ChatGPTへの指示: [ops/chatgpt/README.md](chatgpt/README.md)
+- ChatGPTへの指示: [ops/chatgpt/README.md](chatgpt/README.md)（依頼一覧: `ops/tasks/queue.json`、依頼書: `ops/chatgpt/outbox/`）
+- [お買い得物件チェッカー 収益化・運営計画](checker/PLAN.md)（2026-11-01 最優先）

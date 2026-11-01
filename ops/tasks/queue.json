@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "note": "Claude Code（SNS集客担当）が発行。のぼるさんが status を「承認済み」にしたものだけ ChatGPT 用の依頼書になる（python tools/chatgpt_packets.py --render）。",
+  "tasks": [
+    {
+      "id": "C-W1-01",
+      "kind": "sns_post_draft",
+      "title": "X 型①相場の見方",
+      "status": "承認待ち",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "channel": "X",
+        "format": "型① 相場の見方の解説",
+        "angle": "中古マンションの提示価格を、築年数・駅距離・取引時期の3つの視点で見る",
+        "facts": [
+          "国土交通省「不動産情報ライブラリ」の取引情報をもとにした参考価格（目安）を表示します",
+          "中古住宅・中古マンション・一戸建ての提示価格を、参考価格と比べられます",
+          "参考価格は統計的な目安で、査定・鑑定ではありません",
+          "無料で使えます"
+        ],
+        "url": "https://okaidokucyekka.streamlit.app?utm_source=x&utm_medium=social&utm_campaign=w1_soba",
+        "max_chars": 140
+      }
+    },
+    {
+      "id": "C-W1-02",
+      "kind": "sns_post_draft",
+      "title": "X 固定投稿 型④使い方",
+      "status": "承認待ち",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "channel": "X",
+        "format": "型④ ツールの使い方（固定投稿）",
+        "angle": "物件ページのスクショから参考価格と比べるまでの流れ",
+        "facts": [
+          "物件ページのスクリーンショットから入力欄に読み取れます（読み取り結果は画面で確認・修正が必要です）",
+          "国土交通省「不動産情報ライブラリ」の取引情報をもとにした参考価格（目安）を表示します",
+          "参考価格は統計的な目安で、査定・鑑定ではありません",
+          "無料で使えます"
+        ],
+        "url": "https://okaidokucyekka.streamlit.app?utm_source=x&utm_medium=social&utm_campaign=w1_pinned",
+        "max_chars": 140
+      }
+    },
+    {
+      "id": "C-W1-03",
+      "kind": "sns_post_draft",
+      "title": "Instagram 型②チェックリストのキャプション",
+      "status": "承認待ち",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "channel": "Instagram",
+        "format": "型② チェックリスト（カルーセル8項目、最後は「提示価格を参考価格と比べた」）",
+        "angle": "中古一戸建ての購入申込み前に確認したい項目",
+        "facts": [
+          "国土交通省「不動産情報ライブラリ」の取引情報をもとにした参考価格（目安）を表示します",
+          "参考価格は統計的な目安で、査定・鑑定ではありません",
+          "無料で使えます",
+          "法律・税金に関わる項目は専門家への確認が必要です"
+        ],
+        "url": "https://okaidokucyekka.streamlit.app?utm_source=instagram&utm_medium=social&utm_campaign=w1_checklist",
+        "max_chars": 300
+      }
+    },
+    {
+      "id": "C-W1-04",
+      "kind": "image_asset",
+      "title": "カルーセル1枚目（型①）",
+      "status": "承認待ち",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "prompt": "中古住宅を思わせるシンプルなイラスト。人物・実在の物件写真・他社ロゴは使わない。配色は紺#0a263cと青緑#0c857c、アクセント金#f3bf63",
+        "headline": "その価格、相場と比べた？",
+        "subline": "判断の手がかり3つ",
+        "size": "1080x1350"
+      }
+    },
+    {
+      "id": "C-W1-05",
+      "kind": "video_script",
+      "title": "リール 型④使い方（30秒）",
+      "status": "承認待ち",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "duration_sec": 30,
+        "scenes": 4,
+        "facts": [
+          "物件ページのスクリーンショットから入力欄に読み取れます（読み取り結果は画面で確認・修正が必要です）",
+          "国土交通省「不動産情報ライブラリ」の取引情報をもとにした参考価格（目安）を表示します",
+          "参考価格は統計的な目安で、査定・鑑定ではありません",
+          "無料で使えます",
+          "画面録画には架空のダミー物件を使います"
+        ]
+      }
+    }
+  ]
+}
