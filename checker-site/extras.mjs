@@ -16,23 +16,24 @@ async function show(d){
   if(d.type!=='used_house'||!Number.isFinite(d.estimate)){b.hidden=true;return;}
   b.hidden=false;
   const [,lo,hi]=BANDS.find(([max])=>d.estimate<max);
-  const low=d.estimate*lo,high=d.estimate*hi,price=Number(d.price);
-  // 帯の上に「査定額」と「販売価格」の位置を示す。表示範囲は幅の外側も少し見えるように取る。
-  const min=Math.min(low,price||low)*0.85,max=Math.max(high,price||high)*1.1,pos=v=>`${Math.min(100,Math.max(0,(v-min)/(max-min)*100)).toFixed(1)}%`;
-  const where=!Number.isFinite(price)||price<=0?'':price<low?'この範囲より安い':price>high?'この範囲より高い':'この範囲の中';
-  const bar=el('div',{className:'band-bar'},
-    el('span',{className:'band-range'}),
-    el('span',{className:'band-mark est',title:'参考査定'}),
-    ...(where?[el('span',{className:'band-mark price',title:'販売価格'})]:[]));
-  bar.firstChild.style.left=pos(low);bar.firstChild.style.width=`calc(${pos(high)} - ${pos(low)})`;
-  bar.children[1].style.left=pos(d.estimate);if(where)bar.children[2].style.left=pos(price);
-  b.append(el('div',{className:'band'},
-    el('span',{className:'band-label',textContent:'同じような家が実際に売れた価格'}),
-    el('strong',{textContent:`${fmt(low)}万〜${fmt(high)}万円`}),
-    bar,
-    el('div',{className:'band-legend'},el('span',{className:'k range',textContent:'よく売れている価格帯'}),el('span',{className:'k est',textContent:'参考査定'}),...(where?[el('span',{className:'k price',textContent:'販売価格'})]:[])),
-    ...(where?[el('p',{className:'band-verdict '+(where==='この範囲の中'?'in':'out'),textContent:`販売価格 ${fmt(price)}万円は、${where}です。`})]:[]),
-    el('small',{textContent:'2025年に実際に売れた家のうち、参考査定が同じくらいだった家の半数がこの価格帯でした。'})));
+  const low=d.estimate*lo,high=d.estimate*hi,price=Number(d.price),has=Number.isFinite(price)&&price>0;
+  // 結論を先に大きく、下に「安め｜相場｜高め」のメーターと販売価格の位置。
+  const zone=!has?null:price<low?'low':price>high?'high':'mid';
+  const verdict={low:['相場より安め',`相場の下限より ${fmt(low-price)}万円 安い`],mid:['相場の範囲内','実際に売れた価格の真ん中あたり'],high:['相場より高め',`相場の上限より ${fmt(price-high)}万円 高い`]}[zone]||['実際に売れた相場',''];
+  const min=Math.min(low,has?price:low)*0.8,max=Math.max(high,has?price:high)*1.12,pos=v=>Math.min(97,Math.max(3,(v-min)/(max-min)*100));
+  const meter=el('div',{className:'meter'},
+    el('div',{className:'meter-track'},el('span',{className:'z low'}),el('span',{className:'z mid'}),el('span',{className:'z high'})),
+    el('div',{className:'meter-ticks'},el('span',{textContent:`${fmt(low)}万`}),el('span',{textContent:`${fmt(high)}万`})));
+  const [zl,zm,zh]=meter.firstChild.children;
+  zl.style.width=`${pos(low)}%`;zm.style.left=`${pos(low)}%`;zm.style.width=`${pos(high)-pos(low)}%`;zh.style.left=`${pos(high)}%`;
+  const [tl,th]=meter.lastChild.children;tl.style.left=`${pos(low)}%`;th.style.left=`${pos(high)}%`;
+  if(has){const at=pos(price),pin=el('div',{className:`meter-pin ${zone} ${at<25?'l':at>75?'r':''}`},el('span',{textContent:`販売価格 ${fmt(price)}万円`}));pin.style.left=`${at}%`;meter.prepend(pin);}
+  b.append(el('div',{className:'band '+(zone||'')},
+    el('span',{className:'band-label',textContent:'実際に売れた相場とくらべると'}),
+    el('strong',{className:'band-verdict',textContent:verdict[0]}),
+    ...(verdict[1]?[el('p',{className:'band-diff',textContent:verdict[1]})]:[]),
+    meter,
+    el('small',{textContent:`相場＝2025年に実際に売れた家のうち、参考査定が同じくらい（${fmt(d.estimate)}万円前後）だった家の半数が入る価格帯（${fmt(low)}万〜${fmt(high)}万円）。`})));
   let sales=[];
   try{const r=await fetch(`area/${d.city}/sales.json`);if(r.ok)sales=await r.json();}catch{}
   if(!sales.length)return;

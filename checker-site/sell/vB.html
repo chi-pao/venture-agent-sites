@@ -17,14 +17,24 @@
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.steps div{background:#eef3fd;border-radius:14px;padding:12px}.steps b{display:block;color:#1f5fd6}
 .points li{margin:6px 0}
 @media(max-width:600px){.hero{grid-template-columns:1fr;text-align:center}.sample{text-align:left}.sample-bars li{max-width:78%}.hero h1{font-size:27px}.steps{grid-template-columns:1fr}}
+.hero2{text-align:center;margin:6px 0 16px}.hero2 h1{font-size:34px;line-height:1.3;margin:4px 0 14px}
+.vs-card{margin:0 auto;max-width:520px;background:linear-gradient(180deg,#0f2a4a,#163a66);border-radius:22px;padding:18px 16px 14px;box-shadow:0 20px 40px #0a263c33}
+.vs-houses{width:100%;height:auto;display:block}
+.vs-card figcaption{color:#dbe6f6;font-size:13px;line-height:1.6;margin-top:6px}.vs-card figcaption b{display:block;color:#fff;font-size:15px;margin-top:2px}
+.vs-card figcaption span{display:block;color:#90a6c6;font-size:10px;margin-top:4px}
+.hero2 .lead{color:#3d4b60;margin:14px auto 0;max-width:560px}
+@media(max-width:600px){.hero2 h1{font-size:27px}}
 </style></head><body>
 <header class="bar"><a class="brand" href="/"><img src="/app-icon.png" alt="" width="36" height="36">お買い得物件チェッカー</a><a class="cta-s" href="/?intent=sell#input-title">価格をチェック</a></header>
 <main>
-<section class="hero"><div><p class="kicker">家を売る前に、30秒</p><h1>近所の似た家、<br>実際はいくらで売れた？</h1><p>同じ市区町村で築年数・広さが近い家の実際の取引価格を、自宅の参考価格と一緒に表示。無料・登録なし。</p></div>
-<figure class="sample" aria-label="表示例"><figcaption>表示例：山口県宇部市・築20〜30年の戸建て</figcaption>
-<p class="sample-k">近くで実際に売れた価格</p><p class="sample-v">830万<small>〜</small>1,900万円</p>
-<ul class="sample-bars"><li style="--w:44%"><span>830万</span></li><li style="--w:47%"><span>900万</span></li><li style="--w:53%"><span>1,000万</span></li><li style="--w:58%"><span>1,100万</span></li><li style="--w:100%"><span>1,900万</span></li></ul>
-<p class="sample-n">同じ市内で、築年数も広さも近いのに<b>2倍以上</b>の差</p></figure></section>
+<section class="hero2"><p class="kicker">家を売る前に、30秒</p><h1>近所の似た家、<br>実際はいくらで売れた？</h1>
+<figure class="vs-card"><svg class="vs-houses" viewBox="0 0 400 270" role="img" aria-label="築年数も広さも近い2軒が830万円と1,900万円で売れた例">
+<rect x="0" y="192" width="400" height="10" rx="5" fill="#2a4a74"/>
+<g transform="translate(10 0)"><rect x="18" y="96" width="124" height="96" rx="4" fill="#e9eef7"/><path d="M6 102 80 40l74 62z" fill="#3b82f6"/><rect x="104" y="48" width="16" height="30" fill="#3b82f6"/><rect x="34" y="118" width="30" height="26" rx="3" fill="#cfe0ff"/><rect x="96" y="118" width="30" height="26" rx="3" fill="#cfe0ff"/><rect x="66" y="146" width="28" height="46" rx="3" fill="#7a4a24"/></g><g transform="translate(230 0)"><rect x="18" y="96" width="124" height="96" rx="4" fill="#e9eef7"/><path d="M6 102 80 40l74 62z" fill="#3b82f6"/><rect x="104" y="48" width="16" height="30" fill="#3b82f6"/><rect x="34" y="118" width="30" height="26" rx="3" fill="#cfe0ff"/><rect x="96" y="118" width="30" height="26" rx="3" fill="#cfe0ff"/><rect x="66" y="146" width="28" height="46" rx="3" fill="#7a4a24"/></g>
+<g font-weight="800" text-anchor="middle"><rect x="20" y="210" width="140" height="48" rx="12" fill="#3b82f6"/><text x="90" y="244" font-size="28" fill="#fff">830万円</text>
+<rect x="232" y="210" width="156" height="48" rx="12" fill="#ffd166"/><text x="310" y="244" font-size="28" fill="#0f2a4a">1,900万円</text>
+<circle cx="200" cy="120" r="38" fill="#e8590c"/><text x="200" y="117" font-size="15" fill="#fff">差は</text><text x="200" y="139" font-size="22" fill="#fff">2.3倍</text></g></svg><figcaption>山口県宇部市・築20〜30年／土地300㎡前後の戸建て。<b>似た2軒でも、売れた価格はこんなに違う</b><span>国土交通省 不動産取引価格情報（2024年の実際の取引）</span></figcaption></figure>
+<p class="lead">同じ市区町村で築年数・広さが近い家の実際の取引価格を、自宅の参考価格と一緒に表示。無料・登録なし。</p></section>
 <a class="cta" href="/?intent=sell#input-title">自宅の参考価格をチェックする →</a>
 <div class="steps"><div><b>1. 入力</b>物件の種類・場所・広さ・築年数を入力（販売価格の欄には、売りたい価格の目安を入れます）</div><div><b>2. 参考価格</b>国土交通省の取引データで学習したモデルが計算</div><div><b>3. 相場と比べる</b>近くの似た取引や、地域の相場も確認</div></div>
 <h2>このページでわかること</h2>
