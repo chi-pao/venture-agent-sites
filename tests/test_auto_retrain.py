@@ -43,5 +43,22 @@ class AutoRetrainTests(unittest.TestCase):
         self.assertEqual((s['median_ape_pct'], s['within20_pct']), (30.0, 50.0))
 
 
+
+class FetchMlitTests(unittest.TestCase):
+    def test_gzip_and_plain_api_bodies_decode(self):
+        import gzip, json
+        spec = importlib.util.spec_from_file_location('fetch_mlit', ROOT / 'tools' / 'checker_train' / 'fetch_mlit.py')
+        fetch = importlib.util.module_from_spec(spec); spec.loader.exec_module(fetch)
+        body = json.dumps({'status': 'OK', 'data': [{'TradePrice': '17800000', 'DistrictName': '大字際波'}]}, ensure_ascii=False).encode()
+        self.assertEqual(json.loads(fetch.decode(gzip.compress(body)))['data'][0]['DistrictName'], '大字際波')
+        self.assertEqual(json.loads(fetch.decode(body))['status'], 'OK')
+
+    def test_quarters_are_the_latest_ones_in_order(self):
+        from datetime import datetime
+        spec = importlib.util.spec_from_file_location('fetch_mlit', ROOT / 'tools' / 'checker_train' / 'fetch_mlit.py')
+        fetch = importlib.util.module_from_spec(spec); spec.loader.exec_module(fetch)
+        self.assertEqual(fetch.quarters(3, datetime(2026, 11, 2)), [(2026, 1), (2026, 2), (2026, 3)])
+
+
 if __name__ == '__main__':
     unittest.main()

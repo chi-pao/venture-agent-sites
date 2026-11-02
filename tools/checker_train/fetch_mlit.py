@@ -8,6 +8,7 @@ present are skipped. Quarters that are not published yet come back empty and are
 """
 import argparse
 from datetime import datetime
+import gzip
 import json
 import os
 from pathlib import Path
@@ -28,13 +29,20 @@ def quarters(count, now=None):
     return [((index - k) // 4, (index - k) % 4 + 1) for k in range(count, 0, -1)]
 
 
+def decode(body):
+    """The API answers gzip-compressed JSON (urllib does not undo Content-Encoding)."""
+    if body[:2] == b'\x1f\x8b':
+        body = gzip.decompress(body)
+    return body.decode('utf-8')
+
+
 def fetch(key, area, year, quarter):
     url = API + '?' + urllib.parse.urlencode({'area': area, 'year': year, 'quarter': quarter, 'language': 'ja'})
-    request = urllib.request.Request(url, headers={'Ocp-Apim-Subscription-Key': key, 'Accept': 'application/json'})
+    request = urllib.request.Request(url, headers={'Ocp-Apim-Subscription-Key': key, 'Accept': 'application/json', 'Accept-Encoding': 'gzip'})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                payload = json.loads(response.read().decode('utf-8'))
+                payload = json.loads(decode(response.read()))
             rows = payload.get('data', []) if isinstance(payload, dict) else []
             return rows if isinstance(rows, list) else []
         except urllib.error.HTTPError as exc:
@@ -74,6 +82,8 @@ def main():
                 failed += 1
                 continue
             if rows:
+                if not saved:
+                    print('columns', sorted(rows[0].keys()))  # to check the mapping in train_used_house.API_COLUMNS
                 pd.DataFrame(rows).to_csv(path, index=False, encoding='utf-8-sig')
                 saved += len(rows)
             time.sleep(0.5)
