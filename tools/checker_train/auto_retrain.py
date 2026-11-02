@@ -183,6 +183,7 @@ def main():
     actual = hold['price_yen'].to_numpy(float)
     report = {'holdout': f'{len(hold)} sales from the latest {a.holdout_quarters} quarters (period index > {last - a.holdout_quarters})',
               'live': score(predict_site(a.site, hold_inputs, a.work), actual), 'candidates': {}}
+    print('live', report['live'], flush=True)
     for name, recipe in RECIPES.items():
         pipe = train(before, recipe, train_table)
         cand = a.work / name
