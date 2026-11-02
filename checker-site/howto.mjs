@@ -1,5 +1,5 @@
 // 開いてすぐの「使い方」一覧: 左の項目に合わせて、右のカード（実際の画面）と情報を切り替える。
-// パソコンではスクロールで切り替わり（短めの区間）、どの幅でも項目を押すと切り替わる。
+// 項目を押すと切り替わり、見えている間は数秒ごとに自動で次へ進む。
 const STEPS=[
   {img:'app-icon.png',alt:'お買い得物件チェッカーのアイコン',mode:'icon',meta:[['料金','無料'],['計算','この端末の中'],['データ','国土交通省の取引データ']]},
   {img:'img/howto-upload.webp',alt:'スクショを貼り付ける画面',meta:[['入力','物件ページのスクショ'],['枚数','最大4枚・1枚12MBまで'],['読み取り','この端末の中']]},
@@ -11,8 +11,8 @@ const STEPS=[
 const section=document.getElementById('howto');
 if(section){
   const buttons=[...section.querySelectorAll('[data-step]')],card=document.getElementById('howto-card'),img=document.getElementById('howto-img'),
-    meta=document.getElementById('howto-meta'),count=document.getElementById('howto-n'),bar=document.getElementById('howto-bar');
-  const wide=matchMedia('(min-width:901px)'),reduce=matchMedia('(prefers-reduced-motion: reduce)');
+    meta=document.getElementById('howto-meta'),count=document.getElementById('howto-n');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
   STEPS.forEach(s=>{const i=new Image();i.src=s.img;});
   let current=0;
   function show(n){
@@ -23,12 +23,11 @@ if(section){
     meta.replaceChildren(...s.meta.map(([t,d])=>{const w=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=t;dd.textContent=d;w.append(dt,dd);return w;}));
     count.textContent=n+1;
   }
-  const progress=()=>{const r=section.getBoundingClientRect(),span=r.height-innerHeight;return span>0?Math.min(1,Math.max(0,-r.top/span)):0;};
-  function onScroll(){if(!wide.matches)return;const p=progress();bar.style.width=(p*100)+'%';show(Math.min(STEPS.length-1,Math.floor(p*STEPS.length)));}
-  buttons.forEach((b,k)=>b.addEventListener('click',()=>{
-    if(wide.matches&&section.offsetHeight>innerHeight){const top=section.offsetTop+(section.offsetHeight-innerHeight)*((k+.5)/STEPS.length);scrollTo({top,behavior:reduce.matches?'auto':'smooth'});}
-    show(k);
-  }));
-  let ticking=false;addEventListener('scroll',()=>{if(!ticking){ticking=true;requestAnimationFrame(()=>{onScroll();ticking=false;});}},{passive:true});
-  addEventListener('resize',onScroll);onScroll();
+  // 押して切り替え。見えている間は数秒ごとに自動で次へ（カーソルを乗せている間・押した後・動きを減らす設定では止める）
+  let userTook=false,hovering=false,visible=false;
+  buttons.forEach((b,k)=>b.addEventListener('click',()=>{userTook=true;show(k);}));
+  section.addEventListener('pointerenter',()=>hovering=true);section.addEventListener('pointerleave',()=>hovering=false);
+  section.addEventListener('focusin',()=>userTook=true);
+  new IntersectionObserver(e=>{visible=e[0].isIntersecting;},{threshold:.3}).observe(section);
+  setInterval(()=>{if(!userTook&&!hovering&&visible&&!reduce.matches&&!document.hidden)show((current+1)%STEPS.length);},4000);
 }

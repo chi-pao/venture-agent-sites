@@ -115,3 +115,21 @@ html,body{overflow-x:clip}
 .howto-card img{height:auto;object-fit:initial}
 .howto-card[data-mode="icon"]{display:grid;place-items:center}
 .howto-progress{position:relative!important;bottom:auto;flex:0 0 2px;margin-top:auto}
+/* 2026-11 上部をコンパクトに: すぐ入力欄へ */
+@media(min-width:901px){.howto{height:auto}.howto-sticky{position:static;height:auto;display:block}}
+.howto-top{padding-top:14px}
+.howto-grid{gap:40px;padding:14px 22px 22px;align-items:center}
+.howto-h1{font-size:14px;margin-bottom:6px}
+.howto-intro{font-size:11px;margin-bottom:14px;line-height:1.65}
+.ht-title{font-size:clamp(17px,1.75vw,22px);line-height:1.35}
+.howto-list button{padding:3px 0 3px 18px}.howto-list button[aria-current]{padding-left:26px}
+.howto-list button[aria-current]::before{top:5px;bottom:5px}
+.howto-cta{margin-top:16px}.howto-cta .button{min-height:44px;padding:9px 20px}
+.howto-right{max-width:330px}
+.howto-card{aspect-ratio:1/1;border-radius:20px;padding:8px}
+.howto-card img{border-radius:14px}
+.howto-meta{margin-top:10px;gap:10px}.howto-meta dd{font-size:12px}
+.howto-progress{display:none}
+@media(max-width:900px){.howto-top{padding:10px 18px 0}.howto-grid{gap:14px;padding:10px 18px 18px}.howto-intro{display:none}
+ .howto-right{max-width:280px}.howto-card{aspect-ratio:4/3;max-width:280px}.howto-meta{display:none}.howto-cta{margin-top:12px}}
+@media(max-width:900px){.howto .ht-title{font-size:13px}.pill-more{display:none}.howto-h1{margin:2px 0 8px}}
