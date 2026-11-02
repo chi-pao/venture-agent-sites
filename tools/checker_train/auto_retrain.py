@@ -133,8 +133,13 @@ def install(pipe, rows, site, table, report, work):
     """Write the winning model into the site: binary, split table, catalog entry, station table."""
     stamp = date.today().strftime('%Y%m%d')
     models = site / 'models'
-    dat = models / f'used_house-{stamp}.dat'
-    component = T.export(pipe, dat, f'models/used_house-{stamp}.dat')
+    # Name the files after their content so a browser can never pair a cached old file with a new hash.
+    staging = models / 'used_house-staging.dat'
+    component = T.export(pipe, staging, 'models/used_house-staging.dat')
+    name = f"used_house-{stamp}-{component['sha256'][:8]}"
+    dat = models / f'{name}.dat'
+    staging.replace(dat)
+    component['path'] = f'models/{name}.dat'
     # Python vs the site's JavaScript runtime on fixed rows, before anything is published.
     sample = rows.sample(64, random_state=3)
     (work / 'component.json').write_text(json.dumps(component, ensure_ascii=False), encoding='utf-8')
@@ -143,7 +148,7 @@ def install(pipe, rows, site, table, report, work):
     (work / 'parity.json').write_text(json.dumps({'rows': feature_rows, 'expected': T.predict_yen(pipe, sample).tolist()}, ensure_ascii=False), encoding='utf-8')
     subprocess.run(['node', str(ROOT / 'tools' / 'checker_eval' / 'parity.mjs'), str(site), str(work)], check=True)
     splits = gzip.compress(json.dumps(component.pop('categoricalSplits'), separators=(',', ':')).encode(), compresslevel=9, mtime=0)
-    split_path = f'models/used_house-{stamp}.splits.json.gz'
+    split_path = f'models/{name}-{hashlib.sha256(splits).hexdigest()[:8]}.splits.json.gz'
     (site / split_path).write_bytes(splits)
     component.update(splitsPath=split_path, splitsSha256=hashlib.sha256(splits).hexdigest(), splitsBytes=len(splits))
     catalog_path = models / 'catalog.json'
@@ -183,6 +188,7 @@ def main():
     actual = hold['price_yen'].to_numpy(float)
     report = {'holdout': f'{len(hold)} sales from the latest {a.holdout_quarters} quarters (period index > {last - a.holdout_quarters})',
               'live': score(predict_site(a.site, hold_inputs, a.work), actual), 'candidates': {}}
+    print('live', report['live'], flush=True)
     for name, recipe in RECIPES.items():
         pipe = train(before, recipe, train_table)
         cand = a.work / name
