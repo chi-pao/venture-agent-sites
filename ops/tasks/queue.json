@@ -94,6 +94,27 @@
           "画面録画には架空のダミー物件を使います"
         ]
       }
+    },
+    {
+      "id": "C-MOVE-01",
+      "kind": "sns_post_draft",
+      "title": "Instagram お引越しのお知らせ",
+      "status": "承認済み",
+      "payload": {
+        "business": "お買い得物件チェッカー",
+        "channel": "Instagram",
+        "format": "お知らせ（フィード投稿・ストーリーズ共通の文面）",
+        "angle": "お買い得物件チェッカーのURLが変わったことを知らせ、新しいURLへ案内する。ブックマークやホーム画面の登録をしている人に、登録し直しをお願いする",
+        "facts": [
+          "お買い得物件チェッカーは https://okaidoku-checker.pages.dev/ にお引越ししました",
+          "これまでのURL（https://okaidoku-checker.rightharp65.chatgpt.site/）はお引越しのお知らせページになります",
+          "ブックマークやスマホのホーム画面に登録している方は、新しいURLで登録し直してください",
+          "使い方・査定の内容はこれまでと同じで、無料で価格チェックできます",
+          "プロフィールのリンクも新しいURLに変更しています"
+        ],
+        "url": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=move_notice",
+        "max_chars": 400
+      }
     }
   ]
 }

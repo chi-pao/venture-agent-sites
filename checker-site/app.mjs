@@ -42,6 +42,15 @@ function updateType(){const type=getInput().type,condo=type==='used_condo';$('ho
 function cities(pref,city=''){$('city').replaceChildren();option($('city'),'',pref?'市区町村を選択':'都道府県を先に選択');for(const [code,[p,name]] of Object.entries(municipalities))if(p===pref)option($('city'),code,name);$('city').disabled=!pref;$('city').value=city;resetDistrict();}
 function hideTowns(){townRequest++;$('town-browser').hidden=true;$('town-options').hidden=true;$('district').setAttribute('aria-expanded','false');}
 function resetDistrict(){$('district').value='';$('district').dataset.selectedTown='';hideTowns();$('town-options').replaceChildren();$('town-status').textContent='市区町村を選ぶと、入力せずに五十音から町名を探せます。';if($('city').value)showTowns();}
+// The town list and the transaction data name some places differently (「際波」/「大字際波」,
+// 「月寒東二条」/「月寒東２条」, a picked 「大久保町八木」 recorded as 「大久保町」). town-aliases.json,
+// built by tools/build_town_aliases.py, maps a picked town to the name the models learned.
+let aliasPromise;
+async function districtKey(city,district){
+  if(!city||!district)return district||'';
+  aliasPromise??=fetch('town-aliases.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
+  return (await aliasPromise)[city]?.[district]||district;
+}
 async function showTowns(jump=''){
   const city=$('city').value,request=++townRequest;
   if(!city){$('town-status').textContent='先に都道府県・市区町村を選択してください。';hideTowns();return;}
@@ -157,7 +166,8 @@ function renderResult(yen,input,{moveFocus=true,modelInfo}={}){
   $('empty-result').hidden=true;$('result').hidden=false;if(moveFocus){$('result').focus({preventScroll:true});if(matchMedia('(max-width:690px)').matches)$('result').scrollIntoView({behavior:'smooth',block:'start'});}
 }
 form.addEventListener('submit',async event=>{event.preventDefault();if(busy||ocrBusy)return;await ready;const input=getInput(),errors=validate(input);if(errors.length){showErrors(errors);return;}autoEstimatePending=false;$('form-errors').hidden=true;setBusy(true);status('model-progress','査定を開始しています…');
-  try{worker??=new Worker(new URL('./model-worker.mjs?v=20261022-price',import.meta.url),{type:'module'});worker.onmessage=e=>{const data=e.data;if(data.kind==='progress')status('model-progress',data.text);else{setBusy(false);if(data.kind==='result'){renderResult(data.yen,input,{modelInfo:data.modelInfo});status('model-progress','査定が完了しました。','success');}else status('model-progress',data.text,'error');}};worker.onerror=()=>{setBusy(false);status('model-progress','モデルの読み込みに失敗しました。再度お試しください。','error');worker?.terminate();worker=null;};worker.postMessage(input);}catch(error){setBusy(false);status('model-progress',error.message,'error');}
+  try{input.districtKey=await districtKey(input.city,input.district);
+  worker??=new Worker(new URL('./model-worker.mjs?v=20261022-price',import.meta.url),{type:'module'});worker.onmessage=e=>{const data=e.data;if(data.kind==='progress')status('model-progress',data.text);else{setBusy(false);if(data.kind==='result'){renderResult(data.yen,input,{modelInfo:data.modelInfo});status('model-progress','査定が完了しました。','success');}else status('model-progress',data.text,'error');}};worker.onerror=()=>{setBusy(false);status('model-progress','モデルの読み込みに失敗しました。再度お試しください。','error');worker?.terminate();worker=null;};worker.postMessage(input);}catch(error){setBusy(false);status('model-progress',error.message,'error');}
 });
 $('revise').onclick=()=>{$('input-title').scrollIntoView({behavior:'smooth',block:'start'});$('price').focus({preventScroll:true});};
 $('download').onclick=()=>{if(!lastResult)return;const r=lastResult,p=r.input,city=municipalities[p.city]?.[1]||p.city;

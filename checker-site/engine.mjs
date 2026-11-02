@@ -3,7 +3,7 @@ export function features(input) {
   return {Area:area,TotalFloorArea:floor,BuildingYear:Number(input.year),BuildingAge:Math.max(0,2026-Number(input.year)),TransactionYear:2026,Quarter:4,
     StationMinutes:input.stationMinutes?Number(input.stationMinutes):null,LandPriceMatchLevel:0,
     LogArea:Math.log1p(area),LogTotalFloorArea:Math.log1p(floor),LandBuildingRatio:floor>0?area/floor:null,
-    MunicipalityCode:input.city,DistrictName:input.district||null,Prefecture:input.prefecture,
+    MunicipalityCode:input.city,DistrictName:input.districtKey||input.district||null,Prefecture:input.prefecture,
     Structure:input.structure||null,CityPlanning:input.planning||null,FloorPlan:input.layout||null,Use:input.type!=='used_condo'?'住宅':null};
 }
 export {transform,componentPrediction,combine} from './model-runtime.mjs';
