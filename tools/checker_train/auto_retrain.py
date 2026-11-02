@@ -48,6 +48,21 @@ def period(frame):
     return frame['TransactionYear'] * 4 + frame['Quarter'] - 1
 
 
+def months(index):
+    """'2026年1〜6月' style label for a period index (year*4+quarter-1) range."""
+    return index // 4, index % 4 * 3
+
+
+def period_label(first, last):
+    (y1, m1), (y2, m2) = months(first), months(last)
+    return f'{y1}年{m1 + 1}〜{m2 + 3}月' if y1 == y2 else f'{y1}年{m1 + 1}月〜{y2}年{m2 + 3}月'
+
+
+def month_end(index):
+    year, month = months(index)
+    return f'{year}年{month + 3}月'
+
+
 def station_table(rows):
     g = rows.dropna(subset=['StationMinutes', 'MunicipalityCode'])
     table = {}
@@ -161,7 +176,7 @@ def install(pipe, rows, site, table, report, work):
         'name': f'中古戸建て・取引価格モデル（{date.today().year}年{date.today().month}月更新）', 'trainedAt': date.today().isoformat(),
         'sourceSha256': component['sha256'], 'releaseKind': 'time_holdout',
         'metrics': {k: best[k] for k in ('n', 'median_ape_pct', 'mae_yen', 'within20_pct')},
-        'comparisonReport': report_path, 'components': [component]}
+        'comparisonReport': report_path, 'validation': report['validation'], 'components': [component]}
     catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     (site / 'station-defaults.json').write_text(json.dumps(table, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
     # The replaced model's files are no longer referenced (the fallback is the small baseline).
@@ -187,6 +202,8 @@ def main():
     hold_inputs = site_inputs(fill_station(hold, train_table))
     actual = hold['price_yen'].to_numpy(float)
     report = {'holdout': f'{len(hold)} sales from the latest {a.holdout_quarters} quarters (period index > {last - a.holdout_quarters})',
+              'validation': {'trainedThrough': month_end(last - a.holdout_quarters),
+                             'holdout': period_label(last - a.holdout_quarters + 1, last)},
               'live': score(predict_site(a.site, hold_inputs, a.work), actual), 'candidates': {}}
     print('live', report['live'], flush=True)
     for name, recipe in RECIPES.items():

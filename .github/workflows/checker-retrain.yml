@@ -63,4 +63,5 @@ jobs:
           git add checker-site
           git commit -m "Checker: better used-house model from the monthly self-improvement run"
           git push origin "$branch"
-          gh pr create --base main --head "$branch" --title "お買い得物件チェッカー：中古戸建てモデルの自動更新（$(date +%Y年%-m月)）" --body-file retrain-work/summary.md
+          gh pr create --base main --head "$branch" --title "お買い得物件チェッカー：中古戸建てモデルの自動更新（$(date +%Y年%-m月)）" --body-file retrain-work/summary.md \
+            || echo "::warning::Pushed $branch but GitHub Actions may not open pull requests here; open one from https://github.com/${{ github.repository }}/pull/new/$branch"
