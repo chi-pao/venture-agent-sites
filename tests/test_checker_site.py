@@ -36,6 +36,39 @@ class CheckerSiteTests(unittest.TestCase):
                 self.assertNotIn('rightharp65.chatgpt.site', text, path.name)
                 self.assertNotIn('/cdn-cgi/', text, path.name)
 
+    def test_picked_town_reaches_the_model_under_its_learned_name(self):
+        # 「際波」 is listed for 宇部市; the transactions (and the model) call it 「大字際波」.
+        aliases = json.loads((SITE / 'town-aliases.json').read_text(encoding='utf-8'))
+        self.assertEqual(aliases['35202']['際波'], '大字際波')
+        from playwright.sync_api import sync_playwright
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
+        handler.log_message = lambda *a: None
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        origin = f'http://127.0.0.1:{server.server_port}'
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page()
+                page.route('**/*', lambda route: route.continue_() if route.request.url.startswith(origin) else route.abort())
+                page.goto(origin + '/')
+                page.wait_for_function("document.querySelector('#prefecture').options.length > 40")
+                page.check('input[name=type][value=used_house]')
+                page.select_option('#prefecture', '山口県')
+                page.select_option('#city', '35202')
+                page.fill('#district', '際波')
+                page.eval_on_selector('#price', "e => { e.value = '1780万円'; e.dispatchEvent(new Event('input', {bubbles: true})); }")
+                page.select_option('#year', '2000')
+                page.fill('#landArea', '238.02')
+                page.fill('#buildingArea', '171.9')
+                page.click('#estimate')
+                page.wait_for_function("/\\d/.test((document.querySelector('#estimated-price')||{}).textContent||'')", timeout=90000)
+                self.assertTrue(page.eval_on_selector('#unknown-categories', 'e => e.hidden'), page.inner_text('#unknown-categories'))
+                self.assertIn('宇部市際波', page.inner_text('#result-location'))
+                browser.close()
+        finally:
+            server.shutdown()
+
     def test_example_appraisal_runs_in_chromium(self):
         from playwright.sync_api import sync_playwright
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
