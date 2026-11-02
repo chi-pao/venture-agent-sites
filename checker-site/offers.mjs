@@ -25,6 +25,15 @@ if(box){
     if(!chosen.length)return;
     box.replaceChildren(el('p',{className:'ad-label',textContent:'広告・PR｜'+labels.join('・')}),...chosen.flatMap(card));
   }
-  document.addEventListener('checker:result',e=>{last=e.detail;render();});
+  // Link to the municipality's area price page when one exists.
+  let codes=null;
+  async function areaLink(d){
+    codes??=fetch('area/codes.json').then(r=>r.ok?r.json():[]).catch(()=>[]);
+    const list=await codes;let a=document.getElementById('area-link');
+    if(!a){a=el('a',{id:'area-link',className:'area-link'});box.before(a);}
+    a.hidden=!(d.city&&list.includes(d.city));
+    if(!a.hidden){a.href='area/'+d.city+'/';a.textContent=d.cityName+'の戸建ての相場（実際の取引価格）を見る →';}
+  }
+  document.addEventListener('checker:result',e=>{last=e.detail;render();areaLink(e.detail);});
   document.querySelectorAll('input[name=intent]').forEach(r=>r.addEventListener('change',()=>{try{localStorage.setItem('checker-intent',intent());}catch{}render();}));
 }

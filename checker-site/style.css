@@ -155,3 +155,4 @@ html,body{overflow-x:clip}
 .intent-switch label:has(input:checked){border-color:#1f5fd6;background:#eef3fd;font-weight:700}
 .intent-switch input{accent-color:#1f5fd6;margin:0}
 .intent-switch+.affiliate-result{border-top:0;padding-top:12px}
+.area-link{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:#eef3fd;color:#1f5fd6;font-weight:700;text-decoration:none;font-size:13px}

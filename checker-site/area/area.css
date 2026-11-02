@@ -1,0 +1,14 @@
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;color:#14233b;background:#fff;line-height:1.75}
+a{color:#1f5fd6}.bar{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-bottom:1px solid #e3eaf6}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;text-decoration:none;color:#14233b}.brand img{border-radius:9px}
+.cta-s{font-size:13px;font-weight:700;text-decoration:none;background:#1f5fd6;color:#fff;padding:7px 14px;border-radius:20px}
+main{max-width:860px;margin:0 auto;padding:16px 18px 40px}.crumbs{font-size:12px;color:#6b7a90;margin-bottom:10px}
+h1{font-size:28px;line-height:1.4;margin:6px 0 8px}h2{font-size:19px;margin:30px 0 10px;padding-left:10px;border-left:4px solid #1f5fd6}
+.lead{color:#3d4b60}.stat{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0}.stat div{background:#eef3fd;border-radius:14px;padding:12px 14px}
+.stat span{display:block;font-size:12px;color:#5f6f86}.stat strong{font-size:22px}
+.bars .row{display:grid;grid-template-columns:110px 1fr 150px;gap:10px;align-items:center;font-size:14px;margin:6px 0}.bars .b{background:#eef3fd;border-radius:8px;height:16px;overflow:hidden}
+.bars i{display:block;height:100%;background:#1f5fd6;border-radius:8px}.bars .v{font-weight:700}.bars small{font-weight:400;color:#6b7a90;margin-left:4px}
+.cta{display:block;text-align:center;margin:28px 0 8px;background:#1f5fd6;color:#fff;text-decoration:none;font-weight:800;padding:14px;border-radius:14px}
+.tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid #e3eaf6;padding:7px 6px;text-align:left;white-space:nowrap}td.num{text-align:right}
+.note{font-size:12px;color:#6b7a90}ul.cities{columns:3;padding-left:18px}footer{max-width:860px;margin:0 auto;padding:18px;font-size:11px;color:#6b7a90;border-top:1px solid #e3eaf6}
+@media(max-width:600px){h1{font-size:23px}.stat{grid-template-columns:1fr}.bars .row{grid-template-columns:86px 1fr 118px;font-size:12px}ul.cities{columns:2}}

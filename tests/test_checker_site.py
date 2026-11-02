@@ -110,6 +110,17 @@ class CheckerSiteTests(unittest.TestCase):
         finally:
             server.shutdown()
 
+    def test_area_pages_are_listed_and_cite_the_source(self):
+        codes = json.loads((SITE / 'area' / 'codes.json').read_text(encoding='utf-8'))
+        self.assertGreater(len(codes), 1000)
+        sitemap = (SITE / 'sitemap.xml').read_text(encoding='utf-8')
+        self.assertIn('https://okaidoku-checker.pages.dev/area/35202/', sitemap)
+        page = (SITE / 'area' / '35202' / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('<link rel="canonical" href="https://okaidoku-checker.pages.dev/area/35202/">', page)
+        self.assertIn('宇部市の戸建ての相場', page)
+        self.assertIn('出典：国土交通省 不動産情報ライブラリ', page)
+        self.assertIn('Sitemap: https://okaidoku-checker.pages.dev/sitemap.xml', (SITE / 'robots.txt').read_text(encoding='utf-8'))
+
     def test_example_appraisal_runs_in_chromium(self):
         from playwright.sync_api import sync_playwright
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))

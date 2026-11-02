@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://okaidoku-checker.pages.dev/sitemap.xml
