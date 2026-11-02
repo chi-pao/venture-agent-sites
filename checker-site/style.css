@@ -150,3 +150,9 @@ html,body{overflow-x:clip}
 .section-mark{border-color:#cdddfb!important;background:#f1f6ff!important;color:#1f5fd6!important}
 .eyebrow{color:#1f5fd6!important}
 .card{border-color:#e3eaf6!important}
+.intent-switch{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:20px 0 0;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:#5f6f86}
+.intent-switch label{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #d6e1f5;border-radius:30px;cursor:pointer;color:#14233b;background:#fff}
+.intent-switch label:has(input:checked){border-color:#1f5fd6;background:#eef3fd;font-weight:700}
+.intent-switch input{accent-color:#1f5fd6;margin:0}
+.intent-switch+.affiliate-result{border-top:0;padding-top:12px}
+.area-link{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:#eef3fd;color:#1f5fd6;font-weight:700;text-decoration:none;font-size:13px}

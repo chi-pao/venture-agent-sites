@@ -1,0 +1,51 @@
+{
+ "status": "承認待ち",
+ "note": "1週目。インパクト系を中心に（問いかけ3種＋数字ドン）、比較用に3ステップ。平日18:00、1日1本を Threads と Bluesky に投稿。utm_content で型ごとの集客を測る。",
+ "posts": [
+  {
+   "id": "W1-1",
+   "pattern": "question-a",
+   "image": "ops/sns/week1/p-question-a.png",
+   "channels": {
+    "threads": "この家、2,980万円。高い？ 安い？\n\n物件ページのスクショを貼るだけで、参考査定価格と販売価格の差が分かります。\n「なんとなく高い気がする」を、数字で確かめてみませんか。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=question-a",
+    "bluesky": "この家、2,980万円。高い？ 安い？\n\n物件ページのスクショを貼るだけで、参考査定価格と販売価格の差が分かります。\n「なんとなく高い気がする」を、数字で確かめてみませんか。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=question-a"
+   }
+  },
+  {
+   "id": "W1-2",
+   "pattern": "question-b",
+   "image": "ops/sns/week1/p-question-b.png",
+   "channels": {
+    "threads": "その値段、相場より高いかも？\n\n気になる物件のスクショを1枚貼るだけで、参考査定価格と比べられます。\n判定は「割安の可能性／相場に近い／割高の可能性」の3段階。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=question-b",
+    "bluesky": "その値段、相場より高いかも？\n\n気になる物件のスクショを1枚貼るだけで、参考査定価格と比べられます。\n判定は「割安の可能性／相場に近い／割高の可能性」の3段階。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=question-b"
+   }
+  },
+  {
+   "id": "W1-3",
+   "pattern": "number",
+   "image": "ops/sns/week1/p-number.png",
+   "channels": {
+    "threads": "参考査定より −398万円。\n\n入力例（中古マンション）で、販売価格を2,680万円にすると\n参考査定3,078万円に対して割安率12.9％ →「割安の可能性」。\n\n販売価格を変えるだけで、価格差がすぐ更新されます。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=number",
+    "bluesky": "参考査定より −398万円。\n\n入力例（中古マンション）で、販売価格を2,680万円にすると\n参考査定3,078万円に対して割安率12.9％ →「割安の可能性」。\n\n販売価格を変えるだけで、価格差がすぐ更新されます。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=number"
+   }
+  },
+  {
+   "id": "W1-4",
+   "pattern": "question-c",
+   "image": "ops/sns/week1/p-question-c.png",
+   "channels": {
+    "threads": "中古の家、いくらなら妥当？\n\n国土交通省の取引データで学習したモデルで、参考査定価格を計算します。\n中古戸建て・中古マンション・新築戸建てに対応。計算はこの端末の中で行います。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=question-c",
+    "bluesky": "中古の家、いくらなら妥当？\n\n国土交通省の取引データで学習したモデルで、参考査定価格を計算します。\n中古戸建て・中古マンション・新築戸建てに対応。計算はこの端末の中で行います。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=question-c"
+   }
+  },
+  {
+   "id": "W1-5",
+   "pattern": "steps",
+   "image": "ops/sns/week1/p-steps.png",
+   "channels": {
+    "threads": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=steps",
+    "bluesky": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=steps"
+   }
+  }
+ ]
+}

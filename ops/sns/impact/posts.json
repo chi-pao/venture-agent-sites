@@ -1,0 +1,54 @@
+{
+ "status": "承認待ち",
+ "note": "インパクト系の画像6種（データの数字・ストップ・VS・知ってた？・スクショ）。1080×1350。数字は国の取引データからの集計と、入力例の実際の査定結果のみ。",
+ "posts": [
+  {
+   "pattern": "region",
+   "image": "ops/sns/impact/i-region.png",
+   "channels": {
+    "threads": "同じ戸建てでも、4倍以上の差。\n\n2025年に実際に売れた価格の中央値\n東京都 6,000万円\n山口県 1,400万円\n\nあなたが気になる物件は、その地域の相場と比べてどう？（出典：国土交通省 不動産情報ライブラリ、2025年の戸建て［土地と建物］の取引、当サイト集計）\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=region",
+    "bluesky": "同じ戸建てでも、4倍以上の差。\n\n2025年に実際に売れた価格の中央値\n東京都 6,000万円\n山口県 1,400万円\n\nあなたが気になる物件は、その地域の相場と比べてどう？（出典：国土交通省 不動産情報ライブラリ、2025年の戸建て［土地と建物］の取引、当サイト集計）\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=region"
+   }
+  },
+  {
+   "pattern": "age",
+   "image": "ops/sns/impact/i-age.png",
+   "channels": {
+    "threads": "築年数で、ここまで変わる。\n\n実際に売れた価格の中央値\n築5年以内 4,000万円\n築16〜20年 2,700万円\n築26〜30年 1,800万円\n築41年以上 800万円（出典：国土交通省 不動産情報ライブラリ、2025年の戸建て［土地と建物］の取引、当サイト集計）\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=age",
+    "bluesky": "築年数で、ここまで変わる。\n\n実際に売れた価格の中央値\n築5年以内 4,000万円\n築16〜20年 2,700万円\n築26〜30年 1,800万円\n築41年以上 800万円（出典：国土交通省 不動産情報ライブラリ、2025年の戸建て［土地と建物］の取引、当サイト集計）\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=age"
+   }
+  },
+  {
+   "pattern": "stop",
+   "image": "ops/sns/impact/i-stop.png",
+   "channels": {
+    "threads": "契約の前に、ひと確認。\n\n✓ その販売価格、相場と比べた？\n✓ スクショ1枚で、参考査定と比較\n✓ 判定は「割安の可能性／相場に近い／割高の可能性」\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=stop",
+    "bluesky": "契約の前に、ひと確認。\n\n✓ その販売価格、相場と比べた？\n✓ スクショ1枚で、参考査定と比較\n✓ 判定は「割安の可能性／相場に近い／割高の可能性」\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=stop"
+   }
+  },
+  {
+   "pattern": "vs",
+   "image": "ops/sns/impact/i-vs.png",
+   "channels": {
+    "threads": "販売価格 2,680万円 vs 参考査定 3,078万円。\n\n入力例（中古マンション）の実際の結果は、割安率12.9％で「割安の可能性」。\n販売価格を変えるだけで、判定がすぐ更新されます。\n\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=vs",
+    "bluesky": "販売価格 2,680万円 vs 参考査定 3,078万円。\n\n入力例（中古マンション）の実際の結果は、割安率12.9％で「割安の可能性」。\n販売価格を変えるだけで、判定がすぐ更新されます。\n\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=vs"
+   }
+  },
+  {
+   "pattern": "didyouknow",
+   "image": "ops/sns/impact/i-didyouknow.png",
+   "channels": {
+    "threads": "知ってた？\n家が実際にいくらで売れたか、国が公開しています（国土交通省 不動産情報ライブラリ）。\n\nお買い得物件チェッカーは、その取引データで学習したモデルで、気になる物件の価格の目安を計算します。無料・登録なし。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=didyouknow",
+    "bluesky": "知ってた？\n家が実際にいくらで売れたか、国が公開しています（国土交通省 不動産情報ライブラリ）。\n\nお買い得物件チェッカーは、その取引データで学習したモデルで、気になる物件の価格の目安を計算します。無料・登録なし。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=didyouknow"
+   }
+  },
+  {
+   "pattern": "screenshot",
+   "image": "ops/sns/impact/i-screenshot.png",
+   "channels": {
+    "threads": "スクショ1枚で、高いか安いか。\n\n物件ページのスクショを貼ると、文字を読み取って参考査定価格を計算。\n販売価格との差と「割安の可能性／相場に近い／割高の可能性」を表示します。\n\n画像はこの端末の中で読み取ります。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=impact&utm_content=screenshot",
+    "bluesky": "スクショ1枚で、高いか安いか。\n\n物件ページのスクショを貼ると、文字を読み取って参考査定価格を計算。\n販売価格との差と「割安の可能性／相場に近い／割高の可能性」を表示します。\n\n画像はこの端末の中で読み取ります。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=impact&utm_content=screenshot"
+   }
+  }
+ ]
+}
