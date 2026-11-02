@@ -25,38 +25,32 @@
 .install-help summary{cursor:pointer;font-weight:700}
 .install-help p{margin:10px 0 0;line-height:1.65}
 
-/* 2026-11 モノトーン版: 色は明るさを保って白黒に置き換え。上部はブランド名を大きく見せる */
-:root{--ink:#111;--muted:#666;--green:#111;--line:#e4e4e4;--paper:#fafafa}
-body{background:#fafafa;color:#111;-webkit-font-smoothing:antialiased}
-.topbar{border-bottom:1px solid #111}
-.hero.hero-brand{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:48px;align-items:end;padding:64px 22px 48px;border-bottom:1px solid #111;margin-bottom:28px}
-.hero-kicker{font-size:11px;letter-spacing:.32em;font-weight:700;margin:0 0 18px;color:#111}
-.hero-title{margin:0;font-family:var(--serif);font-weight:800;line-height:1.02;letter-spacing:-.01em}
-.hero-title span{display:block}
-.hero-title-main,.hero-title-sub{font-size:clamp(40px,6.2vw,82px);white-space:nowrap}
-.hero-title-sub{-webkit-text-stroke:1.5px #111;color:transparent}
-.hero-question{font-size:20px;font-weight:700;margin:28px 0 6px;letter-spacing:.02em}
-.hero-brand .hero-copy{color:#555;font-size:14px;margin:0}
-.hero-brand .input-methods{margin-top:26px}
-.hero-brand .button.primary{background:#111;color:#fff;border-color:#111;border-radius:0;letter-spacing:.06em}
-.hero-brand .button.primary:hover{background:#333}
-.hero-brand .button.secondary{background:transparent;color:#111;border:1px solid #111;border-radius:0;letter-spacing:.06em}
-.hero-sample{border:1px solid #111;background:#fff;padding:26px 26px 22px;box-shadow:10px 10px 0 #111}
-.hero-sample-label{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.24em;font-weight:700;margin:0 0 20px}
-.hero-sample-row{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #e4e4e4;padding:10px 0}
-.hero-sample-row span{font-size:12px;color:#555}
-.hero-sample-row strong{font-family:var(--serif);font-size:30px;font-weight:800;letter-spacing:.01em}
-.hero-sample-row strong small{font-size:13px;margin-left:2px}
-.hero-sample-bars{display:grid;gap:8px;margin:20px 0 14px}
-.hero-sample-bars i{display:block;height:8px;background:#111}
-.hero-sample-bars i.estimate{background:repeating-linear-gradient(90deg,#111 0 6px,transparent 6px 9px)}
-.hero-sample-verdict{display:inline-block;border:1px solid #111;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.1em}
-.hero-sample-note{font-size:10px;color:#777;margin:12px 0 0}
-.journey{background:#fff;border-color:#111;border-radius:0}
-.card{border-radius:0;border-color:#d6d6d6;box-shadow:none}
-.button{border-radius:0}
-@media(max-width:900px){.hero.hero-brand{grid-template-columns:1fr;gap:34px;padding:40px 18px 36px}.hero-sample{box-shadow:6px 6px 0 #111}}
-@media(max-width:690px){.hero-title-main,.hero-title-sub{font-size:44px}.hero-question{font-size:17px}.hero-sample-row strong{font-size:24px}}
-.brand-icon,.hero-brand-icon{filter:grayscale(1) contrast(1.15)}
+/* 2026-11 モノトーン版（やわらかめ）: 色は明るさを保ってグレーに置き換え。上部はブランド名を大きく見せる */
+:root{--ink:#2b2b2b;--muted:#6f6f6f;--green:#2b2b2b;--line:#e6e6e3;--paper:#f7f7f5}
+body{background:#f7f7f5;color:#2b2b2b;-webkit-font-smoothing:antialiased}
+.hero.hero-brand{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:48px;align-items:center;padding:56px 22px 44px}
+.hero-kicker{font-size:11px;letter-spacing:.28em;font-weight:650;margin:0 0 16px;color:#8a8a8a}
+.hero-title{margin:0;font-family:var(--serif);font-weight:700;line-height:1.15;letter-spacing:.01em;color:#2b2b2b}
+.hero-title span{display:block;white-space:nowrap}
+.hero-title-main{font-size:clamp(36px,5vw,64px)}
+.hero-title-sub{font-size:clamp(36px,5vw,64px);color:#9a9a9a}
+.hero-question{font-size:18px;font-weight:700;margin:24px 0 6px;letter-spacing:.02em}
+.hero-brand .hero-copy{color:#6f6f6f;font-size:14px;margin:0}
+.hero-brand .input-methods{margin-top:24px}
 .hero-brand .button{text-decoration:none}
-@media(max-width:690px){.hero-title-main,.hero-title-sub{font-size:44px}.hero-title-sub{-webkit-text-stroke:1.2px #111}}
+.hero-brand .button.primary{background:#2b2b2b;color:#fff;border-color:#2b2b2b}
+.hero-brand .button.primary:hover{background:#444}
+.hero-brand .button.secondary{background:#fff;color:#2b2b2b;border:1px solid #d6d6d3}
+.hero-sample{border:1px solid #e6e6e3;border-radius:16px;background:#fff;padding:24px 26px 20px;box-shadow:0 10px 30px #0000000d}
+.hero-sample-label{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;font-weight:650;color:#8a8a8a;margin:0 0 14px}
+.hero-sample-row{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #efefec;padding:10px 0}
+.hero-sample-row span{font-size:12px;color:#6f6f6f}
+.hero-sample-row strong{font-family:var(--serif);font-size:28px;font-weight:700}
+.hero-sample-row strong small{font-size:12px;margin-left:2px;font-weight:600}
+.hero-sample-bars{display:grid;gap:7px;margin:18px 0 14px}
+.hero-sample-bars i{display:block;height:6px;border-radius:6px;background:#2b2b2b}
+.hero-sample-bars i.estimate{background:#c9c9c6}
+.hero-sample-verdict{display:inline-block;background:#f0f0ed;border-radius:30px;padding:4px 14px;font-size:12px;font-weight:700;letter-spacing:.06em}
+.hero-sample-note{font-size:10px;color:#8a8a8a;margin:12px 0 0}
+@media(max-width:900px){.hero.hero-brand{grid-template-columns:1fr;gap:30px;padding:36px 18px 32px}}
+@media(max-width:690px){.hero-title-main,.hero-title-sub{font-size:38px}.hero-question{font-size:16px}.hero-sample-row strong{font-size:24px}}
