@@ -1,0 +1,66 @@
+name: Checker used-house model self-improvement
+# Monthly: fetch the newest MLIT quarters, train candidate models, score them against the live
+# model on the latest held-out sales through the site's own runtime, and open a pull request only
+# when a candidate is clearly better. Nothing reaches the site until that pull request is merged.
+on:
+  schedule:
+    - cron: '23 3 7 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: checker-retrain
+  cancel-in-progress: false
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install training dependencies
+        run: python -m pip install --upgrade pip pandas lightgbm scikit-learn playwright
+      - name: Restore the MLIT archive (2021 Q4 - 2025 Q4)
+        run: |
+          mkdir -p data
+          curl --fail --location --retry 3 --max-time 300 \
+            https://github.com/chi-pao/-/releases/download/ai-training-data-v1/All_20214_20254.zip -o data/All.zip
+      - name: Fetch newer quarters (needs the MLIT_API_KEY secret)
+        env:
+          MLIT_API_KEY: ${{ secrets.MLIT_API_KEY }}
+        run: |
+          if [ -z "$MLIT_API_KEY" ]; then echo "::warning::MLIT_API_KEY is not set; training on the archive only."; fi
+          python tools/checker_train/fetch_mlit.py --out data/mlit --quarters 6
+      - name: Train candidates and compare with the live model
+        id: retrain
+        run: python tools/checker_train/auto_retrain.py --archive data/All.zip --extra data/mlit --site checker-site --work retrain-work
+      - name: Summary
+        if: always()
+        run: cat retrain-work/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Test the updated site
+        if: steps.retrain.outputs.changed == 'true'
+        run: |
+          python -m playwright install --with-deps chromium
+          python -m unittest tests.test_checker_site tests.test_town_aliases tests.test_auto_retrain -v
+      - name: Open a pull request with the better model
+        if: steps.retrain.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="auto/checker-model-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add checker-site
+          git commit -m "Checker: better used-house model from the monthly self-improvement run"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "お買い得物件チェッカー：中古戸建てモデルの自動更新（$(date +%Y年%-m月)）" --body-file retrain-work/summary.md

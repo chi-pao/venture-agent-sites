@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install app and test dependencies
-        run: python -m pip install --upgrade pip streamlit pandas pillow playwright
+        run: python -m pip install --upgrade pip streamlit pandas pillow playwright lightgbm scikit-learn
       - name: Install real Chromium for Playwright
         run: python -m playwright install --with-deps chromium
       - name: Compile production program
