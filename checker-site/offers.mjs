@@ -17,7 +17,8 @@ if(box){
   }
   async function render(){
     const list=await load(),want=intent(),age=last?2026-last.year:null;
-    const fit=list.filter(o=>o.intent.includes(want)&&(o.minAge==null||(age!=null&&age>=o.minAge)))
+    const fit=list.filter(o=>o.intent.includes(want)&&(o.minAge==null||(age!=null&&age>=o.minAge))
+      &&(!o.types||(last&&o.types.includes(last.type)))&&(!o.prefectures||(last&&o.prefectures.includes(last.prefecture))))
       .sort((a,b)=>(a.priority??9)-(b.priority??9));
     const labels=[],chosen=[];
     for(const o of fit){if(chosen.length>=2)break;chosen.push(o);if(!labels.includes(o.label))labels.push(o.label);}

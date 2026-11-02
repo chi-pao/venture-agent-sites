@@ -1,5 +1,5 @@
 {
- "note": "結果画面の広告。enabled が true で href のあるものだけ表示。買う予定／売る予定（intent）と築年数（minAge）で出し分け、最大2つ。広告コードは A8.net の承認後に入れる。",
+ "note": "結果画面の広告。enabled が true で href のあるものだけ表示。買う予定／売る予定（intent）、物件の種類（types: used_house / used_condo / new_house）、都道府県（prefectures）、築年数の下限（minAge）で出し分け、優先度（priority、小さいほど先）の順に最大2つ。広告コードは A8.net の承認後に入れる。",
  "offers": [
   {
    "id": "fire-banner",
@@ -29,17 +29,48 @@
    "pixel": "https://www12.a8.net/0.gif?a8mat=4BECGX+3O692Q+3RU+6S45GI"
   },
   {
-   "id": "sell-assessment",
+   "id": "sell-rakuuru-house",
    "enabled": false,
    "intent": [
     "sell"
    ],
+   "types": [
+    "used_house"
+   ],
    "priority": 1,
-   "label": "不動産の一括査定",
+   "label": "空き家・中古戸建ての買取査定",
    "kind": "text",
    "href": "",
    "text": "",
-   "note": "A8.net で「不動産 査定」を検索して提携。承認後に広告コードを入れて enabled を true にする"
+   "note": "A8.net ラクウル（空き家・中古戸建て買取）s00000024144003。新規査定申込 1万円"
+  },
+  {
+   "id": "sell-rakuuru-old",
+   "enabled": false,
+   "intent": [
+    "sell"
+   ],
+   "minAge": 45,
+   "priority": 0,
+   "label": "築年数の古い家・訳あり物件の買取査定",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net ラクウル（訳アリ不動産買取）s00000024144001。旧耐震・築古物件など。新規査定申込 1万円"
+  },
+  {
+   "id": "sell-nomucom",
+   "enabled": false,
+   "intent": [
+    "sell"
+   ],
+   "prefectures": [],
+   "priority": 2,
+   "label": "不動産の売却査定",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net ノムコム s00000026205002。野村不動産ソリューションズの営業エリア外は否認のため、営業エリアの都道府県を prefectures に入れる。初回査定問合せ 5千円"
   },
   {
    "id": "loan-compare",
