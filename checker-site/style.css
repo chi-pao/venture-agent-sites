@@ -66,3 +66,52 @@
  .hero-steps li{flex-direction:column;gap:4px;padding:10px 4px;text-align:center;font-size:11px}
  .hero-steps span{display:flex;align-items:center;justify-content:center}}
 @media(max-width:690px){.hero-steps span{flex-direction:column;gap:4px;white-space:nowrap;font-size:11px}.hero-steps b{margin:0}}
+/* 2026-11 開いてすぐの「使い方」一覧（参考: 作品一覧のような静かなレイアウト） */
+.howto{--hg:#e8e7e3;--hink:#1d1d1b;--hsoft:#b4b2ac;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Noto Sans Mono CJK JP",monospace;background:var(--hg);color:var(--hink);position:relative;margin:0 calc(50% - 50vw);padding:0 calc(50vw - 50%)}
+@media(min-width:901px){.howto{height:230vh}.howto-sticky{position:sticky;top:0;height:100vh;display:flex;flex-direction:column}}
+.howto-top{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 22px 0;max-width:1240px;margin:0 auto;width:100%}
+.howto-pill{font-family:var(--mono);font-size:11px;border:1px solid #d3d1cb;border-radius:30px;padding:5px 14px;background:#efeeea;color:#55534e}
+.howto-count{font-family:var(--mono);font-size:11px;color:#8a8882;white-space:nowrap}.howto-count b{color:var(--hink);font-weight:600}
+.howto-grid{flex:1;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:56px;align-items:center;max-width:1240px;margin:0 auto;width:100%;padding:28px 22px 36px}
+.howto-h1{font-size:15px;font-weight:700;letter-spacing:.06em;margin:0 0 10px;color:#0c857c}
+.howto-intro{font-family:var(--mono);font-size:12px;line-height:1.75;color:#55534e;max-width:30em;margin:0 0 26px}
+.howto-list{list-style:none;margin:0;padding:0 0 0 0;border-left:1px solid #d3d1cb}
+.howto-list button{all:unset;box-sizing:border-box;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:20px;width:100%;padding:6px 0 6px 26px;position:relative;transition:padding .35s cubic-bezier(.2,.8,.2,1)}
+.howto-list button:focus-visible{outline:2px solid #0c857c;outline-offset:2px}
+.ht-title{font-size:clamp(24px,3vw,40px);font-weight:600;letter-spacing:-.01em;line-height:1.25;color:var(--hsoft);transition:color .3s}
+.ht-no{font-family:var(--mono);font-size:11px;color:#c4c2bc;transition:color .3s}
+.howto-list button[aria-current]{padding-left:38px}
+.howto-list button[aria-current] .ht-title{color:var(--hink)}.howto-list button[aria-current] .ht-no{color:var(--hink)}
+.howto-list button[aria-current]::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:3px;background:var(--hink)}
+.howto-list button:hover .ht-title{color:#7d7b75}
+.howto-cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}
+.howto-cta .button{margin:0;width:auto;min-height:48px;font-size:13px;padding:11px 22px;border-radius:12px;text-decoration:none;box-shadow:none;justify-content:center}
+.howto-cta .button.primary{background:#0a263c;color:#fff}.howto-cta .button.primary:hover{background:#123a57}
+.howto-cta .button.secondary{background:transparent;color:var(--hink);border:1px solid #bdbbb5}
+.howto-right{display:flex;flex-direction:column;align-items:stretch;max-width:460px;width:100%;justify-self:end}
+.howto-card{margin:0;aspect-ratio:4/5;border-radius:26px;background:#f4f3f0;padding:10px;box-shadow:0 30px 60px #00000014,inset 0 0 0 1px #ffffffaa;overflow:hidden;display:grid;place-items:center}
+.howto-card img{width:100%;height:100%;object-fit:cover;object-position:top;border-radius:18px;background:#fff}
+.howto-card[data-mode="icon"]{background:radial-gradient(circle at 50% 42%,#f3bf6355 0%,#0c857c1f 40%,#f4f3f0 72%)}
+.howto-card[data-mode="icon"] img{width:62%;height:auto;object-fit:contain;background:none;border-radius:22%;box-shadow:0 24px 48px #0a263c40}
+.howto-card.swap img{animation:howtoSwap .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes howtoSwap{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
+.howto-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 6px 0}
+.howto-meta dt{font-family:var(--mono);font-size:10px;color:#8a8882;margin-bottom:3px}
+.howto-meta dd{margin:0;font-size:13px;font-weight:650;line-height:1.45}
+.howto-progress{position:absolute;left:0;right:0;bottom:0;height:2px;background:#d3d1cb}.howto-progress i{display:block;height:100%;width:0;background:var(--hink)}
+@media(min-width:901px){.howto-progress{position:sticky;bottom:0}}
+@media(max-width:900px){.howto-grid{grid-template-columns:1fr;gap:26px;padding:20px 18px 30px}.howto-right{justify-self:center;max-width:420px}.howto-progress{display:none}
+ .howto-list{display:flex;overflow-x:auto;border-left:0;gap:6px;padding-bottom:4px;scrollbar-width:none}.howto-list::-webkit-scrollbar{display:none}
+ .howto-list button{padding:8px 14px!important;border:1px solid #d3d1cb;border-radius:30px;white-space:nowrap}.howto-list button::before{display:none}
+ .howto-list button[aria-current]{background:var(--hink)}.howto-list button[aria-current] .ht-title{color:#fff}
+ .ht-title{font-size:13px;color:#6f6d68}.ht-no{display:none}
+ .howto-cta{order:3}.howto-cta .button{flex:1}
+ .howto-pill{font-size:10px}.howto-card{aspect-ratio:1/1}}
+html,body{overflow-x:clip}
+.howto{margin:0 calc(50% - 50vw);padding:0}
+.howto-grid>*{min-width:0}
+@media(max-width:900px){.howto-top{padding:16px 18px 0}.howto-pill{white-space:normal}.howto-card{max-width:360px;margin:0 auto}.howto-meta{margin:14px 0 0}}
+.howto-card{display:block;place-items:initial}
+.howto-card img{height:auto;object-fit:initial}
+.howto-card[data-mode="icon"]{display:grid;place-items:center}
+.howto-progress{position:relative!important;bottom:auto;flex:0 0 2px;margin-top:auto}
