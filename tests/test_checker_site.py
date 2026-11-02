@@ -28,6 +28,15 @@ class CheckerSiteTests(unittest.TestCase):
             data = (SITE / component['path']).read_bytes()
             self.assertEqual(len(data), int(component['bytes']), component['path'])
             self.assertEqual(hashlib.sha256(data).hexdigest(), component['sha256'], component['path'])
+            if 'splitsPath' in component:
+                splits = (SITE / component['splitsPath']).read_bytes()
+                self.assertEqual(len(splits), int(component['splitsBytes']), component['splitsPath'])
+                self.assertEqual(hashlib.sha256(splits).hexdigest(), component['splitsSha256'], component['splitsPath'])
+        # Cloudflare Pages refuses files over 25 MiB; the catalog is loaded on every visit.
+        for path in SITE.rglob('*'):
+            if path.is_file():
+                self.assertLess(path.stat().st_size, 25 * 1024 * 1024, path.name)
+        self.assertLess((SITE / 'models' / 'catalog.json').stat().st_size, 3_000_000)
 
     def test_no_reference_to_the_old_host_remains(self):
         for path in SITE.rglob('*'):

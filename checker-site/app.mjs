@@ -46,6 +46,13 @@ function resetDistrict(){$('district').value='';$('district').dataset.selectedTo
 // 「月寒東二条」/「月寒東２条」, a picked 「大久保町八木」 recorded as 「大久保町」). town-aliases.json,
 // built by tools/build_town_aliases.py, maps a picked town to the name the models learned.
 let aliasPromise;
+// 中古戸建てで駅徒歩が空欄のときは、同じ町（なければ市区町村）の取引で一般的な分数を使う（station-defaults.json）。
+let stationPromise;
+async function stationDefault(city,district){
+  if(!city)return null;
+  stationPromise??=fetch('station-defaults.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
+  const t=(await stationPromise)[city];return t?(t[district]??t['']??null):null;
+}
 async function districtKey(city,district){
   if(!city||!district)return district||'';
   aliasPromise??=fetch('town-aliases.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
@@ -132,7 +139,7 @@ for(let n=0;n<10000;n+=100)option($('priceHundreds'),String(n),fmt(n)+'万円');
 for(let n=1;n<100;n++)option($('priceRemainder'),String(n),n+'万円');
 for(let minutes=1;minutes<=180;minutes++)option($('stationMinutes'),String(minutes),'徒歩'+minutes+'分');
 const ready=loadData();updateType();
-ready.then(async()=>{if(!catalog)return;try{const r=await fetch(learningManifestUrl,{cache:'no-cache',credentials:'omit',signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error('manifest');const m=await r.json();$('learning-status').textContent=acceptedLearning(m,catalog)?'比較検証を通過した新しい中古戸建てモデルを取り込みます。更新日：'+m.approved_at.slice(0,10):(catalog.models.used_house.releaseKind==='reviewed_existing_transactions'?'中古戸建ては、既存の取引データで旧モデルとの比較を行った2026年10月更新モデルを使用しています。独立検証は未完了です。':'比較検証を通過した学習結果を待っています。現在は保存済みモデルで査定します。');}catch{$('learning-status').textContent=(catalog.models.used_house.releaseKind==='reviewed_existing_transactions'?'中古戸建ては2026年10月更新モデルで査定します。独立検証は未完了です。更新情報は確認できませんでした。':'現在の保存済みモデルで査定します。更新情報は確認できませんでした。');}});
+ready.then(async()=>{if(!catalog)return;try{const r=await fetch(learningManifestUrl,{cache:'no-cache',credentials:'omit',signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error('manifest');const m=await r.json();$('learning-status').textContent=acceptedLearning(m,catalog)?'比較検証を通過した新しい中古戸建てモデルを取り込みます。更新日：'+m.approved_at.slice(0,10):(['reviewed_existing_transactions','time_holdout'].includes(catalog.models.used_house.releaseKind)?'中古戸建ては2026年11月更新モデルを使用しています。学習に使っていない2025年の取引で、旧モデルより誤差が小さいことを確認済みです。':'比較検証を通過した学習結果を待っています。現在は保存済みモデルで査定します。');}catch{$('learning-status').textContent=(['reviewed_existing_transactions','time_holdout'].includes(catalog.models.used_house.releaseKind)?'中古戸建ては2026年11月更新モデルで査定します。更新情報は確認できませんでした。':'現在の保存済みモデルで査定します。更新情報は確認できませんでした。');}});
 $('prefecture').addEventListener('change',()=>cities($('prefecture').value));
 $('city').addEventListener('change',resetDistrict);
 for(const [key] of townKanaGroups){const button=document.createElement('button');button.type='button';button.textContent=key;button.dataset.kana=key;button.setAttribute('aria-label',key==='他'?'その他の町名へ移動':key+'行の町名へ移動');button.setAttribute('aria-controls','town-options');button.onclick=()=>{$('district').value='';markChanged();showTowns(key);};$('town-kana').append(button);}
@@ -159,15 +166,15 @@ function renderResult(yen,input,{moveFocus=true,modelInfo}={}){
   const max=Math.max(price,estimate);$('sale-bar').style.width=price/max*100+'%';$('estimate-bar').style.width=estimate/max*100+'%';$('sale-bar-text').textContent=fmt(price)+'万円';$('estimate-bar-text').textContent=fmt(estimate)+'万円';
   $('result-description').textContent=c.discount>=0?'販売価格は参考査定より約'+fmt(c.difference)+'万円低い結果です。建物の状態や修繕費をあわせて確認してください。':'販売価格は参考査定より約'+fmt(-c.difference)+'万円高い結果です。立地・設備・リフォームの内容もあわせて確認してください。';
   const city=municipalities[input.city]?.[1]||input.city;$('result-location').textContent=typeLabels[input.type]+' / '+input.prefecture+city+(input.district||'')+' / '+(input.type==='used_condo'?'専有 '+displayArea(input.area)+'㎡':'土地 '+displayArea(input.landArea)+'㎡・建物 '+displayArea(input.buildingArea)+'㎡')+' / '+input.year+'年築';
-  $('model-name').textContent='使用モデル：'+model.name+'。'+(model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで旧モデルとの比較を行い、改善を確認して採用しました。':'保存済みの学習モデルを使用しています。');
-  const metric=model.metrics?.median_ape_pct;$('validation-metric').textContent=metric!=null?(model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで比較した際の誤差中央値：':'保存モデルの検証時の誤差中央値：')+Number(metric).toFixed(1)+'%。'+(model.releaseKind==='reviewed_existing_transactions'?'完全な未使用データでの独立検証ではありません。':'')+'この物件の誤差や最新時点での精度を保証する値ではありません。':'このモデルの最新時点での予測精度は未確認です。';
+  $('model-name').textContent='使用モデル：'+model.name+'。'+(model.releaseKind==='time_holdout'?'2024年までの取引で学習した同じ方式のモデルを、学習に使っていない2025年の取引で検証し、旧モデルより誤差が小さいことを確認して採用しました。':model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで旧モデルとの比較を行い、改善を確認して採用しました。':'保存済みの学習モデルを使用しています。');
+  const metric=model.metrics?.median_ape_pct;$('validation-metric').textContent=metric!=null?(model.releaseKind==='time_holdout'?'2025年の取引（学習に使っていないデータ）での誤差中央値：':model.releaseKind==='reviewed_existing_transactions'?'既存の取引データで比較した際の誤差中央値：':'保存モデルの検証時の誤差中央値：')+Number(metric).toFixed(1)+'%。'+(model.releaseKind==='reviewed_existing_transactions'?'完全な未使用データでの独立検証ではありません。':'')+'この物件の誤差や最新時点での精度を保証する値ではありません。':'このモデルの最新時点での予測精度は未確認です。';
   const row=features(input),unknown=modelInfo?.learned?[...modelInfo.unknownFields]:[];for(const c2 of model.components||[])for(const field of ['MunicipalityCode','DistrictName','Structure','CityPlanning']){const i=c2.categorical.indexOf(field);if(i>=0&&row[field]&&!c2.categories[i].includes(row[field]))unknown.push(({MunicipalityCode:'市区町村',DistrictName:'町名',Structure:'構造',CityPlanning:'用途地域'})[field]);}
   $('unknown-categories').hidden=!unknown.length;$('unknown-categories').textContent='学習時にない'+[...new Set(unknown)].join('・')+'が含まれます。査定の不確かさが大きい可能性があります。';
   $('empty-result').hidden=true;$('result').hidden=false;if(moveFocus){$('result').focus({preventScroll:true});if(matchMedia('(max-width:690px)').matches)$('result').scrollIntoView({behavior:'smooth',block:'start'});}
 }
 form.addEventListener('submit',async event=>{event.preventDefault();if(busy||ocrBusy)return;await ready;const input=getInput(),errors=validate(input);if(errors.length){showErrors(errors);return;}autoEstimatePending=false;$('form-errors').hidden=true;setBusy(true);status('model-progress','査定を開始しています…');
-  try{input.districtKey=await districtKey(input.city,input.district);
-  worker??=new Worker(new URL('./model-worker.mjs?v=20261022-price',import.meta.url),{type:'module'});worker.onmessage=e=>{const data=e.data;if(data.kind==='progress')status('model-progress',data.text);else{setBusy(false);if(data.kind==='result'){renderResult(data.yen,input,{modelInfo:data.modelInfo});status('model-progress','査定が完了しました。','success');}else status('model-progress',data.text,'error');}};worker.onerror=()=>{setBusy(false);status('model-progress','モデルの読み込みに失敗しました。再度お試しください。','error');worker?.terminate();worker=null;};worker.postMessage(input);}catch(error){setBusy(false);status('model-progress',error.message,'error');}
+  try{input.districtKey=await districtKey(input.city,input.district);if(input.type==='used_house'&&!input.stationMinutes)input.stationDefault=await stationDefault(input.city,input.districtKey);
+  worker??=new Worker(new URL('./model-worker.mjs?v=20261102-model',import.meta.url),{type:'module'});worker.onmessage=e=>{const data=e.data;if(data.kind==='progress')status('model-progress',data.text);else{setBusy(false);if(data.kind==='result'){renderResult(data.yen,input,{modelInfo:data.modelInfo});status('model-progress','査定が完了しました。','success');}else status('model-progress',data.text,'error');}};worker.onerror=()=>{setBusy(false);status('model-progress','モデルの読み込みに失敗しました。再度お試しください。','error');worker?.terminate();worker=null;};worker.postMessage(input);}catch(error){setBusy(false);status('model-progress',error.message,'error');}
 });
 $('revise').onclick=()=>{$('input-title').scrollIntoView({behavior:'smooth',block:'start'});$('price').focus({preventScroll:true});};
 $('download').onclick=()=>{if(!lastResult)return;const r=lastResult,p=r.input,city=municipalities[p.city]?.[1]||p.city;

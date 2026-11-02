@@ -1,0 +1,27 @@
+{
+ "holdout": "MLIT 2025年の中古戸建て取引から無作為に20,000件（調停・競売・関係者間・隣地・瑕疵・取壊し前提を除く、100万円以上）",
+ "candidate_training": "2024年までの取引のみ（同じ方式で学習し、公開用は2025年まで含めて学習し直し）",
+ "results": {
+  "incumbent_2026_10": {
+   "n": 20000,
+   "median_ape_pct": 24.46,
+   "within20_pct": 42.8,
+   "mae_yen": 15592908,
+   "median_actual_over_estimate": 1.112
+  },
+  "candidate_station_blank_filled": {
+   "n": 20000,
+   "median_ape_pct": 20.89,
+   "within20_pct": 48.32,
+   "mae_yen": 10695057,
+   "median_actual_over_estimate": 1.048
+  },
+  "candidate_station_entered": {
+   "n": 20000,
+   "median_ape_pct": 20.42,
+   "within20_pct": 49.21,
+   "mae_yen": 10477899,
+   "median_actual_over_estimate": 1.07
+  }
+ }
+}

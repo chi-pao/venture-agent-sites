@@ -17,6 +17,19 @@ async function load(meta,index,total){
   const stream=new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
   const buffer=await new Response(stream).arrayBuffer();cached.set(meta.path,buffer);return buffer;
 }
+// Large category-split tables live in their own gzip file (splitsPath) so the catalog stays small;
+// they are fetched only for the model that needs them and checked like the model binary.
+const splitCache=new Map();
+async function ensureSplits(c){
+  if(!c.splitsPath||c.categoricalSplits)return;
+  if(!splitCache.has(c.splitsPath))splitCache.set(c.splitsPath,(async()=>{
+    const response=await fetch(c.splitsPath);if(!response.ok)throw Error('モデルの読み込みに失敗しました。再度お試しください');
+    const compressed=await response.arrayBuffer();if(compressed.byteLength!==c.splitsBytes)throw Error('モデルのファイルサイズが一致しません');
+    if(await sha256Hex(compressed)!==c.splitsSha256)throw Error('モデルの整合性を確認できませんでした');
+    return JSON.parse(await new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  })());
+  try{c.categoricalSplits=await splitCache.get(c.splitsPath);}catch(error){splitCache.delete(c.splitsPath);throw error;}
+}
 globalThis.onmessage=async event=>{try{
   catalog??=await(await fetch('models/catalog.json')).json();
   const input=event.data,model=catalog.models[input.type];if(!model)throw Error('対応していない物件種別です');
@@ -34,7 +47,7 @@ globalThis.onmessage=async event=>{try{
   }
   async function bundledPrediction(item){
     const values=[];
-    for(let i=0;i<item.components.length;i++){const c=item.components[i];values.push(componentPrediction(row,c,await load(c,i+1,item.components.length)));}
+    for(let i=0;i<item.components.length;i++){const c=item.components[i];const buffer=await load(c,i+1,item.components.length);await ensureSplits(c);values.push(componentPrediction(row,c,buffer));}
     const yen=combine(values,item.components);if(!Number.isFinite(yen)||yen<=0)throw Error('査定価格を算出できませんでした。入力内容を確認してください');return yen;
   }
   try{postMessage({kind:'result',yen:await bundledPrediction(model)});}
