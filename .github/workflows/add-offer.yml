@@ -1,0 +1,64 @@
+name: Checker - add an A8.net offer
+# Started by hand from the Actions tab: choose the slot and paste A8.net's link code.
+# The code is checked (A8.net link and measurement image only), written into
+# checker-site/offers.json, tested, and proposed as a pull request.
+on:
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: 広告枠
+        required: true
+        type: choice
+        options: [sell-rakuuru-house, sell-rakuuru-old, sell-nomucom, loan-mogecheck, fire-insweb, reno-hikarinobe, inspection, reform, moving]
+      code:
+        description: A8.net のテキストリンク（またはバナー）のコードを全部貼り付け
+        required: true
+        type: string
+      text:
+        description: 表示する文言（空ならコードの文言）
+        required: false
+        type: string
+      prefectures:
+        description: 出す都道府県（カンマ区切り。ノムコムなど地域限定の案件だけ）
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Add the offer
+        env:
+          CODE: ${{ inputs.code }}
+          TEXT: ${{ inputs.text }}
+          PREFS: ${{ inputs.prefectures }}
+          SLOT: ${{ inputs.slot }}
+        run: |
+          printf '%s' "$CODE" > /tmp/code.html
+          args=("$SLOT" /tmp/code.html)
+          if [ -n "$TEXT" ]; then args+=(--text "$TEXT"); fi
+          if [ -n "$PREFS" ]; then args+=(--prefectures "$PREFS"); fi
+          python tools/add_offer.py "${args[@]}"
+      - name: Test
+        run: python -m unittest tests.test_add_offer -v
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT: ${{ inputs.slot }}
+        run: |
+          branch="offer/${SLOT}-$(date +%Y%m%d%H%M)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add checker-site/offers.json
+          git commit -m "Checker: add the ${SLOT} offer"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "広告の追加：${SLOT}" --body "GitHub の画面から A8.net のコードを貼って追加した広告です。コードは A8.net のリンクと計測用の画像だけであることを確認済み。"

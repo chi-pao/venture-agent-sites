@@ -5,7 +5,9 @@ if(box){
   let offers=null,last=null;
   const load=()=>offers??=fetch('offers.json').then(r=>r.ok?r.json():{offers:[]}).then(d=>(d.offers||[]).filter(o=>o.enabled&&o.href)).catch(()=>[]);
   const intent=()=>document.querySelector('input[name=intent]:checked')?.value||'buy';
-  try{const saved=localStorage.getItem('checker-intent');const r=saved&&document.querySelector(`input[name=intent][value="${saved}"]`);if(r)r.checked=true;}catch{}
+  const fromUrl=new URLSearchParams(location.search).get('intent');
+  if(fromUrl==='sell'||fromUrl==='buy'){const r=document.querySelector(`input[name=intent][value="${fromUrl}"]`);if(r)r.checked=true;try{localStorage.setItem('checker-intent',fromUrl);}catch{}}
+  else try{const saved=localStorage.getItem('checker-intent');const r=saved&&document.querySelector(`input[name=intent][value="${saved}"]`);if(r)r.checked=true;}catch{}
   const el=(tag,props={},...kids)=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...kids);return e;};
   function card(o){
     const link=el('a',{href:o.href,target:'_blank',rel:'sponsored nofollow noopener'});

@@ -156,3 +156,13 @@ html,body{overflow-x:clip}
 .intent-switch input{accent-color:#1f5fd6;margin:0}
 .intent-switch+.affiliate-result{border-top:0;padding-top:12px}
 .area-link{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:#eef3fd;color:#1f5fd6;font-weight:700;text-decoration:none;font-size:13px}
+.result-extras{margin:18px 0 0}
+.result-extras .band{background:#eef3fd;border-radius:14px;padding:12px 14px}
+.result-extras .band-label{display:block;font-size:11px;color:#5f6f86}
+.result-extras .band strong{display:block;font-size:20px;color:#14233b}
+.result-extras small{display:block;font-size:10px;color:#6b7a90;line-height:1.6;margin-top:4px}
+.result-extras h3{font-size:13px;margin:16px 0 6px}
+.result-extras .tablewrap{overflow-x:auto}
+.result-extras table{width:100%;border-collapse:collapse;font-size:11px}
+.result-extras th,.result-extras td{padding:5px 4px;border-bottom:1px solid #e3eaf6;text-align:left;white-space:nowrap}
+.result-extras td.num{text-align:right}
