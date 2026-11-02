@@ -16,10 +16,23 @@ async function show(d){
   if(d.type!=='used_house'||!Number.isFinite(d.estimate)){b.hidden=true;return;}
   b.hidden=false;
   const [,lo,hi]=BANDS.find(([max])=>d.estimate<max);
+  const low=d.estimate*lo,high=d.estimate*hi,price=Number(d.price);
+  // 帯の上に「査定額」と「販売価格」の位置を示す。表示範囲は幅の外側も少し見えるように取る。
+  const min=Math.min(low,price||low)*0.85,max=Math.max(high,price||high)*1.1,pos=v=>`${Math.min(100,Math.max(0,(v-min)/(max-min)*100)).toFixed(1)}%`;
+  const where=!Number.isFinite(price)||price<=0?'':price<low?'この範囲より安い':price>high?'この範囲より高い':'この範囲の中';
+  const bar=el('div',{className:'band-bar'},
+    el('span',{className:'band-range'}),
+    el('span',{className:'band-mark est',title:'参考査定'}),
+    ...(where?[el('span',{className:'band-mark price',title:'販売価格'})]:[]));
+  bar.firstChild.style.left=pos(low);bar.firstChild.style.width=`calc(${pos(high)} - ${pos(low)})`;
+  bar.children[1].style.left=pos(d.estimate);if(where)bar.children[2].style.left=pos(price);
   b.append(el('div',{className:'band'},
-    el('span',{className:'band-label',textContent:'似た査定額の家の実際の取引（真ん中の半分）'}),
-    el('strong',{textContent:`${fmt(d.estimate*lo)}万〜${fmt(d.estimate*hi)}万円`}),
-    el('small',{textContent:'2025年の実際の取引で、同じくらいの査定額だった家の価格の幅です。建物の状態や立地で、この幅の外になることもあります。'})));
+    el('span',{className:'band-label',textContent:'同じような家が実際に売れた価格'}),
+    el('strong',{textContent:`${fmt(low)}万〜${fmt(high)}万円`}),
+    bar,
+    el('div',{className:'band-legend'},el('span',{className:'k range',textContent:'よく売れている価格帯'}),el('span',{className:'k est',textContent:'参考査定'}),...(where?[el('span',{className:'k price',textContent:'販売価格'})]:[])),
+    ...(where?[el('p',{className:'band-verdict '+(where==='この範囲の中'?'in':'out'),textContent:`販売価格 ${fmt(price)}万円は、${where}です。`})]:[]),
+    el('small',{textContent:'2025年に実際に売れた家のうち、参考査定が同じくらいだった家の半数がこの価格帯でした。'})));
   let sales=[];
   try{const r=await fetch(`area/${d.city}/sales.json`);if(r.ok)sales=await r.json();}catch{}
   if(!sales.length)return;

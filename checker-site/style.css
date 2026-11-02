@@ -159,7 +159,17 @@ html,body{overflow-x:clip}
 .result-extras{margin:18px 0 0}
 .result-extras .band{background:#eef3fd;border-radius:14px;padding:12px 14px}
 .result-extras .band-label{display:block;font-size:11px;color:#5f6f86}
-.result-extras .band strong{display:block;font-size:20px;color:#14233b}
+.result-extras .band strong{display:block;font-size:22px;color:#14233b}
+.result-extras .band-label{font-size:12px;font-weight:700;color:#3d4b60}
+.band-bar{position:relative;height:14px;margin:14px 6px 6px;background:#dbe4f3;border-radius:7px}
+.band-range{position:absolute;top:0;bottom:0;background:#1f5fd6;border-radius:7px}
+.band-mark{position:absolute;top:-5px;width:4px;height:24px;margin-left:-2px;border-radius:2px;background:#14233b}
+.band-mark.price{background:#e8590c;width:12px;height:12px;top:1px;margin-left:-6px;border-radius:50%;border:2px solid #fff}
+.band-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:#3d4b60}
+.band-legend .k::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px;background:#1f5fd6}
+.band-legend .k.est::before{width:3px;background:#14233b}
+.band-legend .k.price::before{border-radius:50%;background:#e8590c}
+.band-verdict{margin:8px 0 0;font-size:14px;font-weight:700}.band-verdict.in{color:#1f5fd6}.band-verdict.out{color:#e8590c}
 .result-extras small{display:block;font-size:10px;color:#6b7a90;line-height:1.6;margin-top:4px}
 .result-extras h3{font-size:13px;margin:16px 0 6px}
 .result-extras .tablewrap{overflow-x:auto}
