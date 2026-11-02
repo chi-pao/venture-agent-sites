@@ -78,6 +78,38 @@ class CheckerSiteTests(unittest.TestCase):
         finally:
             server.shutdown()
 
+    def test_result_offers_follow_the_buy_or_sell_choice(self):
+        import json as _json
+        offers = _json.loads((SITE / 'offers.json').read_text(encoding='utf-8'))['offers']
+        for o in offers:
+            if o['enabled']:
+                self.assertTrue(o['href'].startswith('https://'), o['id'])
+        from playwright.sync_api import sync_playwright
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
+        handler.log_message = lambda *a: None
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        origin = f'http://127.0.0.1:{server.server_port}'
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page()
+                page.route('**/*', lambda route: route.continue_() if route.request.url.startswith(origin) else route.abort())
+                page.goto(origin + '/')
+                page.click('#example')
+                page.click('#estimate')
+                page.wait_for_function("/\\d/.test((document.querySelector('#estimated-price')||{}).textContent||'')", timeout=90000)
+                page.wait_for_function("document.querySelector('#offers-result .ad-label')", timeout=10000)
+                self.assertIn('火災保険', page.inner_text('#offers-result'))
+                self.assertIn('広告・PR', page.inner_text('#offers-result'))
+                hrefs = page.eval_on_selector_all('#offers-result a', 'as => as.map(a => a.rel)')
+                self.assertTrue(hrefs and all('sponsored' in r for r in hrefs))
+                page.check('input[name=intent][value=sell]')
+                page.wait_for_function("document.querySelector('#offers-result').hidden")
+                browser.close()
+        finally:
+            server.shutdown()
+
     def test_example_appraisal_runs_in_chromium(self):
         from playwright.sync_api import sync_playwright
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))

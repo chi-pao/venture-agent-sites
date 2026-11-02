@@ -14,7 +14,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://okaidoku-checker.pages.dev/">
 <meta property="og:image" content="https://okaidoku-checker.pages.dev/app-icon-512.png">
-<link rel="stylesheet" href="style.css?v=20261102-blue"><script src="tesseract.min.js" defer></script><script type="module" src="app.mjs?v=20261102-model"></script>
+<link rel="stylesheet" href="style.css?v=20261103-offers"><script src="tesseract.min.js" defer></script><script type="module" src="app.mjs?v=20261102-model"></script>
 <script type="module" src="analytics.mjs?v=20261021"></script>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://okaidoku-checker.pages.dev/#website","url":"https://okaidoku-checker.pages.dev/","name":"お買い得物件チェッカー","inLanguage":"ja"},{"@type":"WebApplication","@id":"https://okaidoku-checker.pages.dev/#app","name":"お買い得物件チェッカー","url":"https://okaidoku-checker.pages.dev/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser","inLanguage":"ja","description":"物件情報のスクショや手入力から、参考査定価格と販売価格の差・割安度を無料で確認できます。中古戸建て・中古マンション・新築戸建てに対応。査定は参考情報です。","isPartOf":{"@id":"https://okaidoku-checker.pages.dev/#website"},"offers":{"@type":"Offer","price":"0","priceCurrency":"JPY"}}]}</script>
 <meta name="google-site-verification" content="UvZEU9L6O8YotTRo0mdsGTmrMKXAqeWfXSFzD4E9OQM" />
@@ -59,7 +59,8 @@
 <section id="result" class="card result-card" hidden tabindex="-1"><div class="result-top"><p class="eyebrow">PRICE CHECK RESULT</p><span id="result-badge" class="badge"></span></div><h2>参考査定価格</h2><div class="estimated"><strong id="estimated-price"></strong><span>万円</span></div><p class="model-caption">学習済みモデルによる参考値</p><div class="result-pair"><div><span>販売価格</span><b id="sale-price"></b></div><div><span>査定価格との差</span><b id="price-difference"></b></div></div><div id="discount-box" class="discount-box"><span>査定価格に対する割安率</span><strong id="discount-rate"></strong></div><div class="price-chart" aria-label="販売価格と査定価格の比較"><div><span>販売価格</span><div class="bar-track"><i id="sale-bar" class="sale-bar"></i></div><b id="sale-bar-text"></b></div><div><span>参考査定</span><div class="bar-track"><i id="estimate-bar"></i></div><b id="estimate-bar-text"></b></div></div><p id="result-description" class="result-description"></p><div id="result-location" class="result-location"></div><p id="unknown-categories" class="warning" hidden></p>
 <details class="result-details"><summary>査定の根拠と計算方法</summary><p id="model-name"></p><p id="validation-metric"></p><p>割安率＝（参考査定価格 − 販売価格）÷ 参考査定価格 × 100。10%以上を「割安の可能性」、−10%未満を「割高の可能性」と表示します。</p><p>地域・面積・築年・構造などを使用。未入力項目と地価情報は、既存モデルが保持する補完値で計算します。査定の基準時点は2026年10月です。</p></details>
 <button id="download" type="button" class="button secondary full-width">査定結果を保存 <span aria-hidden="true">↓</span></button><button id="revise" type="button" class="text-button full-width">入力を修正して、もう一度</button>
-<aside class="affiliate affiliate-result" aria-label="アフィリエイト広告">
+<div class="intent-switch" role="radiogroup" aria-label="この物件をどうする予定ですか"><span>この物件を</span><label><input type="radio" name="intent" value="buy" checked> 買う予定</label><label><input type="radio" name="intent" value="sell"> 売る予定（自宅の価格を知りたい）</label></div>
+<aside class="affiliate affiliate-result" id="offers-result" aria-label="アフィリエイト広告">
 <p class="ad-label">広告・PR｜火災保険の比較・無料診断</p>
 <a href="https://px.a8.net/svt/ejp?a8mat=4BECGX+3O692Q+3RU+6S6XRL" target="_blank" rel="sponsored nofollow noopener"><img width="320" height="50" alt="火災保険の比較・無料診断（広告）" loading="lazy" src="https://www25.a8.net/svt/bgt?aid=261009825222&amp;wid=001&amp;eno=01&amp;mid=s00000000489041015000&amp;mc=1"></a>
 <img class="ad-pixel" width="1" height="1" alt="" loading="lazy" src="https://www13.a8.net/0.gif?a8mat=4BECGX+3O692Q+3RU+6S6XRL">
@@ -78,4 +79,5 @@
 <p class="affiliate-disclosure">当サイトはアフィリエイト広告を掲載しています。広告リンク先ではCookie等が利用される場合があります。</p>
 </main><footer><span>⌂ お買い得物件チェッカー</span><span><a href="https://www.instagram.com/okaidokuhudousannchecker/" target="_blank" rel="noopener noreferrer" aria-label="公式Instagram（新しいタブで開きます）" style="display:inline-flex;align-items:center;gap:6px"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/></svg>公式Instagram</a> · <a href="#contact">お問い合わせ</a> · <a href="#privacy">プライバシー・アクセス解析</a></span><span>参考情報の提供 · 正式な不動産鑑定評価ではありません</span></footer>
 <script type="module" src="howto.mjs?v=20261102c"></script>
+<script type="module" src="offers.mjs?v=20261103"></script>
 </body></html>

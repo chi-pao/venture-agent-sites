@@ -1,0 +1,98 @@
+{
+ "note": "結果画面の広告。enabled が true で href のあるものだけ表示。買う予定／売る予定（intent）と築年数（minAge）で出し分け、最大2つ。広告コードは A8.net の承認後に入れる。",
+ "offers": [
+  {
+   "id": "fire-banner",
+   "enabled": true,
+   "intent": [
+    "buy"
+   ],
+   "label": "火災保険の比較・無料診断",
+   "kind": "banner",
+   "href": "https://px.a8.net/svt/ejp?a8mat=4BECGX+3O692Q+3RU+6S6XRL",
+   "img": "https://www25.a8.net/svt/bgt?aid=261009825222&wid=001&eno=01&mid=s00000000489041015000&mc=1",
+   "width": 320,
+   "height": 50,
+   "alt": "火災保険の比較・無料診断（広告）",
+   "pixel": "https://www13.a8.net/0.gif?a8mat=4BECGX+3O692Q+3RU+6S6XRL"
+  },
+  {
+   "id": "fire-text",
+   "enabled": true,
+   "intent": [
+    "buy"
+   ],
+   "label": "火災保険の比較・無料診断",
+   "kind": "text",
+   "href": "https://px.a8.net/svt/ejp?a8mat=4BECGX+3O692Q+3RU+6S45GI",
+   "text": "あなたの家に最適な火災保険を無料診断！",
+   "pixel": "https://www12.a8.net/0.gif?a8mat=4BECGX+3O692Q+3RU+6S45GI"
+  },
+  {
+   "id": "sell-assessment",
+   "enabled": false,
+   "intent": [
+    "sell"
+   ],
+   "priority": 1,
+   "label": "不動産の一括査定",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net で「不動産 査定」を検索して提携。承認後に広告コードを入れて enabled を true にする"
+  },
+  {
+   "id": "loan-compare",
+   "enabled": false,
+   "intent": [
+    "buy"
+   ],
+   "priority": 1,
+   "label": "住宅ローンの比較",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net で「住宅ローン」を検索"
+  },
+  {
+   "id": "inspection",
+   "enabled": false,
+   "intent": [
+    "buy"
+   ],
+   "label": "住宅診断（ホームインスペクション）",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net で「インスペクション」「住宅診断」を検索"
+  },
+  {
+   "id": "reform",
+   "enabled": false,
+   "intent": [
+    "buy",
+    "sell"
+   ],
+   "minAge": 25,
+   "priority": 2,
+   "label": "リフォームの見積もり比較",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "築25年以上の物件で表示。A8.net で「リフォーム 見積もり」を検索"
+  },
+  {
+   "id": "moving",
+   "enabled": false,
+   "intent": [
+    "buy",
+    "sell"
+   ],
+   "label": "引越しの見積もり比較",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net で「引越し 見積もり」を検索"
+  }
+ ]
+}
