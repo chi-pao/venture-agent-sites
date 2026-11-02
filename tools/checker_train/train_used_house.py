@@ -41,12 +41,28 @@ def number(series):
     return pd.to_numeric(series.astype(str).str.replace('以上', '').str.replace(',', ''), errors='coerce')
 
 
-def load(archive):
+# Column names of the 不動産情報ライブラリ API (data/mlit_*.csv from fetch_mlit.py) -> the archive's names.
+API_COLUMNS = {'Type': '種類', 'PriceCategory': '価格情報区分', 'Prefecture': '都道府県名', 'Municipality': '市区町村名',
+               'MunicipalityCode': '市区町村コード', 'DistrictName': '地区名', 'TimeToNearestStation': '最寄駅：距離（分）',
+               'TradePrice': '取引価格（総額）', 'Area': '面積（㎡）', 'TotalFloorArea': '延床面積（㎡）', 'BuildingYear': '建築年',
+               'Structure': '建物の構造', 'CityPlanning': '都市計画', 'Period': '取引時期', 'Use': '用途', 'Remarks': '取引の事情等'}
+
+
+def load(archive, extra_dir=None):
     parts = []
     with zipfile.ZipFile(archive) as z:
         for name in z.namelist():
             parts.append(pd.read_csv(io.BytesIO(z.read(name)), encoding='cp932', low_memory=False))
+    extra = sorted(Path(extra_dir).glob('mlit_*.csv')) if extra_dir else []
+    for path in extra:
+        parts.append(pd.read_csv(path, encoding='utf-8-sig', low_memory=False).rename(columns=API_COLUMNS))
     df = pd.concat(parts, ignore_index=True)
+    for column in API_COLUMNS.values():
+        if column not in df:
+            df[column] = np.nan
+    # The archive and the API can both carry the same quarter; keep one copy of each transaction.
+    if extra:
+        df = df.drop_duplicates(subset=['市区町村コード', '地区名', '取引価格（総額）', '面積（㎡）', '延床面積（㎡）', '建築年', '取引時期', '種類'])
     df = df[(df['種類'] == '宅地(土地と建物)') & df['用途'].astype(str).str.contains('住宅')]
     df = df[~df['取引の事情等'].astype(str).str.contains(UNUSUAL)]
     land, floor = number(df['面積（㎡）']), number(df['延床面積（㎡）'])
@@ -78,10 +94,11 @@ def pipeline():
     return Pipeline([('pre', pre), ('lgb', LGBMRegressor(**PARAMS))])
 
 
-def fit(train):
+def fit(train, weight=None):
     pipe = pipeline()
+    extra = {} if weight is None else {'lgb__sample_weight': np.asarray(weight)}
     pipe.fit(train[NUMS + CATS], np.log(train['price_yen'] / 10000),
-             lgb__categorical_feature=list(range(len(NUMS), len(NUMS) + len(CATS))))
+             lgb__categorical_feature=list(range(len(NUMS), len(NUMS) + len(CATS))), **extra)
     return pipe
 
 
