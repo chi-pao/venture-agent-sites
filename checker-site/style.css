@@ -24,3 +24,45 @@
 .install-help{max-width:1200px;margin:0 auto 18px;padding:12px 16px;border:1px solid #d8e4df;border-radius:12px;background:#fff;color:#284746;font-size:.92rem}
 .install-help summary{cursor:pointer;font-weight:700}
 .install-help p{margin:10px 0 0;line-height:1.65}
+
+/* 2026-11 開いてすぐの画面: アイコンで目を引き、すっきり見せる */
+.hero.hero-clean{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:40px;align-items:center;padding:48px 22px 40px}
+.hero-brand-name{margin:0 0 10px;font-size:15px;font-weight:800;letter-spacing:.12em;color:#0c857c}
+.hero-clean h1{font-family:var(--serif);font-size:44px;line-height:1.35;margin:0 0 14px;letter-spacing:.02em}
+.hero-clean .hero-copy{font-size:15px;color:#5f716d;margin:0}
+.hero-clean .input-methods{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.hero-clean .button{text-decoration:none;min-height:52px;font-size:14px;padding:12px 26px;border-radius:12px;margin:0;width:auto;box-shadow:none}
+.hero-clean .button.primary{background:#0a263c;color:#fff;justify-content:center}
+.hero-clean .button.primary:hover{background:#123a57}
+.hero-clean .button.secondary{background:#fff;color:#0a263c;border:1px solid #cfd8d4}
+.hero-points{display:flex;gap:18px;flex-wrap:wrap;list-style:none;padding:0;margin:20px 0 0;font-size:12px;color:#5f716d}
+.hero-points li::before{content:"✓";color:#0c857c;font-weight:800;margin-right:6px}
+.hero-clean .hero-visual{position:relative;width:auto;margin:0;display:grid;place-items:center}
+.hero-glow{position:absolute;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,#f3bf6366 0%,#0c857c22 45%,transparent 70%)}
+.hero-clean .hero-brand-icon{position:relative;width:240px;height:240px;border-radius:44px;margin:0;box-shadow:0 24px 50px #0a263c40;animation:iconIn .7s cubic-bezier(.2,.8,.2,1) both}
+@keyframes iconIn{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.hero-clean .hero-brand-icon{animation:none}}
+.install-help{margin-top:28px}
+@media(max-width:900px){.hero.hero-clean{grid-template-columns:minmax(0,1fr) 220px}.hero-clean h1{font-size:36px}.hero-clean .hero-brand-icon{width:180px;height:180px;border-radius:34px}.hero-glow{width:240px;height:240px}}
+@media(max-width:690px){.hero.hero-clean{grid-template-columns:1fr;text-align:center;gap:6px;padding:26px 18px 28px}
+ .hero-clean .hero-visual{order:-1}.hero-clean .hero-brand-icon{width:124px;height:124px;border-radius:28px}.hero-glow{width:190px;height:190px}
+ .hero-clean h1{font-size:30px}.hero-clean .hero-copy{font-size:13px}.hero-clean .input-methods{flex-direction:column}.hero-clean .button{width:100%}
+ .hero-points{justify-content:center;gap:12px;font-size:11px}}
+
+.hero-steps{display:flex;gap:10px;list-style:none;padding:0;margin:26px 0 0;flex-wrap:wrap}
+.hero-steps li{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e1e7e1;border-radius:14px;padding:10px 14px;font-size:13px;font-weight:650}
+.hero-steps svg{width:22px;height:22px;fill:none;stroke:#0c857c;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.hero-steps b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#0a263c;color:#fff;font-size:10px;margin-right:6px}
+.hero-steps li+li{position:relative}
+.hero-result{position:relative;margin-top:-34px;background:#fff;border:1px solid #e1e7e1;border-radius:16px;padding:12px 16px;box-shadow:0 12px 28px #0a263c1f;min-width:230px;display:grid;gap:2px;font-size:12px}
+.hr-label{font-size:10px;letter-spacing:.14em;color:#0c857c;font-weight:800;margin-bottom:2px}
+.hr-row{display:flex;justify-content:space-between;gap:18px}.hr-row em{font-style:normal;color:#5f716d}.hr-row b{font-size:15px;color:#0a263c}
+.hr-verdict{justify-self:start;margin-top:6px;background:#fff4dc;color:#7a5410;border-radius:20px;padding:2px 12px;font-weight:800}
+.hero-points{margin-top:16px}
+@media(max-width:690px){.hero-steps{justify-content:center;gap:6px}.hero-steps li{padding:8px 10px;font-size:11px;gap:6px}.hero-steps svg{width:18px;height:18px}.hero-steps b{width:16px;height:16px;margin-right:4px}
+ .hero-result{margin:-26px auto 14px;min-width:210px;text-align:left}}
+@media(max-width:690px){.hero-result{display:none}
+ .hero-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:20px}
+ .hero-steps li{flex-direction:column;gap:4px;padding:10px 4px;text-align:center;font-size:11px}
+ .hero-steps span{display:flex;align-items:center;justify-content:center}}
+@media(max-width:690px){.hero-steps span{flex-direction:column;gap:4px;white-space:nowrap;font-size:11px}.hero-steps b{margin:0}}
