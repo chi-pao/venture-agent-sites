@@ -17,23 +17,20 @@ async function show(d){
   b.hidden=false;
   const [,lo,hi]=BANDS.find(([max])=>d.estimate<max);
   const low=d.estimate*lo,high=d.estimate*hi,price=Number(d.price),has=Number.isFinite(price)&&price>0;
-  // 結論を先に大きく、下に「安め｜相場｜高め」のメーターと販売価格の位置。
-  const zone=!has?null:price<low?'low':price>high?'high':'mid';
-  const verdict={low:['相場より安め',`相場の下限より ${fmt(low-price)}万円 安い`],mid:['相場の範囲内','実際に売れた価格の真ん中あたり'],high:['相場より高め',`相場の上限より ${fmt(price-high)}万円 高い`]}[zone]||['実際に売れた相場',''];
-  const min=Math.min(low,has?price:low)*0.8,max=Math.max(high,has?price:high)*1.12,pos=v=>Math.min(97,Math.max(3,(v-min)/(max-min)*100));
-  const meter=el('div',{className:'meter'},
-    el('div',{className:'meter-track'},el('span',{className:'z low'}),el('span',{className:'z mid'}),el('span',{className:'z high'})),
-    el('div',{className:'meter-ticks'},el('span',{textContent:`${fmt(low)}万`}),el('span',{textContent:`${fmt(high)}万`})));
-  const [zl,zm,zh]=meter.firstChild.children;
-  zl.style.width=`${pos(low)}%`;zm.style.left=`${pos(low)}%`;zm.style.width=`${pos(high)-pos(low)}%`;zh.style.left=`${pos(high)}%`;
-  const [tl,th]=meter.lastChild.children;tl.style.left=`${pos(low)}%`;th.style.left=`${pos(high)}%`;
-  if(has){const at=pos(price),pin=el('div',{className:`meter-pin ${zone} ${at<25?'l':at>75?'r':''}`},el('span',{textContent:`販売価格 ${fmt(price)}万円`}));pin.style.left=`${at}%`;meter.prepend(pin);}
-  b.append(el('div',{className:'band '+(zone||'')},
-    el('span',{className:'band-label',textContent:'実際に売れた相場とくらべると'}),
-    el('strong',{className:'band-verdict',textContent:verdict[0]}),
-    ...(verdict[1]?[el('p',{className:'band-diff',textContent:verdict[1]})]:[]),
-    meter,
-    el('small',{textContent:`相場＝2025年に実際に売れた家のうち、参考査定が同じくらい（${fmt(d.estimate)}万円前後）だった家の半数が入る価格帯（${fmt(low)}万〜${fmt(high)}万円）。`})));
+  // 幅は「似た家の真ん中の半分」なので、上限より高い＝4軒中3軒はそれより安く売れた、と言い換えられる。
+  const zone=!has?'mid':price<low?'low':price>high?'high':'mid';
+  const T={low:['相場より安め',`同じような家、4軒のうち3軒は ${has?fmt(price)+'万円':''}より高く売れています`,[1,1,1,0],'これより高く売れた'],
+    mid:[has?'相場の範囲内':'実際に売れた相場',`同じような家、4軒のうち2軒が ${fmt(low)}万〜${fmt(high)}万円 で売れています`,[0,1,1,0],'この価格帯で売れた'],
+    high:['相場より高め',`同じような家、4軒のうち3軒は ${has?fmt(price)+'万円':''}より安く売れています`,[1,1,1,0],'これより安く売れた']}[zone];
+  const house=on=>{const n=document.createElementNS('http://www.w3.org/2000/svg','svg');n.setAttribute('viewBox','0 0 48 44');n.setAttribute('class','hh'+(on?' on':''));
+    n.innerHTML='<path d="M4 20 24 4l20 16"/><rect x="9" y="18" width="30" height="24" rx="2"/><rect x="20" y="28" width="8" height="14"/>';return n;};
+  b.append(el('div',{className:'band '+zone},
+    el('span',{className:'band-label',textContent:has?`販売価格 ${fmt(price)}万円 は…`:'実際に売れた相場'}),
+    el('strong',{className:'band-verdict',textContent:T[0]}),
+    el('div',{className:'houses'},...T[2].map(house)),
+    el('p',{className:'band-say',textContent:T[1]}),
+    el('div',{className:'band-legend'},el('span',{className:'k on',textContent:T[3]}),el('span',{className:'k',textContent:'それ以外'})),
+    el('small',{textContent:`相場は ${fmt(low)}万〜${fmt(high)}万円。2025年に実際に売れた家のうち、参考査定が同じくらい（${fmt(d.estimate)}万円前後）だった家の、真ん中の半分が入る価格帯です。`})));
   let sales=[];
   try{const r=await fetch(`area/${d.city}/sales.json`);if(r.ok)sales=await r.json();}catch{}
   if(!sales.length)return;

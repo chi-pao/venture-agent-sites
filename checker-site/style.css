@@ -165,16 +165,14 @@ html,body{overflow-x:clip}
 .result-extras .band .band-verdict{font-size:28px;line-height:1.2;margin-top:2px}
 .band.low .band-verdict{color:#0f8a4b}.band.mid .band-verdict{color:#1f5fd6}.band.high .band-verdict{color:#e8590c}
 .band-diff{margin:2px 0 0;font-size:15px;font-weight:700;color:#14233b}
-.meter{position:relative;margin:40px 4px 4px}
-.meter-track{position:relative;height:16px;border-radius:8px;overflow:hidden;background:#fbd9c4}
-.meter-track .z{position:absolute;top:0;bottom:0}.z.low{left:0;background:#bfe8d1}.z.mid{background:#1f5fd6}.z.high{right:0;background:#fbd9c4}
-.meter-ticks{position:relative;height:18px;font-size:11px;color:#3d4b60}.meter-ticks span{position:absolute;top:3px;transform:translateX(-50%);white-space:nowrap}
-.meter-pin{position:absolute;bottom:41px;width:0;height:0;z-index:1}
-.meter-pin span{position:absolute;bottom:0;left:0;transform:translateX(-50%);background:#14233b;color:#fff;font-size:12px;font-weight:700;border-radius:8px;padding:3px 8px;white-space:nowrap}
-.meter-pin.l span{transform:translateX(-16px)}.meter-pin.r span{transform:translateX(calc(-100% + 16px))}
-.meter-pin.high span{background:#e8590c}.meter-pin.low span{background:#0f8a4b}
-.meter-pin::after{content:"";position:absolute;top:0;left:-7px;border:7px solid transparent;border-top-color:#14233b;border-bottom:0}
-.meter-pin.high::after{border-top-color:#e8590c}.meter-pin.low::after{border-top-color:#0f8a4b}
+.houses{display:flex;gap:10px;margin:12px 0 6px}
+.hh{width:54px;height:50px;fill:#fff;stroke:#b8c4d6;stroke-width:2.5;stroke-linejoin:round}
+.band.mid .hh.on{fill:#1f5fd6;stroke:#1f5fd6}.band.high .hh.on{fill:#e8590c;stroke:#e8590c}.band.low .hh.on{fill:#0f8a4b;stroke:#0f8a4b}
+.hh.on rect+rect{fill:#fff}
+.band-say{margin:4px 0 6px;font-size:16px;font-weight:700;line-height:1.5;color:#14233b}
+.band-legend{display:flex;gap:14px;font-size:11px;color:#3d4b60;margin-bottom:2px}
+.band-legend .k::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;border:1.5px solid #b8c4d6;background:#fff}
+.band.mid .band-legend .k.on::before{background:#1f5fd6;border-color:#1f5fd6}.band.high .band-legend .k.on::before{background:#e8590c;border-color:#e8590c}.band.low .band-legend .k.on::before{background:#0f8a4b;border-color:#0f8a4b}
 .result-extras small{display:block;font-size:10px;color:#6b7a90;line-height:1.6;margin-top:4px}
 .result-extras h3{font-size:13px;margin:16px 0 6px}
 .result-extras .tablewrap{overflow-x:auto}
