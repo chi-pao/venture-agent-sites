@@ -1,45 +1,50 @@
 {
  "status": "承認待ち",
- "note": "1週目。平日18:00、1日1本を Threads と Bluesky に投稿する想定。",
+ "note": "1週目。5つの型を1本ずつ。平日18:00、1日1本を Threads と Bluesky に投稿。リンクの utm_content で型ごとの集客を測る。",
  "posts": [
   {
    "id": "W1-1",
-   "image": "ops/sns/week1/post1.png",
+   "pattern": "question",
+   "image": "ops/sns/week1/p-question.png",
    "channels": {
-    "threads": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1_howto",
-    "bluesky": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1_howto"
+    "threads": "この家、2,980万円。高い？ 安い？\n\n物件ページのスクショを貼るだけで、参考査定価格と販売価格の差が分かります。\n「なんとなく高い気がする」を、数字で確かめてみませんか。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=question",
+    "bluesky": "この家、2,980万円。高い？ 安い？\n\n物件ページのスクショを貼るだけで、参考査定価格と販売価格の差が分かります。\n「なんとなく高い気がする」を、数字で確かめてみませんか。\n\n無料・登録なし。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=question"
    }
   },
   {
    "id": "W1-2",
-   "image": "ops/sns/week1/post2.png",
+   "pattern": "number",
+   "image": "ops/sns/week1/p-number.png",
    "channels": {
-    "threads": "査定結果は3段階で表示します。\n\n・割安の可能性：割安率10％以上\n・相場に近い：−10％〜10％未満\n・割高の可能性：割安率−10％未満\n\n割安率＝（参考査定価格−販売価格）÷参考査定価格×100\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1_verdict",
-    "bluesky": "査定結果は3段階で表示します。\n\n・割安の可能性：割安率10％以上\n・相場に近い：−10％〜10％未満\n・割高の可能性：割安率−10％未満\n\n割安率＝（参考査定価格−販売価格）÷参考査定価格×100\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1_verdict"
+    "threads": "参考査定より −398万円。\n\n入力例（中古マンション）で、販売価格を2,680万円にすると\n参考査定3,078万円に対して割安率12.9％ →「割安の可能性」。\n\n販売価格を変えるだけで、価格差がすぐ更新されます。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=number",
+    "bluesky": "参考査定より −398万円。\n\n入力例（中古マンション）で、販売価格を2,680万円にすると\n参考査定3,078万円に対して割安率12.9％ →「割安の可能性」。\n\n販売価格を変えるだけで、価格差がすぐ更新されます。査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=number"
    }
   },
   {
    "id": "W1-3",
-   "image": "ops/sns/week1/post3.png",
+   "pattern": "steps",
+   "image": "ops/sns/week1/p-steps.png",
    "channels": {
-    "threads": "査定のあとは、販売価格を変えるだけで価格差と割安度が更新されます。\n\n入力例（中古マンション）だと\n販売価格2,980万円 → 相場に近い\n販売価格2,680万円 → 割安の可能性（12.9％）\n\n値下げ後の価格を考えるときの目安にも。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1_compare",
-    "bluesky": "査定のあとは、販売価格を変えるだけで価格差と割安度が更新されます。\n\n入力例（中古マンション）だと\n販売価格2,980万円 → 相場に近い\n販売価格2,680万円 → 割安の可能性（12.9％）\n\n値下げ後の価格を考えるときの目安にも。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1_compare"
+    "threads": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=steps",
+    "bluesky": "物件ページのスクショを貼るだけで、参考査定価格と販売価格の差をチェックできます。\n\n① スクショを貼る\n② 文字を自動で読み取り\n③ 参考査定と価格差を表示\n\n画像はこの端末の中で読み取ります。無料です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=steps"
    }
   },
   {
    "id": "W1-4",
-   "image": "ops/sns/week1/post4.png",
+   "pattern": "checklist",
+   "image": "ops/sns/week1/p-checklist.png",
    "channels": {
-    "threads": "価格差だけで決めないために、買う前に確かめたい3つ。\n\n✓ 建物：劣化・修繕にかかる費用\n✓ 土地：接道・再建築の可否・権利関係\n✓ 周辺：災害リスク・実際の取引価格\n\n査定は参考値で、売買価格を保証するものではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1_checklist",
-    "bluesky": "価格差だけで決めないために、買う前に確かめたい3つ。\n\n✓ 建物：劣化・修繕にかかる費用\n✓ 土地：接道・再建築の可否・権利関係\n✓ 周辺：災害リスク・実際の取引価格\n\n査定は参考値で、売買価格を保証するものではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1_checklist"
+    "threads": "価格差だけで決めないために、買う前に確かめたい3つ。\n\n✓ 建物：劣化・修繕にかかる費用\n✓ 土地：接道・再建築の可否・権利関係\n✓ 周辺：災害リスク・実際の取引価格\n\n査定は参考値で、売買価格を保証するものではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=checklist",
+    "bluesky": "価格差だけで決めないために、買う前に確かめたい3つ。\n\n✓ 建物：劣化・修繕にかかる費用\n✓ 土地：接道・再建築の可否・権利関係\n✓ 周辺：災害リスク・実際の取引価格\n\n査定は参考値で、売買価格を保証するものではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=checklist"
    }
   },
   {
    "id": "W1-5",
-   "image": "ops/sns/week1/post5.png",
+   "pattern": "verdict",
+   "image": "ops/sns/week1/p-verdict.png",
    "channels": {
-    "threads": "お買い得物件チェッカーのしくみ。\n\n・国土交通省の取引データで学習したモデル\n・中古戸建ては2025年の取引で精度を確認\n・計算はこの端末の中で\n・無料・登録なし\n\n正式な不動産鑑定評価ではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1_trust",
-    "bluesky": "お買い得物件チェッカーのしくみ。\n\n・国土交通省の取引データで学習したモデル\n・中古戸建ては2025年の取引で精度を確認\n・計算はこの端末の中で\n・無料・登録なし\n\n正式な不動産鑑定評価ではありません。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1_trust"
+    "threads": "査定結果は3段階で表示します。\n\n・割安の可能性：割安率10％以上\n・相場に近い：−10％〜10％未満\n・割高の可能性：割安率−10％未満\n\n割安率＝（参考査定価格−販売価格）÷参考査定価格×100\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=w1&utm_content=verdict",
+    "bluesky": "査定結果は3段階で表示します。\n\n・割安の可能性：割安率10％以上\n・相場に近い：−10％〜10％未満\n・割高の可能性：割安率−10％未満\n\n割安率＝（参考査定価格−販売価格）÷参考査定価格×100\n査定は参考値です。\n\n▶ https://okaidoku-checker.pages.dev/?utm_source=bluesky&utm_medium=social&utm_campaign=w1&utm_content=verdict"
    }
   }
  ]
