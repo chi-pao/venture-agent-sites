@@ -1,6 +1,6 @@
 # ChatGPT への依頼：売りたい人向けページ（/sell/）のキャラクター画像 2枚
 
-状態: のぼるさん確認待ち（この依頼文をそのまま ChatGPT に貼る）
+状態: 作成済み（2026-11-03、ChatGPT）。元画像は ops/sns/characters/shigeru-yoko-surprised.webp
 
 ---
 
