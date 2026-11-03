@@ -22,6 +22,7 @@
 <body>
 <header class="topbar"><a class="brand" href="./" aria-label="お買い得物件チェッカー ホーム"><img class="brand-icon" src="app-icon.png" alt="" width="43" height="43"><span>お買い得物件<span class="brand-sub">チェッカー</span></span></a><div class="header-actions"><a href="#contact">お問い合わせ</a><span class="private">無料で価格チェック</span></div></header>
 <main>
+<section class="spark" aria-label="お買い得物件チェッカー"><div class="spark-in"><div class="spark-copy"><p class="spark-k">国の「売れた値段」× AI</p><h2 class="spark-h">見えなかった相場に、<br>光を当てる。</h2><p class="spark-p">物件サイトの値段は「売りたい値段」。<br>国が公開している何十万件の「実際に売れた値段」から、AI が30秒で答え合わせします。</p><a class="spark-cta" href="#input-title">答え合わせをはじめる →</a><p class="spark-meta">無料・登録なし・計算はこの端末の中</p></div><div class="spark-logo" id="electric-logo" aria-hidden="true"></div></div></section>
 <section class="howto" id="howto" aria-label="お買い得物件チェッカーの使い方"><div class="howto-sticky"><div class="howto-top"><span class="howto-pill">無料の価格チェック<span class="pill-more">・中古戸建て／中古マンション／新築戸建て</span></span><span class="howto-count"><b id="howto-n">1</b> of 6</span></div><div class="howto-grid"><div class="howto-left"><h1 class="howto-h1">その物件、いくらが目安？</h1><p class="howto-intro">物件ページのスクショか、物件情報を入れるだけ。国土交通省の取引データで学習したモデルで、販売価格と参考査定価格の差を確かめられます。</p><ol class="howto-list"><li><button type="button" data-step="0" aria-current="step"><span class="ht-title">お買い得物件チェッカー</span><span class="ht-no">01</span></button></li><li><button type="button" data-step="1"><span class="ht-title">スクショを貼る</span><span class="ht-no">02</span></button></li><li><button type="button" data-step="2"><span class="ht-title">物件情報を入れる</span><span class="ht-no">03</span></button></li><li><button type="button" data-step="3"><span class="ht-title">参考査定を見る</span><span class="ht-no">04</span></button></li><li><button type="button" data-step="4"><span class="ht-title">価格を変えて比べる</span><span class="ht-no">05</span></button></li><li><button type="button" data-step="5"><span class="ht-title">買う前に確かめる</span><span class="ht-no">06</span></button></li></ol><div class="howto-cta"><a class="button primary" href="#input-title">手入力で査定する →</a><a class="button secondary" href="#upload-title">スクショから入力</a></div></div><div class="howto-right"><figure class="howto-card" id="howto-card" data-mode="icon"><img id="howto-img" src="app-icon.png" alt="お買い得物件チェッカーのアイコン" width="256" height="256"></figure><dl class="howto-meta" id="howto-meta"><div><dt>料金</dt><dd>無料</dd></div><div><dt>計算</dt><dd>この端末の中</dd></div><div><dt>データ</dt><dd>国土交通省の取引データ</dd></div></dl></div></div></div></section>
 
 
@@ -79,6 +80,14 @@
 <p class="affiliate-disclosure">当サイトはアフィリエイト広告を掲載しています。広告リンク先ではCookie等が利用される場合があります。</p>
 </main><footer><span>⌂ お買い得物件チェッカー</span><span><a href="https://www.instagram.com/okaidokuhudousannchecker/" target="_blank" rel="noopener noreferrer" aria-label="公式Instagram（新しいタブで開きます）" style="display:inline-flex;align-items:center;gap:6px"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/></svg>公式Instagram</a> · <a href="/area/">地域の相場</a> · <a href="/sell/">自宅の価格チェック</a> · <a href="#contact">お問い合わせ</a> · <a href="#privacy">プライバシー・アクセス解析</a></span><span>参考情報の提供 · 正式な不動産鑑定評価ではありません</span></footer>
 <script type="module" src="howto.mjs?v=20261102c"></script>
+<script type="module">
+// 光るロゴ（React Bits の ElectricLogo）。ページを開いたあとで読み込む。WebGL が使えない環境では何も出さない。
+const el=document.getElementById('electric-logo');
+if(el&&document.createElement('canvas').getContext('webgl2')){
+  const load=()=>import('./vendor/electric-logo.js?v=20261103').then(m=>m.mount(el,{src:'/logo.svg',color:'#ecc7ff',glowColor:'#ad6dff',scale:0.7,strands:4,bend:0.6,crackle:1.5,arcs:1,speed:2.5,interactive:true})).catch(()=>{});
+  ('requestIdleCallback' in window)?requestIdleCallback(load,{timeout:1500}):setTimeout(load,300);
+}
+</script>
 <script type="module" src="offers.mjs?v=20261103d"></script>
 <script type="module" src="extras.mjs?v=20261103"></script>
 </body></html>
