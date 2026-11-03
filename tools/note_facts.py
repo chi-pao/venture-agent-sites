@@ -45,6 +45,11 @@ def main():
              '', '## 広告枠', *offer_facts(),
              '', '## サイト', f'- 地域の相場ページ: 市区町村 {area_pages} ページ', '- URL: https://okaidoku-checker.pages.dev/',
              '', '## 収益・訪問数', '- 記録がある場合だけ ops/metrics/ から転記する。記録がなければ「未記録」と書き、数字を作らない。']
+    journal = sorted(p for p in (ROOT / 'ops/journal').glob('20*.md') if p.stem >= a.since) if (ROOT / 'ops/journal').exists() else []
+    if journal:
+        parts += ['', '## 開発日誌（のぼるさんの言葉はここから引用する）']
+        for p in journal:
+            parts += ['', p.read_text(encoding='utf-8')]
     metrics = sorted((ROOT / 'ops/metrics').glob('*.md')) if (ROOT / 'ops/metrics').exists() else []
     if metrics:
         parts += ['', f'### 最新の記録（{metrics[-1].name}）', metrics[-1].read_text(encoding='utf-8')]
