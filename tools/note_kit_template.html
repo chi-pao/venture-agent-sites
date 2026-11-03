@@ -1,0 +1,41 @@
+<title>note 投稿キット #{n}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 投稿の手順に沿った縦一列：見出し画像 → 題名 → 本文 → タグ。各ブロックにコピーのボタン */
+:root{{--bg:#f6f7f4;--card:#ffffff;--fg:#1d2321;--muted:#5b6560;--line:#dfe3df;--accent:#2f8f6b;--accent-fg:#fff;--warn:#e8590c;
+--font:"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;--read:"Noto Serif JP","Yu Mincho",serif}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{--bg:#151917;--card:#1d2321;--fg:#e8ece9;--muted:#9aa59f;--line:#2e3632;--accent:#4fb98f;--accent-fg:#0f1412;color-scheme:dark}}}}
+:root[data-theme="dark"]{{--bg:#151917;--card:#1d2321;--fg:#e8ece9;--muted:#9aa59f;--line:#2e3632;--accent:#4fb98f;--accent-fg:#0f1412;color-scheme:dark}}
+body{{background:var(--bg);color:var(--fg);font-family:var(--font);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}}
+main{{max-width:720px;margin:0 auto;display:grid;gap:18px}}
+header h1{{font-size:22px;margin:0;text-wrap:balance}} header p{{margin:6px 0 0;color:var(--muted);font-size:14px;line-height:1.7}}
+.step{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:10px;min-width:0}}
+.step-h{{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}}
+.step-h span{{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.04em}}
+button{{font:inherit;font-size:14px;font-weight:700;background:var(--accent);color:var(--accent-fg);border:0;border-radius:999px;padding:9px 18px;cursor:pointer}}
+button:focus-visible{{outline:3px solid var(--warn);outline-offset:2px}}
+.title{{font-size:18px;font-weight:700;line-height:1.6}}
+.body{{font-family:var(--read);font-size:16px;line-height:1.95;min-width:0;overflow-wrap:anywhere}}
+.body hr{{border:0;border-top:1px solid var(--line);margin:22px 0}}
+.body h2{{font-family:var(--font);font-size:19px;margin:28px 0 8px}} .body a{{color:var(--accent)}}
+.tags{{font-size:15px}} .hint{{font-size:12px;color:var(--muted);margin:0}}
+img{{border-radius:10px;display:block}}
+</style>
+<main>
+<header><h1>note 投稿キット #{n}</h1><p>上から順に、コピー → note に貼り付け。見出し画像は長押し（パソコンは右クリック）で保存してください。</p></header>
+<section class="step"><div class="step-h"><span>見出し画像</span></div><img src="data:image/jpeg;base64,{img}" alt="48歳・AI初心者の奮闘記 #{n} の見出し画像"><p class="hint">長押し →「画像を保存」→ note の題名の上の画像マークから選ぶ</p></section>
+<section class="step"><div class="step-h"><span>題名</span><button data-copy="t">題名をコピー</button></div><div class="title" id="t">{title}</div></section>
+<section class="step"><div class="step-h"><span>本文（太字・見出しつき）</span><button data-copy="b" data-rich="1">本文をコピー</button></div><p class="hint">うまく貼れないときは、本文を長押しして「すべて選択」→「コピー」</p><article class="body" id="b">{article}</article></section>
+<section class="step"><div class="step-h"><span>ハッシュタグ（公開設定の画面で）</span><button data-copy="g">タグをコピー</button></div><div class="tags" id="g">{tags}</div></section>
+</main>
+<script>
+document.querySelectorAll('button[data-copy]').forEach(b=>b.addEventListener('click',async()=>{{
+  const el=document.getElementById(b.dataset.copy),label=b.textContent;
+  const done=t=>{{b.textContent=t;setTimeout(()=>b.textContent=label,1800)}};
+  try{{
+    if(b.dataset.rich&&window.ClipboardItem){{await navigator.clipboard.write([new ClipboardItem({{'text/html':new Blob([el.innerHTML],{{type:'text/html'}}),'text/plain':new Blob([el.innerText],{{type:'text/plain'}})}})]);}}
+    else await navigator.clipboard.writeText(el.innerText.trim());
+    done('コピーしました');
+  }}catch(e){{const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r);done('選択しました。コピーしてください');}}
+}}));
+</script>
