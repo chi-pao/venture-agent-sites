@@ -38,6 +38,11 @@ class AutoRetrainTests(unittest.TestCase):
         self.assertEqual(d, {'type': 'used_house', 'prefecture': '山口県', 'city': '35202', 'price': 1, 'district': '大字際波',
                              'year': 2000, 'landArea': 238.0, 'buildingArea': 172.0, 'structure': '木造', 'stationMinutes': 23})
 
+    def test_period_labels(self):
+        self.assertEqual(auto.period_label(2026 * 4, 2026 * 4 + 1), '2026年1〜6月')
+        self.assertEqual(auto.period_label(2025 * 4 + 3, 2026 * 4), '2025年10月〜2026年3月')
+        self.assertEqual(auto.month_end(2025 * 4 + 3), '2025年12月')
+
     def test_score(self):
         s = auto.score(np.array([90.0, 150.0]), np.array([100.0, 100.0]))
         self.assertEqual((s['median_ape_pct'], s['within20_pct']), (30.0, 50.0))

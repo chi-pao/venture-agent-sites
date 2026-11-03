@@ -1,7 +1,7 @@
 name: Checker used-house model self-improvement
 # Monthly: fetch the newest MLIT quarters, train candidate models, score them against the live
-# model on the latest held-out sales through the site's own runtime, and open a pull request only
-# when a candidate is clearly better. Nothing reaches the site until that pull request is merged.
+# model on the latest held-out sales through the site's own runtime, and publish to main only
+# when a candidate is clearly better and the site tests pass (owner's decision, 2026-11-03).
 on:
   schedule:
     - cron: '23 3 7 * *'
@@ -51,16 +51,14 @@ jobs:
         run: |
           python -m playwright install --with-deps chromium
           python -m unittest tests.test_checker_site tests.test_town_aliases tests.test_auto_retrain -v
-      - name: Open a pull request with the better model
+      # のぼるさんの決定（2026-11-03）: はっきり良くなったモデルは確認なしで採用する。
+      # 採用の基準（誤差中央値 0.3pt 以上の改善・±20%以内の悪化 1pt 以内）とサイトのテストに通ったときだけ main に入る。
+      - name: Publish the better model
         if: steps.retrain.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          branch="auto/checker-model-$(date +%Y%m%d)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
           git add checker-site
-          git commit -m "Checker: better used-house model from the monthly self-improvement run"
-          git push origin "$branch"
-          gh pr create --base main --head "$branch" --title "お買い得物件チェッカー：中古戸建てモデルの自動更新（$(date +%Y年%-m月)）" --body-file retrain-work/summary.md
+          git commit -m "Checker: better used-house model from the monthly self-improvement run" -m "$(cat retrain-work/summary.md)"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep $((i * 20)); done
+          exit 1
