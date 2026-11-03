@@ -156,3 +156,26 @@ html,body{overflow-x:clip}
 .intent-switch input{accent-color:#1f5fd6;margin:0}
 .intent-switch+.affiliate-result{border-top:0;padding-top:12px}
 .area-link{display:block;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:#eef3fd;color:#1f5fd6;font-weight:700;text-decoration:none;font-size:13px}
+.result-extras{margin:18px 0 0}
+.result-extras .band{background:#eef3fd;border-radius:14px;padding:12px 14px}
+.result-extras .band-label{display:block;font-size:11px;color:#5f6f86}
+.result-extras .band strong{display:block;font-size:22px;color:#14233b}
+.result-extras .band-label{font-size:12px;font-weight:700;color:#3d4b60}
+.result-extras .band{padding:14px 16px 12px}
+.result-extras .band .band-verdict{font-size:28px;line-height:1.2;margin-top:2px}
+.band.low .band-verdict{color:#0f8a4b}.band.mid .band-verdict{color:#1f5fd6}.band.high .band-verdict{color:#e8590c}
+.band-diff{margin:2px 0 0;font-size:15px;font-weight:700;color:#14233b}
+.houses{display:flex;gap:10px;margin:12px 0 6px}
+.hh{width:54px;height:50px;fill:#fff;stroke:#b8c4d6;stroke-width:2.5;stroke-linejoin:round}
+.band.mid .hh.on{fill:#1f5fd6;stroke:#1f5fd6}.band.high .hh.on{fill:#e8590c;stroke:#e8590c}.band.low .hh.on{fill:#0f8a4b;stroke:#0f8a4b}
+.hh.on rect+rect{fill:#fff}
+.band-say{margin:4px 0 6px;font-size:16px;font-weight:700;line-height:1.5;color:#14233b}
+.band-legend{display:flex;gap:14px;font-size:11px;color:#3d4b60;margin-bottom:2px}
+.band-legend .k::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;border:1.5px solid #b8c4d6;background:#fff}
+.band.mid .band-legend .k.on::before{background:#1f5fd6;border-color:#1f5fd6}.band.high .band-legend .k.on::before{background:#e8590c;border-color:#e8590c}.band.low .band-legend .k.on::before{background:#0f8a4b;border-color:#0f8a4b}
+.result-extras small{display:block;font-size:10px;color:#6b7a90;line-height:1.6;margin-top:4px}
+.result-extras h3{font-size:13px;margin:16px 0 6px}
+.result-extras .tablewrap{overflow-x:auto}
+.result-extras table{width:100%;border-collapse:collapse;font-size:11px}
+.result-extras th,.result-extras td{padding:5px 4px;border-bottom:1px solid #e3eaf6;text-align:left;white-space:nowrap}
+.result-extras td.num{text-align:right}

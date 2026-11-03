@@ -73,19 +73,6 @@
    "note": "A8.net ノムコム s00000026205002。野村不動産ソリューションズの営業エリア外は否認のため、営業エリアの都道府県を prefectures に入れる。初回査定問合せ 5千円"
   },
   {
-   "id": "loan-compare",
-   "enabled": false,
-   "intent": [
-    "buy"
-   ],
-   "priority": 1,
-   "label": "住宅ローンの比較",
-   "kind": "text",
-   "href": "",
-   "text": "",
-   "note": "A8.net で「住宅ローン」を検索"
-  },
-  {
    "id": "inspection",
    "enabled": false,
    "intent": [
@@ -124,6 +111,54 @@
    "href": "",
    "text": "",
    "note": "A8.net で「引越し 見積もり」を検索"
+  },
+  {
+   "id": "loan-mogecheck",
+   "enabled": false,
+   "intent": [
+    "buy"
+   ],
+   "priority": 1,
+   "label": "住宅ローンの無料比較",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net モゲチェック（借り入れ）s00000017735007。銀行名と金利を結びつけた表現・返済に困った人を誘う表現は禁止"
+  },
+  {
+   "id": "fire-insweb",
+   "enabled": false,
+   "intent": [
+    "buy"
+   ],
+   "priority": 3,
+   "label": "火災保険の一括見積もり",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net インズウェブ火災保険 s00000000352014 / s00000000352016。特典で誘う表現は禁止"
+  },
+  {
+   "id": "reno-hikarinobe",
+   "enabled": false,
+   "intent": [
+    "buy"
+   ],
+   "types": [
+    "used_house",
+    "used_condo"
+   ],
+   "prefectures": [
+    "東京都",
+    "神奈川県",
+    "千葉県"
+   ],
+   "priority": 2,
+   "label": "中古を買ってリノベーション",
+   "kind": "text",
+   "href": "",
+   "text": "",
+   "note": "A8.net ひかリノベ s00000015212001。東京・神奈川・千葉以外は否認のため3都県のみ"
   }
  ]
 }

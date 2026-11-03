@@ -136,6 +136,11 @@ def build(archive, site):
         title, text, med = city_page(code, g, years)
         (area / code).mkdir(exist_ok=True)
         (area / code / 'index.html').write_text(text, encoding='utf-8')
+        # Compact sales list for the checker's "similar sales nearby": [year, quarter, district, 万円, land, floor, built]
+        rows = [[int(r.year), None if pd.isna(r.quarter) else int(r.quarter), r.地区名 if isinstance(r.地区名, str) else '',
+                 int(round(r.price / 10000)), None if pd.isna(r.land) else float(r.land), None if pd.isna(r.floor) else float(r.floor),
+                 None if pd.isna(r.built) else int(r.built)] for r in g.sort_values(['year', 'quarter'], ascending=False).itertuples()]
+        (area / code / 'sales.json').write_text(json.dumps(rows, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
         built.append(f'/area/{code}/')
         by_pref.setdefault(code[:2], (g['都道府県名'].iloc[0], []))[1].append((code, g['市区町村名'].iloc[0], len(g), med))
     for pc, (pref, cities) in sorted(by_pref.items()):
@@ -148,7 +153,7 @@ def build(archive, site):
     body = f'<h1>地域の戸建ての相場</h1><p class="lead">都道府県を選ぶと、市区町村ごとの実際の取引価格（{years[0]}〜{last}年）を見られます。</p><ul class="cities">{items}</ul>'
     (area / 'index.html').write_text(page('地域の戸建ての相場｜実際の取引価格（都道府県・市区町村別）', '全国の市区町村ごとの戸建ての取引価格の中央値を、国土交通省のデータから集計。', '/area/', body, [('トップ', '/'), ('地域の相場', '/area/')]), encoding='utf-8')
     (area / 'codes.json').write_text(json.dumps(sorted(u.strip('/').split('/')[-1] for u in built if len(u.strip('/').split('/')[-1]) == 5)), encoding='utf-8')
-    urls = ['/', '/area/'] + sorted(built)
+    urls = ['/', '/sell/', '/area/'] + sorted(built)
     today = date.today().isoformat()
     (site / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + ''.join(
         f'<url><loc>{ORIGIN}{u}</loc><lastmod>{today}</lastmod></url>\n' for u in urls) + '</urlset>\n', encoding='utf-8')
