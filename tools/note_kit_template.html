@@ -16,6 +16,7 @@ button{{font:inherit;font-size:14px;font-weight:700;background:var(--accent);col
 button:focus-visible{{outline:3px solid var(--warn);outline-offset:2px}}
 .title{{font-size:18px;font-weight:700;line-height:1.6}}
 .body{{font-family:var(--read);font-size:16px;line-height:1.95;min-width:0;overflow-wrap:anywhere}}
+.body figure{{margin:18px 0;padding:10px;border:2px dashed var(--accent);border-radius:12px}}.body figcaption{{font-family:var(--font);font-size:12px;color:var(--muted);margin-top:6px}}
 .body hr{{border:0;border-top:1px solid var(--line);margin:22px 0}}
 .body h2{{font-family:var(--font);font-size:19px;margin:28px 0 8px}} .body a{{color:var(--accent)}}
 .tags{{font-size:15px}} .hint{{font-size:12px;color:var(--muted);margin:0}}
@@ -25,7 +26,7 @@ img{{border-radius:10px;display:block}}
 <header><h1>note 投稿キット #{n}</h1><p>上から順に、コピー → note に貼り付け。見出し画像は長押し（パソコンは右クリック）で保存してください。</p></header>
 <section class="step"><div class="step-h"><span>見出し画像</span></div><img src="data:image/jpeg;base64,{img}" alt="48歳・AI初心者の奮闘記 #{n} の見出し画像"><p class="hint">長押し →「画像を保存」→ note の題名の上の画像マークから選ぶ</p></section>
 <section class="step"><div class="step-h"><span>題名</span><button data-copy="t">題名をコピー</button></div><div class="title" id="t">{title}</div></section>
-<section class="step"><div class="step-h"><span>本文（太字・見出しつき）</span><button data-copy="b" data-rich="1">本文をコピー</button></div><p class="hint">うまく貼れないときは、本文を長押しして「すべて選択」→「コピー」</p><article class="body" id="b">{article}</article></section>
+<section class="step"><div class="step-h"><span>本文（太字・見出しつき）</span><button data-copy="b" data-rich="1">本文をコピー</button></div><p class="hint">画像は文章と一緒に貼れないことがあります。点線の枠の画像は長押しで保存し、note の同じ場所に「＋」→「画像」で入れてください</p><article class="body" id="b">{article}</article></section>
 <section class="step"><div class="step-h"><span>ハッシュタグ（公開設定の画面で）</span><button data-copy="g">タグをコピー</button></div><div class="tags" id="g">{tags}</div></section>
 </main>
 <script>

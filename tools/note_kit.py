@@ -17,7 +17,13 @@ def inline(t):
     return re.sub(r'(https://\S+)', r'<a href="\1">\1</a>', t)
 
 
-def to_html(body):
+def embed(path):
+    buf = io.BytesIO()
+    Image.open(path).convert('RGB').save(buf, 'JPEG', quality=85)
+    return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+
+def to_html(body, image_dir):
     out, lst, para = [], None, []
 
     def flush():
@@ -33,6 +39,11 @@ def to_html(body):
     for line in body.strip().split('\n'):
         if not line.strip():
             flush(); endlist(); continue
+        m = re.match(r'^\[画像: (.+)\]$', line.strip())
+        if m:
+            flush(); endlist()
+            out.append(f'<figure><img src="{embed(f"{image_dir}/{m.group(1)}")}" alt="{html.escape(m.group(1))}"><figcaption>この場所に画像 {html.escape(m.group(1))} を入れる（長押しで保存）</figcaption></figure>')
+            continue
         if line.strip() == '---':
             flush(); endlist(); out.append('<hr>'); continue
         if line.startswith('## '):
@@ -59,7 +70,7 @@ def main(draft, image, dest):
     Image.open(image).convert('RGB').save(buf, 'JPEG', quality=85)
     img = base64.b64encode(buf.getvalue()).decode()
     page = TEMPLATE.format(n=number.group(1) if number else '', img=img, title=html.escape(title),
-                           article=to_html(body), tags=html.escape(tags))
+                           article=to_html(body, image.rsplit('/', 1)[0]), tags=html.escape(tags))
     open(dest, 'w', encoding='utf-8').write(page)
 
 
