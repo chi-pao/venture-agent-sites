@@ -1,27 +1,42 @@
 {
- "holdout": "MLIT 2025年の中古戸建て取引から無作為に20,000件（調停・競売・関係者間・隣地・瑕疵・取壊し前提を除く、100万円以上）",
- "candidate_training": "2024年までの取引のみ（同じ方式で学習し、公開用は2025年まで含めて学習し直し）",
- "results": {
-  "incumbent_2026_10": {
+ "holdout": "20000 sales from the latest 2 quarters (period index > 8103)",
+ "live": {
+  "n": 20000,
+  "median_ape_pct": 22.09,
+  "within20_pct": 46.77,
+  "mae_yen": 13786912,
+  "median_actual_over_estimate": 0.998
+ },
+ "candidates": {
+  "base": {
    "n": 20000,
-   "median_ape_pct": 24.46,
-   "within20_pct": 42.8,
-   "mae_yen": 15592908,
-   "median_actual_over_estimate": 1.112
+   "median_ape_pct": 21.11,
+   "within20_pct": 48.09,
+   "mae_yen": 12794732,
+   "median_actual_over_estimate": 1.016
   },
-  "candidate_station_blank_filled": {
+  "recent": {
    "n": 20000,
-   "median_ape_pct": 20.89,
-   "within20_pct": 48.32,
-   "mae_yen": 10695057,
-   "median_actual_over_estimate": 1.048
+   "median_ape_pct": 21.18,
+   "within20_pct": 48.0,
+   "mae_yen": 12836640,
+   "median_actual_over_estimate": 1.015
   },
-  "candidate_station_entered": {
+  "filled": {
    "n": 20000,
-   "median_ape_pct": 20.42,
-   "within20_pct": 49.21,
-   "mae_yen": 10477899,
-   "median_actual_over_estimate": 1.07
+   "median_ape_pct": 21.03,
+   "within20_pct": 48.21,
+   "mae_yen": 12738354,
+   "median_actual_over_estimate": 1.027
+  },
+  "recent+filled": {
+   "n": 20000,
+   "median_ape_pct": 21.06,
+   "within20_pct": 48.08,
+   "mae_yen": 12822516,
+   "median_actual_over_estimate": 1.027
   }
- }
+ },
+ "winner": "filled",
+ "adopted": true
 }
