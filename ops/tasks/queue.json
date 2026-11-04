@@ -119,20 +119,18 @@
     {
       "id": "EP01-4-POST",
       "kind": "video_post_schedule",
-      "title": "第1話の動画 v3 を Instagram リール・TikTok・Threads に予約",
+      "title": "第1話の動画 v3 を Instagram リール・Threads に予約",
       "status": "承認済み",
       "payload": {
         "business": "お買い得物件チェッカー",
         "channels": [
           "Instagram",
-          "TikTok",
           "Threads"
         ],
         "video": "ops/sns/video/EP01-v3.mp4",
         "request": "ops/chatgpt/outbox/EP01-4-POST.md",
         "schedule": "2026-11-05 18:00 JST",
         "url_instagram": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=ep01&utm_content=character",
-        "url_tiktok": "https://okaidoku-checker.pages.dev/?utm_source=tiktok&utm_medium=social&utm_campaign=ep01&utm_content=character",
         "url_threads": "https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=ep01&utm_content=character"
       }
     }

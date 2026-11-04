@@ -1,4 +1,4 @@
-# 第1話の動画 投稿セット（承認待ち）
+# 第1話の動画 投稿セット（Instagram・Threads は予約の依頼済み: `ops/chatgpt/outbox/EP01-4-POST.md`。TikTok はアカウントがないので使わない。YouTube はアカウントを作ったら使う）
 
 - 動画: `ops/sns/video/EP01-v3.mp4`（縦 1080×1920・32.6秒・声と音楽つき）
 - 投稿する人: のぼるさん（Claude Code は SNS に投稿できないため）
@@ -13,9 +13,8 @@
 4. プロフィールのリンクを、下の「プロフィールのリンク」に変えておく
 
 ## プロフィールのリンク（SNS ごとに変えて、どこから来たかを測る）
-Instagram・TikTok・YouTube ショートは、説明欄の URL を押せないことが多いので、プロフィールのリンクから来てもらう。
+Instagram・YouTube ショートは、説明欄の URL を押せないことが多いので、プロフィールのリンクから来てもらう。
 - Instagram: `https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=ep01&utm_content=character`
-- TikTok: `https://okaidoku-checker.pages.dev/?utm_source=tiktok&utm_medium=social&utm_campaign=ep01&utm_content=character`
 - YouTube: `https://okaidoku-checker.pages.dev/?utm_source=youtube&utm_medium=social&utm_campaign=ep01&utm_content=character`
 
 ## Instagram リール
@@ -30,16 +29,6 @@ Instagram・TikTok・YouTube ショートは、説明欄の URL を押せない�
 音声: AivisSpeech (fumifumi)
 BGM: 昼下がり気分 / KK (OpenTracks・旧DOVA-SYNDROME)
 
-#マイホーム #中古住宅 #家探し #住宅購入 #子育て世帯
-```
-
-## TikTok
-```
-この家、高いの？安いの？ 数字で確かめてから、家族で話そう。
-物件ページのスクショを貼るだけで、参考査定価格と比べられます。無料・登録不要。
-※登場人物・物件は架空。査定は参考値です。
-▶ プロフィールのリンクから
-音声: AivisSpeech (fumifumi) / BGM: 昼下がり気分 / KK (OpenTracks・旧DOVA-SYNDROME)
 #マイホーム #中古住宅 #家探し #住宅購入 #子育て世帯
 ```
 
