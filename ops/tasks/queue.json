@@ -173,6 +173,22 @@
     "schedule": "2026-11-05 18:00 JST",
     "url_youtube": "https://okaidoku-checker.pages.dev/?utm_source=youtube&utm_medium=social&utm_campaign=ep01&utm_content=character"
    }
+  },
+  {
+   "id": "EP01-6-TIKTOK",
+   "kind": "video_post_schedule",
+   "title": "第1話の動画 v3 を TikTok に予約",
+   "status": "承認済み",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channels": [
+     "TikTok"
+    ],
+    "video": "ops/sns/video/EP01-v3.mp4",
+    "request": "ops/chatgpt/outbox/EP01-6-TIKTOK.md",
+    "schedule": "2026-11-05 18:00 JST",
+    "url_tiktok": "https://okaidoku-checker.pages.dev/?utm_source=tiktok&utm_medium=social&utm_campaign=ep01&utm_content=character"
+   }
   }
  ]
 }
