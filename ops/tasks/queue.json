@@ -1,138 +1,161 @@
 {
-  "version": 1,
-  "note": "Claude Code（SNS集客担当）が発行。のぼるさんが status を「承認済み」にしたものだけ ChatGPT 用の依頼書になる（python tools/chatgpt_packets.py --render）。2026-11-01: 公開先を ChatGPT Sites（https://okaidoku-checker.rightharp65.chatgpt.site/）に変更。facts は公開ページの文言（のぼるさんが2026-11-01にコピーした本文）に合わせた。「端末内で処理」は表示されている説明で、実際の処理は未確認のため投稿では使っていない。",
-  "tasks": [
-    {
-      "id": "C-W1-01",
-      "kind": "sns_post_draft",
-      "title": "X 型①相場の見方",
-      "status": "承認待ち",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "channel": "X",
-        "format": "型① 相場の見方の解説",
-        "angle": "中古マンションの提示価格を、築年数・駅距離・取引時期の3つの視点で見る",
-        "facts": [
-          "国土交通省の取引データをもとに学習したモデルで、参考査定価格を出します",
-          "中古戸建て・中古マンション・新築戸建てに対応しています",
-          "参考査定価格と販売価格の差を、ひと目で確認できます",
-          "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
-          "無料で価格チェックできます"
-        ],
-        "url": "https://okaidoku-checker.pages.dev/?utm_source=x&utm_medium=social&utm_campaign=w1_soba",
-        "max_chars": 140
-      }
-    },
-    {
-      "id": "C-W1-02",
-      "kind": "sns_post_draft",
-      "title": "X 固定投稿 型④使い方",
-      "status": "承認待ち",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "channel": "X",
-        "format": "型④ ツールの使い方（固定投稿）",
-        "angle": "物件ページのスクショから参考価格と比べるまでの流れ",
-        "facts": [
-          "物件ページのスクショを貼ると情報を読み取ります（文字認識には誤りがあり得るため、読み取った文字を確認・修正できます）",
-          "参考査定価格と販売価格の差を、ひと目で確認できます",
-          "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
-          "無料で価格チェックできます"
-        ],
-        "url": "https://okaidoku-checker.pages.dev/?utm_source=x&utm_medium=social&utm_campaign=w1_pinned",
-        "max_chars": 140
-      }
-    },
-    {
-      "id": "C-W1-03",
-      "kind": "sns_post_draft",
-      "title": "Instagram 型②チェックリストのキャプション",
-      "status": "承認待ち",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "channel": "Instagram",
-        "format": "型② チェックリスト（カルーセル8項目、最後は「提示価格を参考価格と比べた」）",
-        "angle": "中古一戸建ての購入申込み前に確認したい項目",
-        "facts": [
-          "国土交通省の取引データをもとに学習したモデルで、参考査定価格を出します",
-          "参考査定価格と販売価格の差を、ひと目で確認できます",
-          "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
-          "無料で価格チェックできます",
-          "法律・税金に関わる項目は専門家への確認が必要です"
-        ],
-        "url": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=w1_checklist",
-        "max_chars": 300
-      }
-    },
-    {
-      "id": "C-W1-04",
-      "kind": "image_asset",
-      "title": "カルーセル1枚目（型①）",
-      "status": "承認待ち",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "prompt": "中古住宅を思わせるシンプルなイラスト。人物・実在の物件写真・他社ロゴは使わない。配色は紺#0a263cと青緑#0c857c、アクセント金#f3bf63",
-        "headline": "その価格、相場と比べた？",
-        "subline": "判断の手がかり3つ",
-        "size": "1080x1350"
-      }
-    },
-    {
-      "id": "C-W1-05",
-      "kind": "video_script",
-      "title": "リール 型④使い方（30秒）",
-      "status": "承認待ち",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "duration_sec": 30,
-        "scenes": 4,
-        "facts": [
-          "物件ページのスクショを貼ると情報を読み取ります（文字認識には誤りがあり得るため、読み取った文字を確認・修正できます）",
-          "参考査定価格と販売価格の差を、ひと目で確認できます",
-          "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
-          "無料で価格チェックできます",
-          "画面録画には架空のダミー物件を使います"
-        ]
-      }
-    },
-    {
-      "id": "C-MOVE-01",
-      "kind": "sns_post_draft",
-      "title": "Instagram お引越しのお知らせ",
-      "status": "承認済み",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "channel": "Instagram",
-        "format": "お知らせ（フィード投稿・ストーリーズ共通の文面）",
-        "angle": "お買い得物件チェッカーのURLが変わったことを知らせ、新しいURLへ案内する。ブックマークやホーム画面の登録をしている人に、登録し直しをお願いする",
-        "facts": [
-          "お買い得物件チェッカーは https://okaidoku-checker.pages.dev/ にお引越ししました",
-          "これまでのURL（https://okaidoku-checker.rightharp65.chatgpt.site/）はお引越しのお知らせページになります",
-          "ブックマークやスマホのホーム画面に登録している方は、新しいURLで登録し直してください",
-          "使い方・査定の内容はこれまでと同じで、無料で価格チェックできます",
-          "プロフィールのリンクも新しいURLに変更しています"
-        ],
-        "url": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=move_notice",
-        "max_chars": 400
-      }
-    },
-    {
-      "id": "EP01-4-POST",
-      "kind": "video_post_schedule",
-      "title": "第1話の動画 v3 を Instagram リール・Threads に予約",
-      "status": "承認済み",
-      "payload": {
-        "business": "お買い得物件チェッカー",
-        "channels": [
-          "Instagram",
-          "Threads"
-        ],
-        "video": "ops/sns/video/EP01-v3.mp4",
-        "request": "ops/chatgpt/outbox/EP01-4-POST.md",
-        "schedule": "2026-11-05 18:00 JST",
-        "url_instagram": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=ep01&utm_content=character",
-        "url_threads": "https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=ep01&utm_content=character"
-      }
-    }
-  ]
+ "version": 1,
+ "note": "Claude Code（SNS集客担当）が発行。のぼるさんが status を「承認済み」にしたものだけ ChatGPT 用の依頼書になる（python tools/chatgpt_packets.py --render）。2026-11-01: 公開先を ChatGPT Sites（https://okaidoku-checker.rightharp65.chatgpt.site/）に変更。facts は公開ページの文言（のぼるさんが2026-11-01にコピーした本文）に合わせた。「端末内で処理」は表示されている説明で、実際の処理は未確認のため投稿では使っていない。",
+ "tasks": [
+  {
+   "id": "C-W1-01",
+   "kind": "sns_post_draft",
+   "title": "X 型①相場の見方",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channel": "X",
+    "format": "型① 相場の見方の解説",
+    "angle": "中古マンションの提示価格を、築年数・駅距離・取引時期の3つの視点で見る",
+    "facts": [
+     "国土交通省の取引データをもとに学習したモデルで、参考査定価格を出します",
+     "中古戸建て・中古マンション・新築戸建てに対応しています",
+     "参考査定価格と販売価格の差を、ひと目で確認できます",
+     "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
+     "無料で価格チェックできます"
+    ],
+    "url": "https://okaidoku-checker.pages.dev/?utm_source=x&utm_medium=social&utm_campaign=w1_soba",
+    "max_chars": 140
+   }
+  },
+  {
+   "id": "C-W1-02",
+   "kind": "sns_post_draft",
+   "title": "X 固定投稿 型④使い方",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channel": "X",
+    "format": "型④ ツールの使い方（固定投稿）",
+    "angle": "物件ページのスクショから参考価格と比べるまでの流れ",
+    "facts": [
+     "物件ページのスクショを貼ると情報を読み取ります（文字認識には誤りがあり得るため、読み取った文字を確認・修正できます）",
+     "参考査定価格と販売価格の差を、ひと目で確認できます",
+     "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
+     "無料で価格チェックできます"
+    ],
+    "url": "https://okaidoku-checker.pages.dev/?utm_source=x&utm_medium=social&utm_campaign=w1_pinned",
+    "max_chars": 140
+   }
+  },
+  {
+   "id": "C-W1-03",
+   "kind": "sns_post_draft",
+   "title": "Instagram 型②チェックリストのキャプション",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channel": "Instagram",
+    "format": "型② チェックリスト（カルーセル8項目、最後は「提示価格を参考価格と比べた」）",
+    "angle": "中古一戸建ての購入申込み前に確認したい項目",
+    "facts": [
+     "国土交通省の取引データをもとに学習したモデルで、参考査定価格を出します",
+     "参考査定価格と販売価格の差を、ひと目で確認できます",
+     "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
+     "無料で価格チェックできます",
+     "法律・税金に関わる項目は専門家への確認が必要です"
+    ],
+    "url": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=w1_checklist",
+    "max_chars": 300
+   }
+  },
+  {
+   "id": "C-W1-04",
+   "kind": "image_asset",
+   "title": "カルーセル1枚目（型①）",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "prompt": "中古住宅を思わせるシンプルなイラスト。人物・実在の物件写真・他社ロゴは使わない。配色は紺#0a263cと青緑#0c857c、アクセント金#f3bf63",
+    "headline": "その価格、相場と比べた？",
+    "subline": "判断の手がかり3つ",
+    "size": "1080x1350"
+   }
+  },
+  {
+   "id": "C-W1-05",
+   "kind": "video_script",
+   "title": "リール 型④使い方（30秒）",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "duration_sec": 30,
+    "scenes": 4,
+    "facts": [
+     "物件ページのスクショを貼ると情報を読み取ります（文字認識には誤りがあり得るため、読み取った文字を確認・修正できます）",
+     "参考査定価格と販売価格の差を、ひと目で確認できます",
+     "査定は売買価格を保証するものではなく、正式な不動産鑑定評価ではありません",
+     "無料で価格チェックできます",
+     "画面録画には架空のダミー物件を使います"
+    ]
+   }
+  },
+  {
+   "id": "C-MOVE-01",
+   "kind": "sns_post_draft",
+   "title": "Instagram お引越しのお知らせ",
+   "status": "承認済み",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channel": "Instagram",
+    "format": "お知らせ（フィード投稿・ストーリーズ共通の文面）",
+    "angle": "お買い得物件チェッカーのURLが変わったことを知らせ、新しいURLへ案内する。ブックマークやホーム画面の登録をしている人に、登録し直しをお願いする",
+    "facts": [
+     "お買い得物件チェッカーは https://okaidoku-checker.pages.dev/ にお引越ししました",
+     "これまでのURL（https://okaidoku-checker.rightharp65.chatgpt.site/）はお引越しのお知らせページになります",
+     "ブックマークやスマホのホーム画面に登録している方は、新しいURLで登録し直してください",
+     "使い方・査定の内容はこれまでと同じで、無料で価格チェックできます",
+     "プロフィールのリンクも新しいURLに変更しています"
+    ],
+    "url": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=move_notice",
+    "max_chars": 400
+   }
+  },
+  {
+   "id": "EP01-4-POST",
+   "kind": "video_post_schedule",
+   "title": "第1話の動画 v3 を Instagram リール・Threads に予約",
+   "status": "承認済み",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channels": [
+     "Instagram",
+     "Threads"
+    ],
+    "video": "ops/sns/video/EP01-v3.mp4",
+    "request": "ops/chatgpt/outbox/EP01-4-POST.md",
+    "schedule": "2026-11-05 18:00 JST",
+    "url_instagram": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=ep01&utm_content=character",
+    "url_threads": "https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=ep01&utm_content=character"
+   }
+  },
+  {
+   "id": "NOTE01-PROMO",
+   "kind": "sns_post_schedule",
+   "title": "note 第1回の告知（3本）",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channels": [
+     "Threads",
+     "Bluesky",
+     "Instagram"
+    ],
+    "texts": "ops/sns/note-promo/2026-11-04.md",
+    "image": "ops/note/images/01-header.png",
+    "link": "https://note.com/okaidoku_bukkenn/n/nbe87824c70f2",
+    "schedule": [
+     "1本目: 承認の翌日 18:00 JST",
+     "2本目: その2日後 18:00 JST",
+     "3本目: その2日後 18:00 JST"
+    ],
+    "rule": "のぼるさんが確認・手直し → OK のあと status を『承認済み』にする。ChatGPT のタスクが承認済みだけを Metricool に予約する。"
+   }
+  }
+ ]
 }
