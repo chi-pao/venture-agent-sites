@@ -147,14 +147,18 @@
      "Instagram"
     ],
     "texts": "ops/sns/note-promo/2026-11-04.md",
-    "image": "ops/note/images/01-header.png",
     "link": "https://note.com/okaidoku_bukkenn/n/nbe87824c70f2",
     "schedule": [
      "1本目: 承認の翌日 18:00 JST",
      "2本目: その2日後 18:00 JST",
      "3本目: その2日後 18:00 JST"
     ],
-    "rule": "のぼるさんが確認・手直し → OK のあと status を『承認済み』にする。ChatGPT のタスクが承認済みだけを Metricool に予約する。"
+    "rule": "のぼるさんが確認・手直し → OK のあと status を『承認済み』にする。ChatGPT のタスクが承認済みだけを Metricool に予約する。",
+    "images": [
+     "ops/sns/note-promo/images/2026-11-04-a.png（1本目：口説き文句）",
+     "ops/sns/note-promo/images/2026-11-04-b.png（2本目：焦った）",
+     "ops/sns/note-promo/images/2026-11-04-c.png（3本目：数字）"
+    ]
    }
   },
   {
