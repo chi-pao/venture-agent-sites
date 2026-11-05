@@ -156,6 +156,23 @@
     ],
     "rule": "のぼるさんが確認・手直し → OK のあと status を『承認済み』にする。ChatGPT のタスクが承認済みだけを Metricool に予約する。"
    }
+  },
+  {
+   "id": "EP01-5-YOUTUBE",
+   "kind": "video_post_schedule",
+   "title": "第1話の動画 v3 を YouTube ショートに予約",
+   "status": "承認済み",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "channels": [
+     "YouTube"
+    ],
+    "channel_url": "https://www.youtube.com/channel/UCOF93syki7TeiCDSXQuvMSQ",
+    "video": "ops/sns/video/EP01-v3.mp4",
+    "request": "ops/chatgpt/outbox/EP01-5-YOUTUBE.md",
+    "schedule": "2026-11-05 18:00 JST",
+    "url_youtube": "https://okaidoku-checker.pages.dev/?utm_source=youtube&utm_medium=social&utm_campaign=ep01&utm_content=character"
+   }
   }
  ]
 }

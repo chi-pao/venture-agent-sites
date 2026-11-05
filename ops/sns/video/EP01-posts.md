@@ -1,4 +1,4 @@
-# 第1話の動画 投稿セット（Instagram・Threads は予約の依頼済み: `ops/chatgpt/outbox/EP01-4-POST.md`。TikTok はアカウントがないので使わない。YouTube はアカウントを作ったら使う）
+# 第1話の動画 投稿セット（Instagram・Threads は予約の依頼済み: `ops/chatgpt/outbox/EP01-4-POST.md`。TikTok はアカウントがないので使わない。YouTube ショートも予約の依頼済み: `ops/chatgpt/outbox/EP01-5-YOUTUBE.md`、チャンネル https://www.youtube.com/channel/UCOF93syki7TeiCDSXQuvMSQ ）
 
 - 動画: `ops/sns/video/EP01-v3.mp4`（縦 1080×1920・32.6秒・声と音楽つき）
 - 投稿する人: のぼるさん（Claude Code は SNS に投稿できないため）
