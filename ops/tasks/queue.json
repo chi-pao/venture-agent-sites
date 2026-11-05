@@ -120,7 +120,7 @@
    "id": "EP01-4-POST",
    "kind": "video_post_schedule",
    "title": "第1話の動画 v3 を Instagram リール・Threads に予約",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "business": "お買い得物件チェッカー",
     "channels": [
@@ -129,9 +129,13 @@
     ],
     "video": "ops/sns/video/EP01-v3.mp4",
     "request": "ops/chatgpt/outbox/EP01-4-POST.md",
-    "schedule": "2026-11-05 18:00 JST",
+    "schedule": "2026-11-06 18:00 JST（11/5 18:00 を過ぎていたため、ChatGPT が翌営業日に変更）",
     "url_instagram": "https://okaidoku-checker.pages.dev/?utm_source=instagram&utm_medium=social&utm_campaign=ep01&utm_content=character",
-    "url_threads": "https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=ep01&utm_content=character"
+    "url_threads": "https://okaidoku-checker.pages.dev/?utm_source=threads&utm_medium=social&utm_campaign=ep01&utm_content=character",
+    "metricool_ids": {
+     "Instagram": "417581151",
+     "Threads": "417581201"
+    }
    }
   },
   {
@@ -167,7 +171,7 @@
    "id": "EP01-5-YOUTUBE",
    "kind": "video_post_schedule",
    "title": "第1話の動画 v3 を YouTube ショートに予約",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "business": "お買い得物件チェッカー",
     "channels": [
@@ -176,15 +180,18 @@
     "channel_url": "https://www.youtube.com/channel/UCOF93syki7TeiCDSXQuvMSQ",
     "video": "ops/sns/video/EP01-v3.mp4",
     "request": "ops/chatgpt/outbox/EP01-5-YOUTUBE.md",
-    "schedule": "2026-11-05 18:00 JST",
-    "url_youtube": "https://okaidoku-checker.pages.dev/?utm_source=youtube&utm_medium=social&utm_campaign=ep01&utm_content=character"
+    "schedule": "2026-11-06 18:00 JST（11/5 18:00 を過ぎていたため、ChatGPT が翌営業日に変更）",
+    "url_youtube": "https://okaidoku-checker.pages.dev/?utm_source=youtube&utm_medium=social&utm_campaign=ep01&utm_content=character",
+    "metricool_ids": {
+     "YouTube": "417581264"
+    }
    }
   },
   {
    "id": "EP01-6-TIKTOK",
    "kind": "video_post_schedule",
    "title": "第1話の動画 v3 を TikTok に予約",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "business": "お買い得物件チェッカー",
     "channels": [
@@ -192,8 +199,11 @@
     ],
     "video": "ops/sns/video/EP01-v3.mp4",
     "request": "ops/chatgpt/outbox/EP01-6-TIKTOK.md",
-    "schedule": "2026-11-05 18:00 JST",
-    "url_tiktok": "https://okaidoku-checker.pages.dev/?utm_source=tiktok&utm_medium=social&utm_campaign=ep01&utm_content=character"
+    "schedule": "2026-11-06 18:00 JST（11/5 18:00 を過ぎていたため、ChatGPT が翌営業日に変更）",
+    "url_tiktok": "https://okaidoku-checker.pages.dev/?utm_source=tiktok&utm_medium=social&utm_campaign=ep01&utm_content=character",
+    "metricool_ids": {
+     "TikTok": "417581533"
+    }
    }
   }
  ]
