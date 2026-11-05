@@ -21,7 +21,7 @@
 ## 流れ（毎週）
 1. **日曜の夜** 自動の作業（予定の作業）が、その週の出来事（**開発日誌 `ops/journal/`**、`git log`、精度、広告の数字）から `tools/note_facts.py` で「事実メモ」を作り、それだけを材料に次の3つを作る:
    - note の下書き `ops/note/drafts/YYYY-MM-DD-NN.md` と見出し画像・本文中の画像（AI との実際のやりとりの画像を必ず1枚以上）、投稿キット（`tools/note_kit.py`）
-   - SNS の告知文3本 `ops/sns/note-promo/YYYY-MM-DD.md`（記事の一番強い一文・AI とのやりとりの一コマ・数字。リンクは `utm_source=<SNS名>&utm_campaign=note`）
+   - SNS の告知文3本（**画像は1本ごとに違うデザインにする**：のぼるさん 2026-11-05「表紙のデザインは毎回変えて」。縦 1080×1350。例: 実話の一言を大きく／気持ちの見出し／数字の成績表。作り方は ops/sns/note-promo/images/2026-11-04.html を参考に） `ops/sns/note-promo/YYYY-MM-DD.md`（記事の一番強い一文・AI とのやりとりの一コマ・数字。リンクは `utm_source=<SNS名>&utm_campaign=note`）
    - ショート動画（30秒）の台本案 `ops/chatgpt/outbox/NOTE-VIDEO-YYYY-MM-DD.md`（ChatGPT への依頼書の形）
 2. **月曜** Claude Code が下書きを確認し（`qa-reviewer`）、のぼるさんに「今週の記事」として見せる。
 3. **のぼるさん** が読んで OK → note に貼って公開（タイトル・本文・ハッシュタグ・有料ラインの位置まで下書きに入れておく）。公開した URL を Claude Code に送る。
