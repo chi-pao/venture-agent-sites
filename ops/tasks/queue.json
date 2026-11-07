@@ -228,13 +228,19 @@
    "id": "NOTE02-PROMO",
    "kind": "video_post_schedule",
    "title": "note 第2話の告知動画を Instagram リール・YouTube ショート・TikTok・Threads に予約",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "video": "ops/sns/video/NOTE02-promo.mp4",
     "request": "ops/chatgpt/outbox/NOTE02-PROMO.md",
     "schedule": "2026-11-08 18:00 JST",
     "link": "https://note.com/okaidoku_bukkenn/n/n25c027734fba",
-    "approved": "のぼるさん 2026-11-08「今日で」"
+    "approved": "のぼるさん 2026-11-08「今日で」",
+    "metricool_ids": {
+     "Instagram": "420316175",
+     "YouTube": "420316257",
+     "TikTok": "420316474",
+     "Threads": "420316372"
+    }
    }
   }
  ]
