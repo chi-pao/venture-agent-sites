@@ -30,16 +30,19 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import train_used_house as T  # noqa: E402
+import land_prices as L  # noqa: E402
 
 ROOT = HERE.parent.parent
 PREDICT = ROOT / 'tools' / 'checker_eval' / 'predict.mjs'
 # Candidate recipes. 'decay' weights a sale by decay**(years before the newest training quarter);
 # 'fill' gives blank station minutes in training the area's typical value, as the page does.
+# 'land' adds the 公示地価 of the town (else the municipality) from checker-site/land-prices.json (land_prices.py).
 RECIPES = {
-    'base': {'decay': None, 'fill': False},
-    'recent': {'decay': 0.8, 'fill': False},
-    'filled': {'decay': None, 'fill': True},
-    'recent+filled': {'decay': 0.8, 'fill': True},
+    'base': {'decay': None, 'fill': False, 'land': False},
+    'recent': {'decay': 0.8, 'fill': False, 'land': False},
+    'filled': {'decay': None, 'fill': True, 'land': False},
+    'recent+filled': {'decay': 0.8, 'fill': True, 'land': False},
+    'filled+land': {'decay': None, 'fill': True, 'land': True},
 }
 MIN_GAIN, MAX_WITHIN_LOSS = 0.3, 1.0
 
@@ -84,7 +87,7 @@ def fill_station(rows, table):
     return rows
 
 
-def site_inputs(rows):
+def site_inputs(rows, land=None):
     """The page's input objects for these sales (station minutes already filled where possible)."""
     out = []
     for r in rows.itertuples(index=False):
@@ -97,6 +100,10 @@ def site_inputs(rows):
             d['planning'] = r.CityPlanning
         if pd.notna(r.StationMinutes):
             d['stationMinutes'] = int(r.StationMinutes)
+        if land:
+            price, level = L.lookup(land, r.MunicipalityCode, r.DistrictName)
+            if price:
+                d['landPrice'], d['landPriceLevel'] = price, level
         out.append(d)
     return out
 
@@ -135,16 +142,18 @@ def site_with(site, component, dat, work):
     return copy
 
 
-def train(rows, recipe, table):
+def train(rows, recipe, table, land=None):
     if recipe['fill']:
         rows = fill_station(rows, table)
     weight = None
     if recipe['decay']:
         weight = recipe['decay'] ** ((period(rows).max() - period(rows)) / 4)
+    if recipe.get('land'):
+        return T.fit(L.add_features(rows, land), weight, T.NUMS + L.FEATURES)
     return T.fit(rows, weight)
 
 
-def install(pipe, rows, site, table, report, work):
+def install(pipe, rows, site, table, report, work, land=None):
     """Write the winning model into the site: binary, split table, catalog entry, station table."""
     stamp = date.today().strftime('%Y%m%d')
     models = site / 'models'
@@ -157,9 +166,12 @@ def install(pipe, rows, site, table, report, work):
     component['path'] = f'models/{name}.dat'
     # Python vs the site's JavaScript runtime on fixed rows, before anything is published.
     sample = rows.sample(64, random_state=3)
+    if land:
+        sample = L.add_features(sample, land)
+    cols = T.numeric_of(pipe) + T.CATS
     (work / 'component.json').write_text(json.dumps(component, ensure_ascii=False), encoding='utf-8')
     shutil.copy(dat, work / 'used_house.dat')
-    feature_rows = sample[T.NUMS + T.CATS].astype(object).where(sample[T.NUMS + T.CATS].notna(), None).to_dict('records')
+    feature_rows = sample[cols].astype(object).where(sample[cols].notna(), None).to_dict('records')
     (work / 'parity.json').write_text(json.dumps({'rows': feature_rows, 'expected': T.predict_yen(pipe, sample).tolist()}, ensure_ascii=False), encoding='utf-8')
     subprocess.run(['node', str(ROOT / 'tools' / 'checker_eval' / 'parity.mjs'), str(site), str(work)], check=True)
     splits = gzip.compress(json.dumps(component.pop('categoricalSplits'), separators=(',', ':')).encode(), compresslevel=9, mtime=0)
@@ -199,15 +211,18 @@ def main():
     before = data[period(data) <= last - a.holdout_quarters]
     hold = hold.sample(min(a.holdout_sample, len(hold)), random_state=11)
     train_table = station_table(before)
-    hold_inputs = site_inputs(fill_station(hold, train_table))
+    land_path = a.site / 'land-prices.json'
+    land = json.loads(land_path.read_text(encoding='utf-8')) if land_path.exists() else None
+    recipes = {n: r for n, r in RECIPES.items() if land or not r['land']}
+    hold_inputs = site_inputs(fill_station(hold, train_table), land)
     actual = hold['price_yen'].to_numpy(float)
     report = {'holdout': f'{len(hold)} sales from the latest {a.holdout_quarters} quarters (period index > {last - a.holdout_quarters})',
               'validation': {'trainedThrough': month_end(last - a.holdout_quarters),
                              'holdout': period_label(last - a.holdout_quarters + 1, last)},
               'live': score(predict_site(a.site, hold_inputs, a.work), actual), 'candidates': {}}
     print('live', report['live'], flush=True)
-    for name, recipe in RECIPES.items():
-        pipe = train(before, recipe, train_table)
+    for name, recipe in recipes.items():
+        pipe = train(before, recipe, train_table, land)
         cand = a.work / name
         cand.mkdir(exist_ok=True)
         component = T.export(pipe, cand / 'used_house.dat', 'models/used_house-candidate.dat')
@@ -221,7 +236,8 @@ def main():
     report['adopted'] = changed
     if changed:
         full_table = station_table(data)
-        install(train(data, RECIPES[winner], full_table), data, a.site, full_table, report, a.work)
+        uses_land = RECIPES[winner]['land']
+        install(train(data, RECIPES[winner], full_table, land), data, a.site, full_table, report, a.work, land if uses_land else None)
     lines = ['# 中古戸建てモデルの自動学習', '', f"- 検証: {report['holdout']}",
              f"- 公開中のモデル: 誤差中央値 {live['median_ape_pct']}% / ±20%以内 {live['within20_pct']}%", '']
     lines += [f"- 候補 {n}: 誤差中央値 {s['median_ape_pct']}% / ±20%以内 {s['within20_pct']}%" for n, s in report['candidates'].items()]
