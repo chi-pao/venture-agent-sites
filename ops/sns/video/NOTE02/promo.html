@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:1080px;height:1920px;overflow:hidden;background:#0d0420;font-family:'M PLUS Rounded 1c',sans-serif}
+#root{position:absolute;inset:0}
+.top{position:absolute;top:70px;left:0;right:0;text-align:center}
+.tag{display:inline-block;border:4px solid #ff4fd8;color:#fff;font-weight:800;font-size:40px;padding:10px 34px;border-radius:60px;box-shadow:0 0 24px #ff4fd8,inset 0 0 14px #ff4fd8;background:rgba(13,4,32,.6)}
+.scene{position:absolute;inset:0}
+.neon{font-family:'Dela Gothic One';color:#fff;text-align:center;text-shadow:0 0 10px #fff,0 0 30px #ff4fd8,0 0 60px #ff4fd8}
+.cy{text-shadow:0 0 10px #fff,0 0 30px #29e7ff,0 0 60px #29e7ff}
+.card{position:absolute;left:70px;right:70px;border-radius:36px;overflow:hidden;border:6px solid #29e7ff;box-shadow:0 0 40px #29e7ff;background:#fff}
+.card img{display:block;width:100%}
+.sub{position:absolute;left:60px;right:60px;top:1500px;min-height:150px;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:54px;color:#fff;line-height:1.3;padding:16px 30px;background:rgba(10,0,30,.75);border:4px solid rgba(255,255,255,.25);border-radius:30px}
+.sub.gpt{border-color:#10a37f;box-shadow:0 0 20px #10a37f}
+.who{position:absolute;left:80px;top:1470px;font-size:30px;font-weight:800;color:#0d0420;background:#29e7ff;padding:4px 18px;border-radius:14px;z-index:3}
+.who.gpt{background:#10a37f;color:#fff}
+.pill{display:inline-block;background:#ff4fd8;color:#fff;font-family:'Dela Gothic One';font-size:50px;padding:20px 50px;border-radius:80px;box-shadow:0 0 30px #ff4fd8}
+.ai{position:absolute;right:40px;bottom:40px;font-size:24px;color:#cbb8ff}
+</style></head><body><div id="root"></div>
+<script>
+let TL={tl:[],total:0};window.setTL=x=>{TL=x};
+const ease=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x)};
+const pop=x=>{x=Math.min(1,Math.max(0,x));return 1+Math.sin(x*Math.PI)*0.25*(1-x)};
+function grid(t){let g=`<svg width="1080" height="1920" style="position:absolute;inset:0"><defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d0420"/><stop offset=".6" stop-color="#2a0a4f"/><stop offset="1" stop-color="#3b0a5a"/></linearGradient></defs><rect width="1080" height="1920" fill="url(#sky)"/>`;
+ for(let i=0;i<60;i++){const x=(i*131)%1080,y=(i*197)%1200,tw=.3+.7*Math.abs(Math.sin(t*2+i));g+=`<circle cx="${x}" cy="${y}" r="2.5" fill="#fff" opacity="${tw}"/>`}
+ const hz=1250;for(let i=-12;i<=12;i++){g+=`<line x1="540" y1="${hz}" x2="${540+i*160}" y2="1920" stroke="#ff4fd8" stroke-width="3" opacity=".55"/>`}
+ for(let k=0;k<12;k++){const p=((k+(t*0.8)%1)/12);const y=hz+Math.pow(p,2.2)*(1920-hz);g+=`<line x1="0" y1="${y}" x2="1080" y2="${y}" stroke="#ff4fd8" stroke-width="3" opacity="${.2+.6*p}"/>`}
+ return g+'</svg>'}
+function cur(t){let s=TL.tl[0];for(const x of TL.tl)if(t>=x.t0)s=x;return s}
+function sceneStart(sc){return TL.tl.find(x=>x.scene===sc).t0}
+function S1(t,k){const s=sceneStart('s1');const p=pop((t-s)/0.5);const glow=0.85+0.15*Math.sin(t*12);
+ return `<div class="neon" style="position:absolute;top:520px;left:0;right:0;font-size:46px;opacity:${ease((t-s)/0.3)}">ChatGPT に「ここを直して」と頼むと…</div>
+ <div class="neon" style="position:absolute;top:680px;left:0;right:0;font-size:132px;line-height:1.2;transform:scale(${p});opacity:${glow}">「完成<br>しました！」</div>`}
+function S2(t){const s=sceneStart('s2');const k=ease((t-s)/0.5);const span=TL.tl.find(x=>x.n==='v4').t0+3-s;const pan=ease((t-s)/span)*360;
+ let h=`<div class="card" style="top:${380+(1-k)*200}px;height:auto;opacity:${k}"><img src="file:///home/user/venture-agent-sites/ops/note/images/02-chat-kansei.png" style="transform:scale(${1+pan/3600});transform-origin:50% 60%"></div>`;
+ const v3=TL.tl.find(x=>x.n==='v3').t0,v4=TL.tl.find(x=>x.n==='v4').t0;
+ if(t>=v3){const p=pop((t-v3)/0.5);h+=`<div class="neon" style="position:absolute;top:640px;left:0;right:0;font-size:120px;transform:rotate(-8deg) scale(${p})">完成しました！</div>`}
+ if(t>=v4){const p=pop((t-v4)/0.5);h+=`<div class="neon cy" style="position:absolute;top:900px;left:0;right:0;font-size:100px;transform:scale(${p})">× 何回も…</div>`}
+ return h}
+function S3(t){const s=sceneStart('s3');const k=ease((t-s)/0.5);const v6=TL.tl.find(x=>x.n==='v6').t0;const z=1+0.25*ease((t-s)/2.5);const sh=t>v6&&t<v6+0.5?Math.sin(t*80)*14*(1-(t-v6)/0.5):0;
+ let h=`<div class="card" style="top:${520}px;height:auto;opacity:${k};transform:translateX(${sh}px)"><img src="file:///home/user/venture-agent-sites/ops/note/images/02-login.png" style="transform:scale(${z});transform-origin:55% 35%"></div>`;
+ h+=`<div class="neon cy" style="position:absolute;top:330px;left:0;right:0;font-size:66px;opacity:${k}">やっと動いた、次の日…</div>`;
+ if(t>=v6){h+=`<div class="neon" style="position:absolute;top:1300px;left:0;right:0;font-size:84px;transform:scale(${pop((t-v6-0.8)/0.5)});opacity:${ease((t-v6-0.8)/0.2)}">俺のサイト、どこ？</div>`}
+ return h}
+function S4(t){const s=sceneStart('s4');const k=ease((t-s)/0.6);const msg='48歳 AI初心者の<br>挑戦は続く……';const plain='48歳 AI初心者の挑戦は続く……';const n=Math.floor(Math.min(1,(t-s)/2.2)*plain.length);
+ let shown=plain.slice(0,n);shown=shown.length>10?shown.slice(0,10)+'<br>'+shown.slice(10):shown;
+ return `<div class="card" style="top:300px;height:auto;border-color:#ff4fd8;box-shadow:0 0 40px #ff4fd8;opacity:${k};transform:scale(${0.9+0.1*k})"><img src="file:///home/user/venture-agent-sites/ops/note/images/02-header.png"></div>
+ <div class="neon" style="position:absolute;top:900px;left:0;right:0;font-size:92px;line-height:1.3">${shown}</div>
+ <div style="position:absolute;top:1230px;left:0;right:0;text-align:center;opacity:${ease((t-s-2.4)/0.4)};transform:scale(${pop((t-s-2.4)/0.5)})"><div class="pill">第2話は note で ▶</div><div class="neon cy" style="font-size:40px;margin-top:26px">プロフィールのリンクから</div></div>`}
+window.render=t=>{const c=cur(t);let h=grid(t)+`<div class="top"><div class="tag">バツイチ48歳のAI挑戦記 #2</div></div>`;
+ const order=['s1','s2','s3','s4'];const F={s1:S1,s2:S2,s3:S3,s4:S4};
+ // crossfade between scenes
+ const i=order.indexOf(c.scene);const st=sceneStart(c.scene);const f=ease((t-st)/0.35);
+ if(i>0&&f<1){h+=`<div class="scene" style="opacity:${1-f};transform:translateX(${-f*200}px)">${F[order[i-1]](t)}</div>`}
+ h+=`<div class="scene" style="opacity:${i>0?f:1};transform:translateX(${i>0?(1-f)*200:0}px)">${F[c.scene](t)}</div>`;
+ if(c.scene!=='s4'){const g=c.n==='v1'||c.n==='v3';h+=`<div class="who ${g?'gpt':''}">${g?'ChatGPT':'のぼる'}</div><div class="sub ${g?'gpt':''}" style="opacity:${ease((t-c.t0)/0.2)}">${c.text}</div>`}
+ h+=`<div class="ai">声：AI（AivisSpeech）／画面は再現したイメージです</div>`;
+ document.getElementById('root').innerHTML=h};
+</script></body></html>
