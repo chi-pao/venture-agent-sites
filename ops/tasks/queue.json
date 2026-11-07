@@ -205,6 +205,24 @@
      "TikTok": "417581533"
     }
    }
+  },
+  {
+   "id": "Q01-VIDEO",
+   "kind": "video_post_schedule",
+   "title": "値段クイズ 第1回の動画を Instagram リール・YouTube ショート・TikTok・Threads に予約",
+   "status": "承認待ち",
+   "payload": {
+    "business": "お買い得物件チェッカー",
+    "video": "ops/sns/video/Q01-v1.mp4",
+    "texts": "ops/sns/video/Q01-posts.md",
+    "schedule": "2026-11-11 18:00 JST",
+    "channels": [
+     "Instagram",
+     "YouTube",
+     "TikTok",
+     "Threads"
+    ]
+   }
   }
  ]
 }

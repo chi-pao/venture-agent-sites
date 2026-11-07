@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:1080px;height:1920px;overflow:hidden;font-family:'M PLUS Rounded 1c',sans-serif;background:#ffd400}
+.bg{position:absolute;inset:0;background:repeating-conic-gradient(from 0deg at 50% 38%,#ffd400 0 10deg,#ffe24d 10deg 20deg)}
+.top{position:absolute;top:120px;left:0;right:0;text-align:center}
+.badge{display:inline-block;background:#111;color:#ffd400;font-family:'Dela Gothic One';font-size:56px;padding:14px 44px;border-radius:60px;transform:rotate(-3deg)}
+h1{font-family:'Dela Gothic One';font-size:112px;line-height:1.15;color:#111;margin-top:36px;text-shadow:6px 6px 0 #fff}
+h1 em{font-style:normal;color:#e6002d}
+.card{position:absolute;left:70px;right:70px;top:590px;background:#fff;border:8px solid #111;border-radius:36px;padding:40px 46px;box-shadow:14px 14px 0 #111}
+.card .pref{font-family:'Dela Gothic One';font-size:64px}
+.card .spec{font-size:46px;font-weight:800;margin-top:14px;line-height:1.5}
+.house{position:absolute;right:40px;top:-110px;width:200px}
+.choices{position:absolute;left:70px;right:70px;top:1060px;display:flex;flex-direction:column;gap:34px}
+.ch{display:flex;align-items:center;background:#fff;border:8px solid #111;border-radius:30px;height:170px;font-family:'Dela Gothic One';font-size:84px;box-shadow:10px 10px 0 #111;transition:none}
+.ch b{display:flex;align-items:center;justify-content:center;width:150px;height:100%;color:#fff;font-size:90px;border-right:8px solid #111;margin-right:40px;border-radius:22px 0 0 22px}
+.ch:nth-child(1) b{background:#e6002d}.ch:nth-child(2) b{background:#0057e6}.ch:nth-child(3) b{background:#00a85a}
+.dim{opacity:.25}
+.ok{background:#ff2d55;color:#fff;transform:scale(1.06)}
+.ok:after{content:"正解！";position:absolute;right:30px;font-size:60px;background:#111;color:#ffd400;padding:6px 22px;border-radius:20px;transform:rotate(8deg)}
+.ch{position:relative}
+.timer{position:absolute;right:90px;top:520px;z-index:5}
+.timer span{display:inline-flex;align-items:center;justify-content:center;width:250px;height:250px;border-radius:50%;background:#111;color:#ffd400;font-family:'Dela Gothic One';font-size:150px;border:10px solid #fff}
+.foot{position:absolute;left:40px;right:40px;bottom:70px;font-size:28px;color:#333;text-align:center;line-height:1.4}
+.big{position:absolute;left:0;right:0;top:600px;text-align:center}
+.big .n{font-family:'Dela Gothic One';font-size:230px;color:#e6002d;text-shadow:10px 10px 0 #111;letter-spacing:-6px}
+.big .u{font-family:'Dela Gothic One';font-size:110px}
+.bars{position:absolute;left:70px;right:70px;top:620px;display:flex;flex-direction:column;gap:44px}
+.bar{display:flex;align-items:center;font-weight:800;font-size:48px}
+.bar .l{width:250px}
+.bar .v{white-space:nowrap;height:130px;background:#111;border-radius:0 24px 24px 0;display:flex;align-items:center;justify-content:flex-end;padding-right:24px;color:#fff;font-family:'Dela Gothic One';font-size:48px}
+.bar.hi .v{background:#e6002d}
+.cta{position:absolute;left:70px;right:70px;top:1000px;background:#111;color:#fff;border-radius:40px;padding:60px;text-align:center}
+.cta .a{font-family:'Dela Gothic One';font-size:80px;color:#ffd400}
+.cta .b{font-size:52px;font-weight:800;margin-top:24px;line-height:1.5}
+.pill{display:inline-block;margin-top:40px;background:#ffd400;color:#111;font-family:'Dela Gothic One';font-size:56px;padding:22px 50px;border-radius:80px}
+</style></head><body><div class="bg"></div><div id="root"></div>
+<script>
+const p=new URLSearchParams(location.search),s=p.get('s'),scale=+(p.get('k')||1);
+const house='<svg class="house" viewBox="0 0 100 90"><path d="M50 4 96 44H84V86H16V44H4Z" fill="#fff" stroke="#111" stroke-width="5" stroke-linejoin="round"/><rect x="40" y="56" width="20" height="30" fill="#e6002d" stroke="#111" stroke-width="4"/><rect x="22" y="50" width="14" height="14" fill="#7cc7ff" stroke="#111" stroke-width="3"/><rect x="64" y="50" width="14" height="14" fill="#7cc7ff" stroke="#111" stroke-width="3"/></svg>';
+const foot='<div class="foot">国の不動産取引データ（2024〜2025年）より。築10〜17年・建物100〜120㎡・土地150〜250㎡の戸建ての取引価格の真ん中の値</div>';
+function choices(list,ans,mode){return '<div class="choices">'+list.map((c,i)=>{let cl='ch';if(mode==='a')cl+=i===ans?' ok':' dim';return `<div class="${cl}"><b>${'ABC'[i]}</b>${c}</div>`}).join('')+'</div>'}
+const Q1=['980万円','1,800万円','2,900万円'],Q2=['東京都','神奈川県','大阪府'];
+let h='';
+const q1head='<div class="top"><div class="badge">値段クイズ 第1問</div><h1>この家、<br><em>いくら</em>で売れた？</h1></div><div class="card">'+house+'<div class="pref">群馬県の戸建て</div><div class="spec">築10〜17年／建物 約110㎡<br>土地 約200㎡</div></div>';
+const q2head='<div class="top"><div class="badge">第2問</div><h1>同じような家、<br><em>いちばん高い</em>のは？</h1></div><div class="card">'+house+'<div class="pref">どの都道府県？</div><div class="spec">築10〜17年／建物 約110㎡<br>土地 約200㎡</div></div>';
+if(s==='q1')h=q1head+choices(Q1)+foot;
+else if(/^q1c\d/.test(s))h=q1head+choices(Q1)+`<div class="timer"><span>${s.slice(3)}</span></div><style>.house{display:none}</style>`+foot;
+else if(s==='a1')h=q1head+choices(Q1,1,'a')+foot;
+else if(s==='q2')h=q2head+choices(Q2)+foot;
+else if(/^q2c\d/.test(s))h=q2head+choices(Q2)+`<div class="timer"><span>${s.slice(3)}</span></div><style>.house{display:none}</style>`+foot;
+else if(s==='a2'){h='<div class="top"><div class="badge">第2問 正解</div><h1><em>神奈川県</em>！<br>東京都より高い</h1></div>';
+ const d=[['神奈川県',4400],['東京都',4100],['大阪府',2700],['群馬県',1800]];
+ h+='<div class="bars">'+d.map((x,i)=>`<div class="bar ${i?'':'hi'}"><div class="l">${x[0]}</div><div class="v" style="width:${(230+x[1]/4400*500)*scale}px;${scale<1?"color:transparent":""}">${x[1].toLocaleString()}万円</div></div>`).join('')+'</div>'+foot;}
+else if(s==='end')h='<div class="top"><div class="badge">何問 正解できた？</div><h1>コメントで<br><em>教えて！</em></h1></div><div class="cta"><div class="a">気になる家の値段</div><div class="b">相場と比べて<br>高い？安い？</div><div class="pill">無料でチェック ▶</div><div class="b" style="font-size:40px;margin-top:30px">お買い得物件チェッカー</div></div>'+foot.replace('より。','より。登場する数字はすべて実際の取引から集計。');
+document.getElementById('root').innerHTML=h;
+if(p.get('pop')){const t=document.querySelector('.ok')||document.querySelector('.top h1');t.style.transform='scale('+p.get('pop')+')'}
+</script></body></html>
