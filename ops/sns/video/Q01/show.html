@@ -1,0 +1,135 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:1080px;height:1920px;overflow:hidden;font-family:'M PLUS Rounded 1c',sans-serif;background:#1a0b3d}
+#stage{position:absolute;inset:0}
+.hdr{position:absolute;top:70px;left:0;right:0;text-align:center}
+.badge{display:inline-block;background:#ffd400;color:#1a0b3d;font-family:'Dela Gothic One';font-size:50px;padding:10px 40px;border-radius:60px;transform:rotate(-3deg);box-shadow:0 6px 0 #b38f00}
+.q{font-family:'Dela Gothic One';font-size:84px;line-height:1.15;color:#fff;margin-top:22px;text-shadow:0 6px 0 #e6002d,0 0 30px #ff4fa8}
+.sub{position:absolute;left:50px;right:50px;top:905px;height:150px;background:#fff;border-radius:34px;border:7px solid #1a0b3d;box-shadow:0 10px 0 #ffd400;display:flex;align-items:center;padding:0 34px;gap:24px}
+.sub .who{flex:none;font-family:'Dela Gothic One';font-size:38px;color:#fff;padding:10px 22px;border-radius:20px}
+.sub .txt{font-weight:800;font-size:52px;color:#1a0b3d;line-height:1.2}
+.panel{position:absolute;left:60px;right:60px;top:1100px}
+.card{background:#fff;border:7px solid #1a0b3d;border-radius:30px;padding:22px 34px;box-shadow:10px 10px 0 #ffd400}
+.card .p{font-family:'Dela Gothic One';font-size:50px;color:#1a0b3d}
+.card .s{font-size:40px;font-weight:800;color:#333;margin-top:6px}
+.choices{display:flex;flex-direction:column;gap:22px;margin-top:30px}
+.ch{position:relative;display:flex;align-items:center;background:#fff;border:7px solid #1a0b3d;border-radius:26px;height:132px;font-family:'Dela Gothic One';font-size:70px;color:#1a0b3d;box-shadow:8px 8px 0 #1a0b3d}
+.ch b{display:flex;align-items:center;justify-content:center;width:130px;height:100%;color:#fff;font-size:76px;border-right:7px solid #1a0b3d;margin-right:34px;border-radius:19px 0 0 19px}
+.c0 b{background:#e6002d}.c1 b{background:#0057e6}.c2 b{background:#00a85a}
+.dim{opacity:.3}
+.ok{background:#ffd400;transform:scale(1.05)}
+.ok:after{content:"正解！";position:absolute;right:24px;font-size:52px;background:#e6002d;color:#fff;padding:4px 20px;border-radius:18px;transform:rotate(8deg)}
+.bars{display:flex;flex-direction:column;gap:30px;margin-top:20px}
+.bar{display:flex;align-items:center;font-weight:800;font-size:46px;color:#fff}
+.bar .l{width:230px}
+.bar .v{white-space:nowrap;height:118px;background:#fff;color:#1a0b3d;border-radius:0 24px 24px 0;display:flex;align-items:center;justify-content:flex-end;padding-right:24px;font-family:'Dela Gothic One';font-size:46px;overflow:hidden}
+.bar.hi .v{background:#ffd400}
+.cta{background:#fff;border-radius:40px;padding:50px;text-align:center;border:7px solid #1a0b3d;box-shadow:12px 12px 0 #ffd400}
+.cta .a{font-family:'Dela Gothic One';font-size:76px;color:#e6002d}
+.cta .b{font-size:48px;font-weight:800;margin-top:18px;color:#1a0b3d;line-height:1.4}
+.pill{display:inline-block;margin-top:30px;background:#e6002d;color:#fff;font-family:'Dela Gothic One';font-size:54px;padding:20px 50px;border-radius:80px}
+.timer{position:absolute;left:50%;top:1290px;transform:translateX(-50%);width:300px;height:300px;border-radius:50%;background:#e6002d;color:#fff;font-family:'Dela Gothic One';font-size:200px;display:flex;align-items:center;justify-content:center;border:12px solid #fff;box-shadow:0 0 60px #ff4fa8;z-index:9}
+.foot{position:absolute;left:40px;right:40px;bottom:36px;font-size:24px;color:#cbb8ff;text-align:center;line-height:1.4}
+</style></head><body><div id="stage"></div>
+<script>
+const SK='#ffd9b8',INK='#2b1a12';
+function eyes(x,y,e,s){ // x,y center between eyes
+ const dx=22*s;
+ if(e==='happy')return `<path d="M${x-dx-11*s} ${y+4*s} q${11*s} ${-14*s} ${22*s} 0 M${x+dx-11*s} ${y+4*s} q${11*s} ${-14*s} ${22*s} 0" stroke="${INK}" stroke-width="${6*s}" fill="none" stroke-linecap="round"/>`;
+ if(e==='surprised')return [x-dx,x+dx].map(cx=>`<circle cx="${cx}" cy="${y}" r="${13*s}" fill="#fff" stroke="${INK}" stroke-width="${4*s}"/><circle cx="${cx}" cy="${y}" r="${5*s}" fill="${INK}"/>`).join('');
+ if(e==='think')return [x-dx,x+dx].map(cx=>`<ellipse cx="${cx+3*s}" cy="${y-3*s}" rx="${6*s}" ry="${9*s}" fill="${INK}"/><circle cx="${cx+5*s}" cy="${y-7*s}" r="${2.2*s}" fill="#fff"/>`).join('');
+ return [x-dx,x+dx].map(cx=>`<ellipse cx="${cx}" cy="${y}" rx="${7*s}" ry="${10*s}" fill="${INK}"/><circle cx="${cx+2*s}" cy="${y-4*s}" r="${2.6*s}" fill="#fff"/>`).join('');
+}
+function mouth(x,y,e,talk,s){
+ if(e==='surprised')return `<ellipse cx="${x}" cy="${y+4*s}" rx="${10*s}" ry="${talk?16*s:13*s}" fill="#7a1f2b"/>`;
+ if(talk)return `<path d="M${x-17*s} ${y-2*s} q${17*s} ${30*s} ${34*s} 0 z" fill="#7a1f2b"/><path d="M${x-9*s} ${y+10*s} q${9*s} ${8*s} ${18*s} 0 z" fill="#ff7b8a"/>`;
+ if(e==='think')return `<path d="M${x-10*s} ${y+4*s} q${10*s} ${-5*s} ${20*s} 2" stroke="${INK}" stroke-width="${5*s}" fill="none" stroke-linecap="round"/>`;
+ return `<path d="M${x-15*s} ${y} q${15*s} ${16*s} ${30*s} 0" stroke="${INK}" stroke-width="${5*s}" fill="none" stroke-linecap="round"/>`;
+}
+function person(c,e,talk,t){
+ const s=c.s,cx=110,hy=110;let g='';
+ const bob=talk?Math.abs(Math.sin(t*14))*-8:(e==='happy'?Math.abs(Math.sin(t*9))*-10:0);
+ g+=`<g transform="translate(0,${bob})">`;
+ // body
+ g+=`<path d="M${cx-78*s} 300 Q${cx-80*s} ${hy+70*s} ${cx} ${hy+68*s} Q${cx+80*s} ${hy+70*s} ${cx+78*s} 300 Z" fill="${c.shirt}" stroke="${INK}" stroke-width="4"/>`;
+ if(c.collar)g+=`<path d="M${cx-24*s} ${hy+68*s} l${24*s} ${30*s} l${24*s} ${-30*s}" fill="#fff" stroke="${INK}" stroke-width="3"/>`;
+ if(c.bow)g+=`<path d="M${cx} ${hy+80*s} l-26 -14 v28 z M${cx} ${hy+80*s} l26 -14 v28 z" fill="#e6002d" stroke="${INK}" stroke-width="3"/><circle cx="${cx}" cy="${hy+80*s}" r="7" fill="#e6002d" stroke="${INK}" stroke-width="3"/>`;
+ // back hair
+ if(c.backHair)g+=c.backHair(cx,hy,s);
+ g+=`<circle cx="${cx}" cy="${hy}" r="${64*s}" fill="${SK}" stroke="${INK}" stroke-width="4"/>`;
+ g+=`<circle cx="${cx-64*s}" cy="${hy+6*s}" r="${12*s}" fill="${SK}" stroke="${INK}" stroke-width="4"/><circle cx="${cx+64*s}" cy="${hy+6*s}" r="${12*s}" fill="${SK}" stroke="${INK}" stroke-width="4"/>`;
+ g+=c.hair(cx,hy,s);
+ g+=`<ellipse cx="${cx-36*s}" cy="${hy+22*s}" rx="${11*s}" ry="${7*s}" fill="#ff9aa8" opacity=".7"/><ellipse cx="${cx+36*s}" cy="${hy+22*s}" rx="${11*s}" ry="${7*s}" fill="#ff9aa8" opacity=".7"/>`;
+ g+=eyes(cx,hy+2*s,e,s);
+ if(c.mus)g+=`<path d="M${cx-30*s} ${hy+24*s} q${15*s} ${-14*s} ${30*s} 0 q${15*s} ${-14*s} ${30*s} 0 q-${15*s} ${12*s} -${30*s} ${4*s} q-${15*s} ${8*s} -${30*s} -${4*s}z" fill="#6b6b6b" stroke="${INK}" stroke-width="3"/>`;
+ g+=mouth(cx,hy+36*s,e,talk&&(Math.floor(t*9)%2===0),s);
+ if(e==='think')g+=`<text x="${cx+60*s}" y="${hy-50*s}" font-family="Dela Gothic One" font-size="${50*s}" fill="#ffd400" stroke="${INK}" stroke-width="3">?</text>`;
+ if(e==='surprised')g+=`<text x="${cx+52*s}" y="${hy-48*s}" font-family="Dela Gothic One" font-size="${54*s}" fill="#ffd400" stroke="${INK}" stroke-width="3">!</text>`;
+ if(c.mic)g+=`<rect x="${cx+70}" y="${hy+70}" width="16" height="70" rx="6" fill="#333" transform="rotate(-25 ${cx+78} ${hy+105})"/><circle cx="${cx+62}" cy="${hy+64}" r="20" fill="#555" stroke="${INK}" stroke-width="3"/>`;
+ g+='</g>';
+ return g;
+}
+const C={
+ host:{s:1.05,shirt:'#7b2ff7',collar:1,bow:1,mus:1,mic:1,name:'司会',col:'#7b2ff7',
+  hair:(x,y,s)=>`<path d="M${x-66*s} ${y+4*s} q-4 -40 ${18*s} -46 l4 30 z M${x+66*s} ${y+4*s} q4 -40 -${18*s} -46 l-4 30 z" fill="#9a9a9a" stroke="${INK}" stroke-width="3"/><ellipse cx="${x-20*s}" cy="${y-42*s}" rx="${16*s}" ry="${8*s}" fill="#fff" opacity=".6"/>`},
+ kenji:{s:1,shirt:'#23336b',collar:1,name:'ケンジ',col:'#23336b',
+  hair:(x,y,s)=>`<path d="M${x-66*s} ${y} Q${x-70*s} ${y-74*s} ${x} ${y-70*s} Q${x+72*s} ${y-74*s} ${x+66*s} ${y} Q${x+50*s} ${y-30*s} ${x+20*s} ${y-36*s} L${x+8*s} ${y-22*s} L${x-6*s} ${y-38*s} Q${x-46*s} ${y-34*s} ${x-66*s} ${y} Z" fill="#1d1d1d" stroke="${INK}" stroke-width="3"/>`},
+ miho:{s:1,shirt:'#ff7a59',collar:0,name:'ミホ',col:'#e8552f',
+  backHair:(x,y,s)=>`<path d="M${x-72*s} ${y+70*s} Q${x-84*s} ${y-80*s} ${x} ${y-74*s} Q${x+84*s} ${y-80*s} ${x+72*s} ${y+70*s} Z" fill="#5a3420" stroke="${INK}" stroke-width="3"/>`,
+  hair:(x,y,s)=>`<path d="M${x-66*s} ${y+6*s} Q${x-66*s} ${y-72*s} ${x} ${y-68*s} Q${x+66*s} ${y-72*s} ${x+66*s} ${y+6*s} Q${x+40*s} ${y-40*s} ${x-10*s} ${y-34*s} Q${x-46*s} ${y-30*s} ${x-66*s} ${y+6*s}Z" fill="#5a3420" stroke="${INK}" stroke-width="3"/>`},
+ sota:{s:.85,shirt:'#ffcf1a',collar:0,name:'ソウタ',col:'#d9a400',
+  hair:(x,y,s)=>`<path d="M${x-66*s} ${y-4*s} L${x-60*s} ${y-60*s} L${x-30*s} ${y-80*s} L${x-10*s} ${y-62*s} L${x+14*s} ${y-86*s} L${x+30*s} ${y-62*s} L${x+60*s} ${y-74*s} L${x+66*s} ${y-4*s} Q${x+40*s} ${y-34*s} ${x} ${y-30*s} Q${x-40*s} ${y-34*s} ${x-66*s} ${y-4*s}Z" fill="#8a5a2b" stroke="${INK}" stroke-width="3"/>`},
+ hana:{s:.8,shirt:'#ff8fc2',collar:0,name:'ハナ',col:'#e0559a',
+  backHair:(x,y,s)=>`<circle cx="${x-80*s}" cy="${y+40*s}" r="${26*s}" fill="#8a5a2b" stroke="${INK}" stroke-width="3"/><circle cx="${x+80*s}" cy="${y+40*s}" r="${26*s}" fill="#8a5a2b" stroke="${INK}" stroke-width="3"/>`,
+  hair:(x,y,s)=>`<path d="M${x-66*s} ${y+4*s} Q${x-68*s} ${y-74*s} ${x} ${y-70*s} Q${x+68*s} ${y-74*s} ${x+66*s} ${y+4*s} Q${x+30*s} ${y-30*s} ${x} ${y-40*s} Q${x-30*s} ${y-30*s} ${x-66*s} ${y+4*s}Z" fill="#8a5a2b" stroke="${INK}" stroke-width="3"/><path d="M${x-60*s} ${y-46*s} l-24 -14 v28z M${x-60*s} ${y-46*s} l24 -14 v28z" fill="#ff4f9a" stroke="${INK}" stroke-width="3"/><path d="M${x+60*s} ${y-46*s} l-24 -14 v28z M${x+60*s} ${y-46*s} l24 -14 v28z" fill="#ff4f9a" stroke="${INK}" stroke-width="3"/>`},
+};
+const ORDER=['host','kenji','miho','sota','hana'];
+const POS={host:[0,410],kenji:[220,440],miho:[430,440],sota:[640,460],hana:[855,470]};
+function stageSVG(t,seg){
+ let g=`<svg width="1080" height="1920" style="position:absolute;inset:0"><defs>
+ <radialGradient id="sp" cx="50%" cy="0%" r="80%"><stop offset="0" stop-color="#ffffff" stop-opacity=".35"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a0f6b"/><stop offset=".5" stop-color="#1a0b3d"/><stop offset="1" stop-color="#12082b"/></linearGradient></defs>
+ <rect width="1080" height="1920" fill="url(#bg)"/>`;
+ // rays
+ for(let i=0;i<18;i++){const a=(i/18)*Math.PI*2+t*.15;g+=`<path d="M540 640 L${540+1400*Math.cos(a)} ${640+1400*Math.sin(a)} L${540+1400*Math.cos(a+.12)} ${640+1400*Math.sin(a+.12)}Z" fill="#ffffff" opacity=".035"/>`}
+ // spotlights
+ [[160,0],[540,0],[920,0]].forEach(([x],i)=>{const sw=Math.sin(t*1.3+i*2)*120;g+=`<path d="M${x} 330 L${x+sw-170} 900 L${x+sw+170} 900Z" fill="url(#sp)"/>`});
+ // bulbs row
+ for(let i=0;i<22;i++){const on=(Math.floor(t*4)+i)%3===0;g+=`<circle cx="${30+i*49}" cy="350" r="9" fill="${on?'#ffd400':'#6b4bb5'}"/>`}
+ // people
+ ORDER.forEach(k=>{const [x,y]=POS[k];const e=(seg.ex&&seg.ex[k])||'normal';const talk=seg.who===k;g+=`<g transform="translate(${x},${y})">${person(C[k],e,talk,t)}</g>`;
+  const a=seg.ans&&seg.ans[k];if(a){const cl={'A':'#e6002d','B':'#0057e6','C':'#00a85a'}[a[0]]||'#e6002d';const bw=a.length>1?150:80;g+=`<g transform="translate(${x+110-bw/2+10},${y-48})"><rect x="-10" y="-10" width="${bw}" height="80" rx="18" fill="#fff" stroke="${INK}" stroke-width="5"/><text x="${a.length>1?65:30}" y="48" text-anchor="middle" font-family="Dela Gothic One" font-size="${a.length>1?36:54}" fill="${cl}">${a}</text></g>`}});
+ // desks
+ g+=`<rect x="0" y="730" width="210" height="140" rx="14" fill="#ffd400" stroke="${INK}" stroke-width="5"/><text x="105" y="815" text-anchor="middle" font-family="Dela Gothic One" font-size="42" fill="#1a0b3d">司会</text>`;
+ g+=`<rect x="225" y="740" width="855" height="130" rx="14" fill="#e6002d" stroke="${INK}" stroke-width="5"/>`;
+ ['kenji','miho','sota','hana'].forEach(k=>{const x=POS[k][0]+110;g+=`<rect x="${x-90}" y="768" width="180" height="70" rx="14" fill="#fff" stroke="${INK}" stroke-width="4"/><text x="${x}" y="818" text-anchor="middle" font-family="Dela Gothic One" font-size="38" fill="${C[k].col}">${C[k].name}</text>`});
+ // confetti on correct
+ if(seg.confetti){const k=t-seg.t0;for(let i=0;i<60;i++){const x=(i*97)%1080,y=((i*53)%400)-200+k*500*(0.6+(i%5)/5);const c=['#ffd400','#e6002d','#00c2ff','#00d27a','#ff4fa8'][i%5];g+=`<rect x="${x}" y="${y}" width="16" height="26" fill="${c}" transform="rotate(${i*40+k*300} ${x} ${y})"/>`}}
+ return g+'</svg>';
+}
+const Q1=['980万円','1,800万円','2,900万円'],Q2=['東京都','神奈川県','大阪府'];
+function choices(list,ans){return '<div class="choices">'+list.map((c,i)=>`<div class="ch c${i} ${ans==null?'':(i===ans?'ok':'dim')}"><b>${'ABC'[i]}</b>${c}</div>`).join('')+'</div>'}
+function panel(seg,t){
+ const p=seg.panel;
+ if(p==='q1'||p==='a1')return `<div class="card"><div class="p">🏠 群馬県の戸建て</div><div class="s">築10〜17年／建物 約110㎡／土地 約200㎡</div></div>`+choices(Q1,p==='a1'?1:null);
+ if(p==='q2'||p==='a2q')return `<div class="card"><div class="p">🏠 同じような家</div><div class="s">築10〜17年／建物 約110㎡／土地 約200㎡</div></div>`+choices(Q2,p==='a2q'?1:null);
+ if(p==='a2'){const k=Math.min(1,(t-seg.t0)/0.6);const d=[['神奈川県',4400],['東京都',4100],['大阪府',2700],['群馬県',1800]];return '<div class="bars">'+d.map((x,i)=>`<div class="bar ${i?'':'hi'}"><div class="l">${x[0]}</div><div class="v" style="width:${(200+x[1]/4400*500)*k}px;${k<1?'color:transparent':''}">${x[1].toLocaleString()}万円</div></div>`).join('')+'</div>'}
+ if(p==='end')return `<div class="cta"><div class="a">気になる家の値段</div><div class="b">相場と比べて、高い？安い？</div><div class="pill">無料でチェック ▶</div><div class="b" style="font-size:40px">お買い得物件チェッカー</div></div>`;
+ return '';
+}
+const HDR={q1:['値段クイズ 第1問','この家、<br>いくらで売れた？'],a1:['第1問 正解は…','B 1,800万円！'],q2:['第2問','同じような家、<br>いちばん高いのは？'],a2q:['第2問 正解は…','神奈川県！'],a2:['第2問 正解','東京都より高い！'],end:['何問 正解できた？','コメントで教えて！']};
+let TL=[];
+window.setTL=x=>{TL=x};
+window.render=t=>{
+ let seg=TL[0];for(const s of TL){if(t>=s.t0)seg=s}
+ const h=HDR[seg.panel]||['',''];
+ let html=stageSVG(t,seg)+`<div class="hdr"><div class="badge">${h[0]}</div><div class="q">${h[1]}</div></div>`;
+ if(seg.text){const c=C[seg.who];html+=`<div class="sub"><div class="who" style="background:${c.col}">${c.name}</div><div class="txt" style="font-size:${seg.text.length>24?40:52}px">${seg.text}</div></div>`}
+ html+=`<div class="panel">${panel(seg,t)}</div>`;
+ if(seg.count)html+=`<div class="timer">${seg.count}</div>`;
+ html+=`<div class="foot">国の不動産取引データ（2024〜2025年）より。築10〜17年・建物100〜120㎡・土地150〜250㎡の戸建ての取引価格の真ん中の値。登場人物は架空です。</div>`;
+ document.getElementById('stage').innerHTML=html;
+};
+</script></body></html>
