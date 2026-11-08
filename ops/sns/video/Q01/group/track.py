@@ -10,6 +10,20 @@ B = json.load(open(G + 'boxes.json'))
 base = Image.open(G + '../fam.png').convert('RGB')
 CENTER = {'kenji': (330, 330), 'miho': (610, 380), 'sota': (930, 380), 'hana': (1270, 430)}
 WIDE = (768, 520, 1000)
+REACT = {'07': 'joy', '08': 'surp', '14': 'surp'}
+RIMG = {k: Image.open(G + k + '.png').convert('RGB') for k in ('joy', 'surp')}
+RX = {'kenji': 700, 'miho': 1400, 'sota': 2000, 'hana': 2700}
+def kind(s): return 'host' if s['who'] == 'host' else ('react' if s.get('clip') in REACT else 'group')
+def react_frame(t, s):
+    im = RIMG[REACT[s['clip']]]; d = t - s['t0']; W = im.size[0]
+    cx0 = W/2; cx1 = RX.get(s['who'], W/2); k = ease(d/0.6)
+    cx = cx0 + (cx1-cx0)*k; cw = 1024 - 180*ease(d/1.2)
+    cy = 512
+    if REACT[s['clip']] == 'joy': cy += 18*abs(np.sin(d*9))
+    else:
+        if d < 0.45: cx += 16*np.sin(d*70)*(1-d/0.45)
+    cx = min(max(cx, cw/2), W-cw/2); cy = min(max(cy, cw/2), 1024-cw/2)
+    return im.transform((OUT, OUT), Image.EXTENT, (cx-cw/2, cy-cw/2, cx+cw/2, cy+cw/2), Image.BICUBIC)
 
 def frames(f):
     w, h = map(int, subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', f], capture_output=True, text=True).stdout.strip().split(','))
@@ -61,10 +75,12 @@ def render(t, i):
     idx = max(j for j, s in enumerate(segs) if s['t0'] <= t + 1e-9); s = segs[idx]
     if s['who'] == 'host':
         return host_frame(t, s)
+    if kind(s) == 'react':
+        return react_frame(t, s)
     # camera: ease from previous family/wide camera to this one
     prev = WIDE
     for p in reversed(segs[:idx]):
-        if p['who'] != 'host': prev = cam_for(p); break
+        if kind(p) == 'group': prev = cam_for(p); break
     cur = cam_for(s); k = ease((t - s['t0']) / 0.7)
     cx, cy, cw = [a + (b-a)*k for a, b in zip(prev, cur)]
     if s.get('count'): cw -= 40*(t - s['t0'])
@@ -79,7 +95,7 @@ def blended(t, i):
         d = t - s['t0']
         if 0 <= d < 0.3:
             j = segs.index(s)
-            if j and (segs[j-1]['who'] == 'host') != (s['who'] == 'host'):
+            if j and kind(segs[j-1]) != kind(s):
                 b = render(s['t0'] - 0.001, i)
                 return Image.blend(b, a, ease(d/0.3))
     return a
