@@ -210,18 +210,19 @@
    "id": "Q01-VIDEO",
    "kind": "video_post_schedule",
    "title": "値段クイズ 第1回の動画を Instagram リール・YouTube ショート・TikTok・Threads に予約",
-   "status": "承認待ち",
+   "status": "承認済み（司会者の差し替え後に依頼書を出す）",
    "payload": {
     "business": "お買い得物件チェッカー",
-    "video": "ops/sns/video/Q01-v1.mp4",
-    "texts": "ops/sns/video/Q01-posts.md",
+    "video": "ops/sns/video/Q01-final.mp4",
+    "texts": "ops/sns/video/Q01-final-posts.md",
     "schedule": "2026-11-11 18:00 JST",
     "channels": [
      "Instagram",
      "YouTube",
      "TikTok",
      "Threads"
-    ]
+    ],
+    "approved": "のぼるさん 2026-11-08「これを発信してみよう」"
    }
   },
   {

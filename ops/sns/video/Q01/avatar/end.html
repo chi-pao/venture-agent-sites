@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1920px;overflow:hidden;background:#1a0b3d;font-family:'M PLUS Rounded 1c',sans-serif}
+#bg{position:absolute;inset:0;background:url(file:///home/user/venture-agent-sites/ops/sns/video/EP01/c5.jpg) center/cover}
+.hdr{position:absolute;top:0;left:0;right:0;height:250px;background:linear-gradient(#1a0b3d,#1a0b3dee 70%,transparent);text-align:center;padding-top:40px}
+.hdr .a{font-family:'Dela Gothic One';font-size:76px;color:#fff;text-shadow:0 5px 0 #e6002d,0 0 26px #ff4fa8}
+.panel{position:absolute;left:0;right:0;bottom:0;height:600px;background:linear-gradient(transparent,#1a0b3d 15%);padding:70px 50px 0;text-align:center}
+.chips{display:flex;justify-content:center;gap:16px;flex-wrap:wrap}
+.chip{background:#fff;color:#1a0b3d;font-weight:800;font-size:40px;padding:12px 26px;border-radius:40px;border:5px solid #ffd400}
+.pill{display:inline-block;margin-top:34px;background:#e6002d;color:#fff;font-family:'Dela Gothic One';font-size:54px;padding:20px 50px;border-radius:80px;box-shadow:0 0 30px #ff4fa8}
+.url{margin-top:18px;color:#ffd400;font-weight:800;font-size:38px}
+.note{margin-top:12px;color:#cbb8ff;font-size:24px}
+</style></head><body><div id="bg"></div><div id="ov"></div>
+<script>
+const ease=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x)};const pop=x=>{x=Math.min(1,Math.max(0,x));return 1+Math.sin(x*Math.PI)*.25*(1-x)};
+window.render=t=>{document.getElementById('bg').style.transform=`scale(${1.02+0.04*ease(t/5)})`;
+const chips=['スクショを貼るだけ','国の取引データで参考価格','無料・登録不要'];
+document.getElementById('ov').innerHTML=`<div class="hdr" style="opacity:${ease(t/.4)}"><div class="a">お買い得物件チェッカー</div></div>
+<div class="panel"><div class="chips">${chips.map((c,i)=>`<div class="chip" style="transform:scale(${t>0.4+i*.35?pop((t-.4-i*.35)/.5):0})">${c}</div>`).join('')}</div>
+<div class="pill" style="opacity:${ease((t-1.6)/.3)};transform:scale(${pop((t-1.6)/.5)})">プロフィールのリンクから ▶</div>
+<div class="url" style="opacity:${ease((t-1.9)/.3)}">okaidoku-checker.pages.dev</div>
+<div class="note">※画面は架空の物件を2026年11月3日に実際に計算した結果。査定は参考値です。</div></div>`};
+</script></body></html>
