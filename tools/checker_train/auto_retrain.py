@@ -5,8 +5,8 @@
 3. Score every candidate and the model the site serves now on the same held-out sales, all through
    the site's own JavaScript runtime (tools/checker_eval/predict.mjs), with blank station minutes
    filled the way the page fills them.
-4. If the best candidate beats the live model clearly (median error at least 0.3 points lower and
-   no more than 1 point fewer sales within ±20%), retrain that recipe on all data, check that
+4. If the best candidate beats the served model's recipe retrained on the same sales clearly (median
+   error at least 0.3 points lower and no more than 1 point fewer sales within ±20%), retrain that recipe on all data, check that
    Python and JavaScript agree, and write it into checker-site/ with a fresh station table and a
    comparison report. Otherwise change nothing.
 
@@ -45,6 +45,21 @@ RECIPES = {
     'filled+land': {'decay': None, 'fill': True, 'land': True},
 }
 MIN_GAIN, MAX_WITHIN_LOSS = 0.3, 1.0
+# The served model was trained on every sale, the held-out ones included, so its own score on them is too
+# good to beat. Candidates are judged against the served recipe retrained on the same sales as they are.
+LIVE_RECIPE_DEFAULT = 'filled'
+
+
+def decide(report, live_recipe):
+    """(winner, adopt): adopt only a different recipe that clearly beats the served recipe on equal terms."""
+    cands = report['candidates']
+    winner = min(cands, key=lambda n: cands[n]['median_ape_pct'])
+    ref = cands.get(live_recipe)
+    if ref is None or winner == live_recipe:
+        return winner, False
+    best = cands[winner]
+    return winner, (best['median_ape_pct'] <= ref['median_ape_pct'] - MIN_GAIN
+                    and best['within20_pct'] >= ref['within20_pct'] - MAX_WITHIN_LOSS)
 
 
 def period(frame):
@@ -188,7 +203,7 @@ def install(pipe, rows, site, table, report, work, land=None):
         'name': f'中古戸建て・取引価格モデル（{date.today().year}年{date.today().month}月更新）', 'trainedAt': date.today().isoformat(),
         'sourceSha256': component['sha256'], 'releaseKind': 'time_holdout',
         'metrics': {k: best[k] for k in ('n', 'median_ape_pct', 'mae_yen', 'within20_pct')},
-        'comparisonReport': report_path, 'validation': report['validation'], 'components': [component]}
+        'comparisonReport': report_path, 'validation': report['validation'], 'recipe': report['winner'], 'components': [component]}
     catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     (site / 'station-defaults.json').write_text(json.dumps(table, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
     # The replaced model's files are no longer referenced (the fallback is the small baseline).
@@ -229,17 +244,18 @@ def main():
         site = site_with(a.site, component, cand / 'used_house.dat', a.work)
         report['candidates'][name] = score(predict_site(site, hold_inputs, a.work), actual)
         print(name, report['candidates'][name], flush=True)
-    winner = min(report['candidates'], key=lambda n: report['candidates'][n]['median_ape_pct'])
-    report['winner'] = winner
-    live, best = report['live'], report['candidates'][winner]
-    changed = best['median_ape_pct'] <= live['median_ape_pct'] - MIN_GAIN and best['within20_pct'] >= live['within20_pct'] - MAX_WITHIN_LOSS
-    report['adopted'] = changed
+    catalog = json.loads((a.site / 'models' / 'catalog.json').read_text(encoding='utf-8'))
+    live_recipe = catalog['models']['used_house'].get('recipe', LIVE_RECIPE_DEFAULT)
+    winner, changed = decide(report, live_recipe)
+    report.update(winner=winner, liveRecipe=live_recipe, adopted=changed)
+    live = report['live']
     if changed:
         full_table = station_table(data)
         uses_land = RECIPES[winner]['land']
         install(train(data, RECIPES[winner], full_table, land), data, a.site, full_table, report, a.work, land if uses_land else None)
     lines = ['# 中古戸建てモデルの自動学習', '', f"- 検証: {report['holdout']}",
-             f"- 公開中のモデル: 誤差中央値 {live['median_ape_pct']}% / ±20%以内 {live['within20_pct']}%", '']
+             f"- 公開中のモデル（検証の取引も学習済みなので参考）: 誤差中央値 {live['median_ape_pct']}% / ±20%以内 {live['within20_pct']}%",
+             f"- 比べる基準: 公開中と同じ作り方 {live_recipe} を同じ取引で学習し直したもの", '']
     lines += [f"- 候補 {n}: 誤差中央値 {s['median_ape_pct']}% / ±20%以内 {s['within20_pct']}%" for n, s in report['candidates'].items()]
     lines += ['', f"- 結論: {'候補 ' + winner + ' を採用（全データで学習し直してサイトに書き込み済み）' if changed else '入れ替えなし（はっきりした改善がない）'}"]
     (a.work / 'summary.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')

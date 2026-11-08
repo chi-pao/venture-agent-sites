@@ -38,6 +38,18 @@ class AutoRetrainTests(unittest.TestCase):
         self.assertEqual(d, {'type': 'used_house', 'prefecture': '山口県', 'city': '35202', 'price': 1, 'district': '大字際波',
                              'year': 2000, 'landArea': 238.0, 'buildingArea': 172.0, 'structure': '木造', 'stationMinutes': 23})
 
+    def test_candidates_are_judged_against_the_served_recipe_retrained_alike(self):
+        def c(ape, within):
+            return {'median_ape_pct': ape, 'within20_pct': within}
+        report = {'live': c(12.0, 63.0), 'candidates': {'filled': c(20.2, 49.7), 'filled+land': c(19.8, 50.4)}}
+        self.assertEqual(auto.decide(report, 'filled'), ('filled+land', True))
+        report['candidates']['filled+land'] = c(20.0, 50.0)
+        self.assertEqual(auto.decide(report, 'filled'), ('filled+land', False))
+        report['candidates']['filled+land'] = c(19.8, 48.0)
+        self.assertEqual(auto.decide(report, 'filled'), ('filled+land', False))
+        self.assertEqual(auto.decide(report, 'filled+land'), ('filled+land', False))
+        self.assertEqual(auto.decide(report, 'unknown'), ('filled+land', False))
+
     def test_period_labels(self):
         self.assertEqual(auto.period_label(2026 * 4, 2026 * 4 + 1), '2026年1〜6月')
         self.assertEqual(auto.period_label(2025 * 4 + 3, 2026 * 4), '2025年10月〜2026年3月')
