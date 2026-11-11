@@ -210,7 +210,7 @@
    "id": "Q01-VIDEO",
    "kind": "video_post_schedule",
    "title": "値段クイズ 第1回の動画を Instagram リール・YouTube ショート・TikTok・Threads に予約",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "business": "お買い得物件チェッカー",
     "video": "ops/sns/video/Q01-final.mp4",
@@ -223,7 +223,13 @@
      "Threads"
     ],
     "approved": "のぼるさん 2026-11-08「これを発信してみよう」",
-    "request": "ops/chatgpt/outbox/Q01-VIDEO.md"
+    "request": "ops/chatgpt/outbox/Q01-VIDEO.md",
+    "metricool_ids": {
+     "Instagram": "423854085",
+     "YouTube": "423854145",
+     "TikTok": "423854253",
+     "Threads": "423854197"
+    }
    }
   },
   {
