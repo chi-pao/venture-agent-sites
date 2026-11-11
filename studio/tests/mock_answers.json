@@ -1,0 +1,274 @@
+{
+  "企画部": {
+    "ideas": [
+      {
+        "title": "練習用の案A",
+        "one_liner": "練習モードの案",
+        "target_user": "個人講師",
+        "payer": "個人講師",
+        "pain": "練習用の困りごと",
+        "evidence": [
+          {
+            "url": "https://example.com/a",
+            "quote": "練習用の引用",
+            "checked": "2026-11-11"
+          }
+        ],
+        "solution": "練習用の解決",
+        "monetization": "月額",
+        "price_hypothesis": "月500円（仮説）",
+        "free_alternatives": "Excel",
+        "first_100_users": "note と YouTube",
+        "why_now": "練習",
+        "build_scope": "最小機能",
+        "scores": {
+          "pain": 5,
+          "willingness_to_pay": 4,
+          "reach": 4,
+          "buildability": 5,
+          "timing": 3
+        }
+      },
+      {
+        "title": "練習用の案B",
+        "one_liner": "競合に負ける案",
+        "target_user": "誰か",
+        "payer": "誰か",
+        "pain": "弱い困りごと",
+        "evidence": [],
+        "solution": "",
+        "monetization": "広告",
+        "price_hypothesis": "",
+        "free_alternatives": "",
+        "first_100_users": "",
+        "why_now": "",
+        "build_scope": "",
+        "scores": {
+          "pain": 4,
+          "willingness_to_pay": 3,
+          "reach": 3,
+          "buildability": 4,
+          "timing": 3
+        }
+      },
+      {
+        "title": "練習用の案C",
+        "one_liner": "点数が低い案",
+        "target_user": "",
+        "payer": "",
+        "pain": "",
+        "evidence": [],
+        "solution": "",
+        "monetization": "",
+        "price_hypothesis": "",
+        "free_alternatives": "",
+        "first_100_users": "",
+        "why_now": "",
+        "build_scope": "",
+        "scores": {
+          "pain": 1,
+          "willingness_to_pay": 1,
+          "reach": 1,
+          "buildability": 1,
+          "timing": 1
+        }
+      }
+    ]
+  },
+  "市場・競合部": [
+    {
+      "competitors": [
+        {
+          "name": "競合X",
+          "url": "https://example.com/x",
+          "price": "未確認",
+          "strength": "有名",
+          "weakness": "高い",
+          "quote": "引用"
+        }
+      ],
+      "user_complaints": [],
+      "differentiation": [
+        "個人講師に絞る"
+      ],
+      "threats": [
+        "大手の参入"
+      ],
+      "growth_outlook": "横ばい（練習）",
+      "win_probability": 55,
+      "verdict": "GO",
+      "reason": "練習用の理由"
+    },
+    {
+      "competitors": [],
+      "differentiation": [],
+      "threats": [
+        "無料の代わりが強い"
+      ],
+      "growth_outlook": "縮む",
+      "win_probability": 10,
+      "verdict": "NO_GO",
+      "reason": "無料の代わりで足りる"
+    }
+  ],
+  "審査部": {
+    "devils_advocate": [
+      "払う人が少ないかもしれない"
+    ],
+    "technical": {
+      "feasible": true,
+      "notes": "",
+      "external_dependencies": []
+    },
+    "legal": [
+      {
+        "risk": "個人情報",
+        "law_or_rule": "個人情報保護法",
+        "mitigation": "端末内だけに保存"
+      }
+    ],
+    "unit_economics": {
+      "price": "月500円",
+      "monthly_cost": "0円",
+      "needed_paying_users_for_100k_yen": "200人",
+      "assumptions": "仮説"
+    },
+    "acquisition": {
+      "first_100_plan": "note 連載で告知",
+      "channels": [
+        "note"
+      ]
+    },
+    "mvp_scope": [
+      "名簿",
+      "出欠"
+    ],
+    "out_of_scope": [
+      "決済"
+    ],
+    "validation": {
+      "method": "LP＋事前登録",
+      "days": 14,
+      "target_signups": 30,
+      "success_metric": "登録30件"
+    },
+    "kill_criteria": [
+      "公開3か月で有料0件ならやめる"
+    ],
+    "verdict": "PASS",
+    "conditions": [],
+    "reason": "練習用"
+  },
+  "開発部": {
+    "stack": "Vite + React",
+    "how_to_run": "npm install && npm run dev",
+    "features_done": [
+      "名簿"
+    ],
+    "not_done": [
+      "決済（接続待ち）"
+    ],
+    "tests": "練習",
+    "known_issues": [],
+    "static_dir": "dist"
+  },
+  "品質部": [
+    {
+      "checks": [
+        {
+          "item": "390px幅",
+          "result": "不合格",
+          "evidence": "はみ出し"
+        }
+      ],
+      "blocking_issues": [
+        "スマホではみ出す"
+      ],
+      "verdict": "要修正"
+    },
+    {
+      "checks": [
+        {
+          "item": "390px幅",
+          "result": "合格",
+          "evidence": "練習"
+        }
+      ],
+      "blocking_issues": [],
+      "verdict": "レビュー可"
+    }
+  ],
+  "SNS運用部": {
+    "posts": [
+      {
+        "channel": "Threads",
+        "title": "練習の投稿その一",
+        "format": "作る過程",
+        "angle": "AIが考えた案",
+        "facts": [
+          "練習用の事実"
+        ],
+        "text": "練習の投稿文",
+        "asset_brief": "文字を描かない絵",
+        "week": 1
+      },
+      {
+        "channel": "Instagram",
+        "title": "練習の投稿その二",
+        "format": "使い方",
+        "angle": "使う場面",
+        "facts": [
+          "練習用の事実"
+        ],
+        "text": "練習",
+        "asset_brief": "なし",
+        "week": 1
+      }
+    ],
+    "kpis": [
+      {
+        "name": "事前登録",
+        "target_4w": "未定",
+        "how_to_measure": "フォーム"
+      }
+    ],
+    "launch_checklist": [
+      "利用規約を確認する"
+    ]
+  },
+  "物販・アフィリエイト部": {
+    "themes": [
+      {
+        "title": "引っ越しの収納の選び方",
+        "audience": "家を買った人",
+        "why_sells": "練習",
+        "evidence": [],
+        "search_keywords": [
+          "収納ケース"
+        ],
+        "channels": [
+          "Threads"
+        ],
+        "format": "選び方",
+        "season": "春",
+        "risks": [
+          "PR表記"
+        ]
+      }
+    ]
+  },
+  "楽天商品": {
+    "items": [
+      {
+        "name": "練習用の収納ケース",
+        "price": 1980,
+        "shop": "練習ショップ",
+        "url": "https://hb.afl.rakuten.co.jp/hgc/example",
+        "is_affiliate": true,
+        "reviews": 120,
+        "rating": 4.3,
+        "image": ""
+      }
+    ]
+  }
+}
