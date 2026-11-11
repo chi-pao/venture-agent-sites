@@ -81,7 +81,7 @@ def view(im, cx, cy, cw, shake=0):
     return im.transform((OUT, OUT), Image.EXTENT, (cx-cw/2, cy-cw/2, cx+cw/2, cy+cw/2), Image.BICUBIC)
 
 def host_frame(t, s):
-    fr = clip(V3 + f"clips/{s['clip']}.mp4"); k = (t - s['t0']) / s['len']
+    fr = clip(V3 + f"clips_host2/{s['clip']}.mp4"); k = (t - s['t0']) / s['len']
     f = fr[min(int((t-s['t0'])*FPS), len(fr)-1)]
     w = f.size[0]; cw = w*(1 - 0.04*ease(k)); c = w/2
     return f.transform((OUT, OUT), Image.EXTENT, (c-cw/2, c-cw/2*1.0, c+cw/2, c+cw/2), Image.BICUBIC)
