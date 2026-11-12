@@ -65,6 +65,10 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(r["練習用の案A"]["stage"], "owner_check")      # 確認なしで最後まで作った
         self.assertEqual(r["練習用の案B"]["stage"], "market_no_go")     # 競合に負ける
         self.assertEqual(r["練習用の案C"]["stage"], "market_no_go")     # 点数不足
+        pv = r["練習用の作り変え案"]                                     # 見送りの案Bを勝てる形に作り変えて作り切った
+        self.assertEqual(pv["stage"], "owner_check")
+        self.assertEqual(pv["pivot_of"], r["練習用の案B"]["id"])
+        self.assertIn("練習用の無料ページ", (self.tmp / "data" / "副産物.md").read_text(encoding="utf-8"))
         a = r["練習用の案A"]
         self.assertEqual(len([h for h in a["history"] if h["stage"] == "開発中"]), 1)
         self.assertEqual(a["qa"]["verdict"], "レビュー可")               # 品質部の要修正 → 自動で直した

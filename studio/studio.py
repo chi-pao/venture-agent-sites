@@ -75,12 +75,61 @@ def spec_text(rec):
 
 
 # ------------------------------------------------------------------ ①②③
+SECTORS = ["小さなお店・個人事業の業務", "学び・資格・子どもの勉強", "趣味・ゲーム・推し活", "健康づくり・運動（医療の判断はしない）",
+           "お金・家計・節約", "仕事探し・副業・フリーランス", "ペット", "旅行・おでかけ", "料理・食事", "ものづくり・クリエイター",
+           "介護・家族のサポート", "地域・自治会・サークル運営", "SNS運用・動画づくり", "住まい・暮らし"]
+
+
+def next_sectors(n=3):
+    """毎回ちがう分野を3つずつ順番に渡す（分野の偏りをなくす）。"""
+    p = _state_path()
+    data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    cur = int(data.get("sector_cursor", 0))
+    picked = [SECTORS[(cur + i) % len(SECTORS)] for i in range(n)]
+    data["sector_cursor"] = (cur + n) % len(SECTORS)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return picked
+
+
+def save_byproducts(cfg, source_title, items):
+    items = [b for b in items or [] if isinstance(b, dict) and b.get("title")]
+    if not items:
+        return
+    path = Path(cfg["_data"]) / "副産物.md"
+    with path.open("a", encoding="utf-8") as f:
+        if path.stat().st_size == 0:
+            f.write("# 副産物の案（有料にはならないが、今の資産の集客に使えそうなもの）\n")
+        for b in items:
+            f.write(f"\n- **{b['title']}**（{now()}・元の案: {source_title}）\n  - 役立つ先: {b.get('why', '')}\n"
+                    f"  - 作るもの: {b.get('scope', '')}\n")
+
+
+def pivot_record(store, rec, market):
+    """見送りの案を、市場・競合部が出した「勝てる形」に作り変えた新しい案にする。"""
+    pv = market.get("pivot")
+    if not isinstance(pv, dict) or not pv.get("title"):
+        return None
+    idea = {k: v for k, v in pv.items() if k not in ("why_wins", "win_probability")}
+    idea.setdefault("evidence", rec["idea"].get("evidence", []))
+    idea["pivot_of"] = rec["idea"]["title"]
+    win = float(pv.get("win_probability") or 0)
+    new_market = dict(market, verdict="GO（作り変え）", win_probability=win,
+                      differentiation=[pv.get("why_wins", "")] + list(market.get("differentiation", [])))
+    new_market.pop("pivot", None)
+    nrec = {"id": store.new_id(idea["title"]), "idea": idea, "score": rec["score"], "history": [],
+            "market": new_market, "pivot_of": rec["id"]}
+    store.set_stage(nrec, "idea", f"「{rec['idea']['title']}」を作り変えた案（勝てる見込み {win:.0f}%）")
+    return nrec
+
+
 def plan_ideas(cfg, store, eng, count=None):
     count = count or cfg["ideas_per_run"]
-    print(f"①企画部: 案を{count}件考えています（Web検索あり。十数分かかることがあります）…")
+    sectors = next_sectors()
+    print(f"①企画部: 案を{count}件考えています（分野: {'、'.join(sectors)}。十数分かかることがあります）…")
     work = Path(cfg["_data"]) / "work"
     res = eng.ask_json("企画部", D.ideation_prompt(count, store.learning_text(), store.past_titles(),
-                                                  cfg["owner_assets"]),
+                                                  cfg["owner_assets"], sectors),
                        D.IDEATION_REQUIRED, tools=RESEARCH_TOOLS, cwd=work, max_turns=cfg["max_turns"]["research"])
     recs = []
     for idea in res["ideas"]:
@@ -93,20 +142,32 @@ def plan_ideas(cfg, store, eng, count=None):
     for r in recs:
         if r not in picked:
             store.set_stage(r, "market_no_go", "企画の点数が足りない、または上位に入らなかった")
-    passed = []
-    for rec in picked:
+    passed, pivots, queue = [], 0, list(picked)
+    while queue:
+        rec = queue.pop(0)
         title = rec["idea"]["title"]
         try:
-            print(f"②市場・競合部: 「{title}」を調べています…")
-            market = eng.ask_json("市場・競合部", D.market_prompt(rec["idea"]), D.MARKET_REQUIRED,
-                                  tools=RESEARCH_TOOLS, cwd=work, max_turns=cfg["max_turns"]["research"])
-            rec["market"] = market
-            go = str(market["verdict"]).upper().replace("-", "_") == "GO" and \
-                float(market["win_probability"]) >= cfg["min_win_probability"]
-            if not go:
-                store.set_stage(rec, "market_no_go", market.get("reason", ""))
-                continue
+            if rec.get("market") is None:
+                print(f"②市場・競合部: 「{title}」を調べています…")
+                market = eng.ask_json("市場・競合部", D.market_prompt(rec["idea"]), D.MARKET_REQUIRED,
+                                      tools=RESEARCH_TOOLS, cwd=work, max_turns=cfg["max_turns"]["research"])
+                rec["market"] = market
+                save_byproducts(cfg, title, market.get("byproducts"))
+                go = str(market["verdict"]).upper().replace("-", "_") == "GO" and \
+                    float(market["win_probability"]) >= cfg["min_win_probability"]
+                if not go:
+                    store.set_stage(rec, "market_no_go", market.get("reason", ""))
+                    pv = market.get("pivot") or {}
+                    if pivots < cfg["max_pivots_per_run"] and pv.get("money_evidence") and \
+                            float(pv.get("win_probability") or 0) >= cfg["min_pivot_win_probability"]:
+                        nrec = pivot_record(store, rec, market)
+                        if nrec:
+                            pivots += 1
+                            print(f"  → 勝てる形に作り変えた案「{nrec['idea']['title']}」を審査に回します")
+                            queue.append(nrec)
+                    continue
             print(f"③審査部: 「{title}」を審査しています…")
+            market = rec["market"]
             review = eng.ask_json("審査部", D.review_prompt(rec["idea"], market), D.REVIEW_REQUIRED,
                                   tools=RESEARCH_TOOLS, cwd=work, max_turns=cfg["max_turns"]["research"])
             rec["review"] = review
@@ -128,6 +189,13 @@ def develop(cfg, store, eng, rec):
     spec = spec_text(rec)
     (build_dir / "SPEC.md").write_text(spec, encoding="utf-8")
     feedback = rec["feedback"][-1]["note"] if rec.get("feedback") else ""
+    if not rec.get("design") or "デザイン" in feedback or "見た目" in feedback:
+        print("④デザイン部: 競合や人気サイトを見て、見た目の方針を決めています…")
+        rec["design"] = eng.ask_json("デザイン部", D.design_prompt(spec, (rec.get("market") or {}).get("competitors", []),
+                                                                feedback),
+                                     D.DESIGN_REQUIRED, tools=RESEARCH_TOOLS + FILE_TOOLS + ["Skill"], cwd=build_dir,
+                                     max_turns=cfg["max_turns"]["research"], permission_mode="acceptEdits")
+        store.save(rec)
     rounds = 0
     while True:
         print("⑤開発部: 作っています（1時間ほどかかることがあります）…")
@@ -138,7 +206,7 @@ def develop(cfg, store, eng, rec):
         qa = eng.ask_json("品質部", D.qa_prompt(spec, build), D.QA_REQUIRED,
                           tools=FILE_TOOLS + RUN_TOOLS, cwd=build_dir,
                           max_turns=cfg["max_turns"]["qa"], permission_mode="acceptEdits")
-        ok = "要修正" not in str(qa["verdict"])
+        ok = "要修正" not in str(qa["verdict"]) and float(qa.get("design_score") or 0) >= cfg["min_design_score"]
         if ok or rounds >= cfg["auto_fix_rounds"]:
             return build, qa, ok
         rounds += 1
@@ -175,6 +243,10 @@ def owner_package(rec):
     out += ["", "## 3. 心配な点（審査部の反対意見）"] + [f"- {x}" for x in r.get("devils_advocate", [])]
     out += ["", "## 4. できたこと / まだのこと"]
     out += [f"- ✅ {x}" for x in b.get("features_done", [])] + [f"- ⏳ {x}" for x in b.get("not_done", [])]
+    dz = rec.get("design") or {}
+    out += ["", f"## 見た目（品質部の採点: {q.get('design_score')} / 5）", f"- 方針: {dz.get('direction', '')}",
+            f"- 品質部のひとこと: {q.get('design_notes', '')}", "- 参考にしたサイト:"]
+    out += [f"  - {x.get('name')}（{x.get('url')}）… {x.get('borrow')}" for x in dz.get("references", [])]
     out += ["", f"## 5. 品質部の検査（結論: {q.get('verdict')}）", "| 項目 | 結果 | 確かめ方 |", "|---|---|---|"]
     out += [f"| {c.get('item')} | {c.get('result')} | {c.get('evidence')} |" for c in q.get("checks", [])]
     out += ["", "残っている問題:"]

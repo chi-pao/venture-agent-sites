@@ -108,7 +108,30 @@
       "growth_outlook": "縮む",
       "win_probability": 10,
       "verdict": "NO_GO",
-      "reason": "無料の代わりで足りる"
+      "reason": "無料の代わりで足りる",
+      "pivot": {
+        "title": "練習用の作り変え案",
+        "one_liner": "業者向けにした案",
+        "target_user": "小さなお店",
+        "payer": "店主",
+        "pain": "練習",
+        "solution": "練習",
+        "monetization": "月額",
+        "price_hypothesis": "月980円（仮説）",
+        "free_alternatives": "",
+        "first_100_users": "",
+        "build_scope": "最小",
+        "why_wins": "業者向けの競合が少ない",
+        "win_probability": 45,
+        "money_evidence": "練習用：同じ形の有料サービスが続いている"
+      },
+      "byproducts": [
+        {
+          "title": "練習用の無料ページ",
+          "why": "チェッカーの集客",
+          "scope": "1ページ"
+        }
+      ]
     }
   ],
   "審査部": {
@@ -184,7 +207,8 @@
       "blocking_issues": [
         "スマホではみ出す"
       ],
-      "verdict": "要修正"
+      "verdict": "要修正",
+      "design_score": 3
     },
     {
       "checks": [
@@ -195,7 +219,8 @@
         }
       ],
       "blocking_issues": [],
-      "verdict": "レビュー可"
+      "verdict": "レビュー可",
+      "design_score": 4
     }
   ],
   "SNS運用部": {
@@ -270,5 +295,21 @@
         "image": ""
       }
     ]
+  },
+  "デザイン部": {
+    "references": [
+      {
+        "name": "競合X",
+        "url": "https://example.com/x",
+        "borrow": "大きな見出し"
+      }
+    ],
+    "direction": "明るく元気",
+    "palette": [
+      "#FF6B35 主役"
+    ],
+    "typography": "見出し32px",
+    "layout": "見出し＋ボタン＋イラスト",
+    "visuals": "SVGで自作"
   }
 }
