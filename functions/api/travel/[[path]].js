@@ -110,6 +110,35 @@ export async function searchTravel(action,input,env,request){
  fail('検索機能が見つかりません',404);
 }
 
+// 宿さがし（楽天トラベル）。楽天の登録（RAKUTEN_APP_ID / RAKUTEN_ACCESS_KEY / RAKUTEN_AFFILIATE_ID）があるときだけ動く。
+const RAKUTEN_HOTEL_ENDPOINT='https://openapi.rakuten.co.jp/engine/api/Travel/SimpleHotelSearch/20170426';
+function rakutenURL(value){if(typeof value!=='string')return '';try{const u=new URL(value);return u.protocol==='https:'&&/(^|\.)(rakuten\.co\.jp|r10s\.jp)$/.test(u.hostname)?u.href:'';}catch{return '';}}
+export function pickHotels(data){
+ const list=Array.isArray(data?.hotels)?data.hotels:[];
+ return list.map(h=>{const parts=Array.isArray(h)?h:(Array.isArray(h?.hotel)?h.hotel:[h]);const info=parts.map(x=>x?.hotelBasicInfo).find(Boolean);return info;}).filter(Boolean).slice(0,10).map(i=>({
+  name:cleanString(i.hotelName,100),url:rakutenURL(i.hotelInformationUrl)||rakutenURL(i.planListUrl),image:rakutenURL(i.hotelThumbnailUrl)||rakutenURL(i.hotelImageUrl),
+  minCharge:Number.isFinite(i.hotelMinCharge)?i.hotelMinCharge:null,reviewAverage:Number.isFinite(i.reviewAverage)?i.reviewAverage:null,reviewCount:Number.isFinite(i.reviewCount)?i.reviewCount:0,
+  nearestStation:cleanString(i.nearestStation,40),lat:Number(i.latitude),lon:Number(i.longitude)})).filter(h=>h.name&&h.url);
+}
+export async function searchHotels(input,env,request,fetcher=fetch){
+ if(!env.RAKUTEN_APP_ID||!env.RAKUTEN_ACCESS_KEY)fail('宿の検索は準備中です（運営者の楽天の登録待ち）',503);
+ const center=point(input);
+ if(env.TRAVEL_DB){const minute=Math.floor(Date.now()/60000),ip=await hash(request.headers.get('CF-Connecting-IP')||'local-client');
+  const ok=await env.TRAVEL_DB.prepare('INSERT INTO travel_api_limits(bucket,count) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET count=count+1 WHERE count<10 RETURNING count').bind('h:'+minute+':'+ip).first();
+  if(!ok)fail('宿の検索が続いています。1分ほど待ってください',429);
+  await env.TRAVEL_DB.prepare("DELETE FROM travel_api_limits WHERE bucket LIKE 'h:%' AND CAST(substr(bucket,3,instr(substr(bucket,3),':')-1) AS INTEGER)<?").bind(minute-2).run();}
+ const url=new URL(RAKUTEN_HOTEL_ENDPOINT);
+ const params={applicationId:env.RAKUTEN_APP_ID,accessKey:env.RAKUTEN_ACCESS_KEY,format:'json',formatVersion:2,latitude:center.lat,longitude:center.lon,datumType:1,searchRadius:3,hits:10};
+ if(env.RAKUTEN_AFFILIATE_ID)params.affiliateId=env.RAKUTEN_AFFILIATE_ID;
+ for(const [k,v] of Object.entries(params))url.searchParams.set(k,String(v));
+ const site=(env.RAKUTEN_SITE_URL||'https://venture-agent-sites.pages.dev').replace(/\/$/,'');
+ let response;try{response=await fetcher(url,{headers:{Accept:'application/json',Referer:site+'/',Origin:site},signal:AbortSignal.timeout(12000),redirect:'manual'});}catch{fail('宿の検索先につながりません',502);}
+ if(response.status===404){const body=await response.text().catch(()=>'');if(body.includes('not_found'))return {provider:'楽天トラベル',retrievedAt:new Date().toISOString(),hotels:[]};}
+ if(!response.ok)fail(response.status===429?'宿の検索の回数制限に達しました。少し待ってください':'宿の検索先の応答を確認できません',response.status===429?429:502);
+ let data;try{data=await response.json();}catch{fail('宿の検索先から正しいデータを受け取れませんでした',502);}
+ return {provider:'楽天トラベル',retrievedAt:new Date().toISOString(),hotels:pickHotels(data)};
+}
+
 export async function onRequest(context){
  const {request,env}=context,url=new URL(request.url);
  const pieces=url.pathname.split('/').filter(Boolean);
@@ -119,7 +148,11 @@ export async function onRequest(context){
  if(request.method==='GET'&&path.length===1&&path[0]==='health'){
   let searchSchema=false;try{if(env.TRAVEL_DB){await env.TRAVEL_DB.prepare('SELECT bucket FROM travel_api_limits LIMIT 1').first();searchSchema=true;}}catch{}
   let schema=false;if(env.TRAVEL_DB){try{await env.TRAVEL_DB.prepare('SELECT id FROM travel_trips LIMIT 1').first();schema=true;}catch{}}
-  return reply({databaseBound:!!env.TRAVEL_DB,schemaReady:schema,sharingEnabled:env.TRAVEL_SHARING_ENABLED==='true',search:env.TRAVEL_SEARCH_ENABLED==='true'&&!!env.GEOAPIFY_API_KEY?(searchSchema?'configured':'database_schema_required'):'connection_required',searchSchemaReady:searchSchema,searchPolicy:SEARCH_VERSION,searchModes:['walk','drive'],transit:'not_connected'});
+  return reply({databaseBound:!!env.TRAVEL_DB,schemaReady:schema,sharingEnabled:env.TRAVEL_SHARING_ENABLED==='true',search:env.TRAVEL_SEARCH_ENABLED==='true'&&!!env.GEOAPIFY_API_KEY?(searchSchema?'configured':'database_schema_required'):'connection_required',searchSchemaReady:searchSchema,searchPolicy:SEARCH_VERSION,searchModes:['walk','drive'],transit:'not_connected',hotels:env.RAKUTEN_APP_ID&&env.RAKUTEN_ACCESS_KEY?'configured':'connection_required'});
+ }
+ if(path.length===1&&path[0]==='hotels'&&request.method==='POST'){
+  try{return reply(await searchHotels(await bodyJSON(request),env,request));}
+  catch(error){return reply({error:error instanceof InputError?error.message:'宿の検索を確認してください'},error instanceof InputError?error.status:503);}
  }
  if(path.length===1&&['search','nearby','route'].includes(path[0])&&request.method==='POST'){
   try{return reply(await searchTravel(path[0],await bodyJSON(request),env,request));}
