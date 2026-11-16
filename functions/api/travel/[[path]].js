@@ -17,7 +17,7 @@ export function normalisePlan(input){
  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(dayStart))fail('出発時刻を確認してください');
  const trip={title:string(t.title,70,true),destination:string(t.destination??'',60),start,
   days:integer(t.days,1,14),people:integer(t.people,1,30),budget:optionalNumber(t.budget??null,10000000),
-  note:string(t.note??'',500),companions:['friends','couple','family','other'].includes(t.companions)?t.companions:'other',dayStart,buffer:integer(t.buffer??10,0,120),endBy:string(t.endBy??'18:00',5),pace:t.pace==='slow'?'slow':'normal'};
+  note:string(t.note??'',500),companions:['friends','couple','family','other'].includes(t.companions)?t.companions:'other',dayStart,buffer:integer(t.buffer??10,0,120),endBy:string(t.endBy??'18:00',5),pace:t.pace==='slow'?'slow':'normal',travelMode:['auto','walk','drive'].includes(t.travelMode)?t.travelMode:'auto'};
  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(trip.endBy))fail('終了目標を確認してください');
  const ids=new Set();
  const events=p.events.map(raw=>{const e=object(raw),id=string(e.id,80,true);if(ids.has(id))fail('予定IDが重複しています');ids.add(id);
@@ -27,7 +27,7 @@ export function normalisePlan(input){
    cost:optionalNumber(e.cost??null,10000000),memo:string(e.memo??'',300),confirmed:e.confirmed===true,
    move:optionalNumber(e.move??null,1440),duration:optionalNumber(e.duration??null,1440),
    location:e.location==null?null:point(e.location),sourceURL:safeSource(e.sourceURL),retrievedAt:string(e.retrievedAt??'',40),
-   routeKey:string(e.routeKey??'',180),routeMode:['walk','drive','manual'].includes(e.routeMode)?e.routeMode:'manual',
+   routeKey:string(e.routeKey??'',180),routeMode:['walk','drive','manual'].includes(e.routeMode)?e.routeMode:'manual',legMode:['walk','drive','transit'].includes(e.legMode)?e.legMode:'',
    routeSource:string(e.routeSource??'',120),routeChecked:string(e.routeChecked??'',40)};});
  const packing=p.packing.map(raw=>{const p=object(raw);return {id:string(p.id,80,true),title:string(p.title,70,true),done:p.done===true};});
  if(new Set(packing.map(p=>p.id)).size!==packing.length)fail('持ち物IDが重複しています');
