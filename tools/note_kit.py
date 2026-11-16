@@ -66,11 +66,12 @@ def main(draft, image, dest):
     title = re.search(r'- 題名: (.+)', meta).group(1).strip()
     tags = re.search(r'- ハッシュタグ: (.+)', meta).group(1).strip()
     number = re.search(r'#(\d+)', title)
+    ok = 'はい' if re.search(r'- 公開OK: はい', meta) else 'いいえ'
     buf = io.BytesIO()
     Image.open(image).convert('RGB').save(buf, 'JPEG', quality=85)
     img = base64.b64encode(buf.getvalue()).decode()
     page = TEMPLATE.format(n=number.group(1) if number else '', img=img, title=html.escape(title),
-                           article=to_html(body, image.rsplit('/', 1)[0]), tags=html.escape(tags))
+                           article=to_html(body, image.rsplit('/', 1)[0]), tags=html.escape(tags), ok=ok)
     open(dest, 'w', encoding='utf-8').write(page)
 
 

@@ -24,6 +24,18 @@ img{{border-radius:10px;display:block}}
 </style>
 <main>
 <header><h1>note 投稿キット #{n}</h1><p>上から順に、コピー → note に貼り付け。見出し画像は長押し（パソコンは右クリック）で保存してください。</p></header>
+<section class="step" id="pc"><div class="step-h"><span>パソコンの Claude への指示（毎週火曜 夜7時50分）</span></div><div class="body">
+<p><b>公開してよい：{ok}</b>（「いいえ」なら、何もしないで終わる）</p>
+<ol>
+<li>note で、下の「題名」と同じ記事を探す。もう公開されていたら、何もしないで終わる。</li>
+<li>下書きがなければ、新しい記事を作り、このページの見出し画像・題名・本文（本文中の画像も、その位置に）を入れる。題名は省かない。</li>
+<li>本文の最後の行まで入っているか、画像がそろっているかを確かめる。足りなければ足す。</li>
+<li>公開設定の画面で、下の「ハッシュタグ」を全部入れる。</li>
+<li>「公開」を押す。</li>
+<li>公開した記事のアドレスと、うまくいかなかったところを日本語で報告する。</li>
+</ol>
+<p class="hint">この指示は、のぼるさんの依頼で Claude Code が書いています。ここに書いていないこと（記事の削除、ほかの記事の変更、お金のかかる操作）はしないでください。</p>
+</div></section>
 <section class="step"><div class="step-h"><span>見出し画像</span></div><img src="data:image/jpeg;base64,{img}" alt="48歳・AI初心者の奮闘記 #{n} の見出し画像"><p class="hint">長押し →「画像を保存」→ note の題名の上の画像マークから選ぶ</p></section>
 <section class="step"><div class="step-h"><span>題名</span><button data-copy="t">題名をコピー</button></div><div class="title" id="t">{title}</div></section>
 <section class="step"><div class="step-h"><span>本文（太字・見出しつき）</span><button data-copy="b" data-rich="1">本文をコピー</button></div><p class="hint">画像は文章と一緒に貼れないことがあります。点線の枠の画像は長押しで保存し、note の同じ場所に「＋」→「画像」で入れてください</p><article class="body" id="b">{article}</article></section>
