@@ -20,6 +20,27 @@ HEAD = re.sub(r'<title>.*?</title>', '<title>note 次の投稿</title>', HEAD).r
 SCRIPT = TPL[TPL.index('<script>'):].replace('{{', '{').replace('}}', '}')
 
 
+def promo(path):
+    p = 'ops/sns/note-promo/' + path.rsplit('/', 1)[1]
+    try:
+        src = open(p, encoding='utf-8').read()
+    except FileNotFoundError:
+        return ''
+    imgs = re.findall(r'- 画像\d: ([^\s（]+)', src)
+    parts = re.split(r'^## ', src, flags=re.M)[1:]
+    out = ['<div class="step-h"><span>SNS の告知（パソコンの Claude は使わない。記事を OK すると告知も OK）</span></div><div class="body">']
+    for part in parts:
+        head, _, text = part.partition('\n')
+        out.append(f'<p><b>{html.escape(head)}</b></p><p>' + '<br>'.join(html.escape(x) for x in text.strip().splitlines()) + '</p>')
+    tags = re.search(r'- ハッシュタグ: (.+)', src)
+    if tags:
+        out.append(f'<p>{html.escape(tags.group(1))}</p>')
+    out.append('</div>')
+    if len(imgs) > 1:
+        out.append(f'<img src="{embed(imgs[1])}" alt="告知の画像" style="max-width:320px">')
+    return ''.join(out)
+
+
 def article(path, i):
     src = open(path, encoding='utf-8').read()
     meta, body = src.split('\n---\n', 1)
@@ -36,7 +57,7 @@ def article(path, i):
 <div class="step-h"><span>本文</span><button data-copy="b{i}" data-rich="1">本文をコピー</button></div>
 <article class="body" id="b{i}">{to_html(body, imgdir)}</article>
 <div class="step-h"><span>ハッシュタグ</span><button data-copy="g{i}">タグをコピー</button></div><div class="tags" id="g{i}">{html.escape(tags)}</div>
-</section>'''
+{promo(path)}</section>'''
 
 
 def main(dest):
