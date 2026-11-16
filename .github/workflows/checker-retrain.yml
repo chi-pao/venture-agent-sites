@@ -50,7 +50,7 @@ jobs:
         if: steps.retrain.outputs.changed == 'true'
         run: |
           python -m playwright install --with-deps chromium
-          python -m unittest tests.test_checker_site tests.test_town_aliases tests.test_auto_retrain -v
+          python -m unittest tests.test_checker_site tests.test_town_aliases tests.test_auto_retrain tests.test_land_prices -v
       # のぼるさんの決定（2026-11-03）: はっきり良くなったモデルは確認なしで採用する。
       # 採用の基準（誤差中央値 0.3pt 以上の改善・±20%以内の悪化 1pt 以内）とサイトのテストに通ったときだけ main に入る。
       - name: Publish the better model

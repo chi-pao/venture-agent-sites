@@ -86,24 +86,30 @@ def load(archive, extra_dir=None):
     return out.reset_index(drop=True)
 
 
-def pipeline():
+def numeric_of(pipe):
+    """The numeric columns this pipeline was built with (NUMS, or NUMS plus extra clues such as land prices)."""
+    return list(pipe.named_steps['pre'].transformers[0][2])
+
+
+def pipeline(nums=None):
     pre = ColumnTransformer([
-        ('num', Pipeline([('fill', SimpleImputer(strategy='constant', fill_value=-1))]), NUMS),
+        ('num', Pipeline([('fill', SimpleImputer(strategy='constant', fill_value=-1))]), list(nums or NUMS)),
         ('cat', Pipeline([('fill', SimpleImputer(strategy='constant', fill_value='不明')),
                           ('encode', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))]), CATS)])
     return Pipeline([('pre', pre), ('lgb', LGBMRegressor(**PARAMS))])
 
 
-def fit(train, weight=None):
-    pipe = pipeline()
+def fit(train, weight=None, nums=None):
+    nums = list(nums or NUMS)
+    pipe = pipeline(nums)
     extra = {} if weight is None else {'lgb__sample_weight': np.asarray(weight)}
-    pipe.fit(train[NUMS + CATS], np.log(train['price_yen'] / 10000),
-             lgb__categorical_feature=list(range(len(NUMS), len(NUMS) + len(CATS))), **extra)
+    pipe.fit(train[nums + CATS], np.log(train['price_yen'] / 10000),
+             lgb__categorical_feature=list(range(len(nums), len(nums) + len(CATS))), **extra)
     return pipe
 
 
 def predict_yen(pipe, frame):
-    return np.exp(pipe.predict(frame[NUMS + CATS])) * 10000
+    return np.exp(pipe.predict(frame[numeric_of(pipe) + CATS])) * 10000
 
 
 def export(pipe, path, public_path):
@@ -141,7 +147,7 @@ def export(pipe, path, public_path):
     path.write_bytes(packed)
     return {'path': public_path, 'sha256': hashlib.sha256(packed).hexdigest(), 'bytes': len(packed), 'nodes': len(data) // 16,
             'algorithm': 'lightgbm', 'postprocess': 'v8_log_man', 'baseline': 0, 'log': False, 'roots': roots, 'weight': 1,
-            'numeric': NUMS, 'numericDefaults': [float(v) for v in num.steps[0][1].statistics_],
+            'numeric': numeric_of(pipe), 'numericDefaults': [float(v) for v in num.steps[0][1].statistics_],
             'categorical': CATS, 'categoricalDefaults': [str(v) for v in cat.steps[0][1].statistics_],
             'categories': [[str(v) for v in c] for c in cat.steps[-1][1].categories_], 'categoricalSplits': category_sets}
 

@@ -1,7 +1,10 @@
 export function features(input) {
   const area=Number(input.type==='used_condo'?input.area:input.landArea), floor=Number(input.buildingArea);
   return {Area:area,TotalFloorArea:floor,BuildingYear:Number(input.year),BuildingAge:Math.max(0,2026-Number(input.year)),TransactionYear:2026,Quarter:4,
-    StationMinutes:input.stationMinutes?Number(input.stationMinutes):(input.stationDefault??null),LandPriceMatchLevel:0,
+    StationMinutes:input.stationMinutes?Number(input.stationMinutes):(input.stationDefault??null),
+    // 公示地価（land-prices.json、1㎡あたりの円）。町の値がなければ市区町村の値。学習側は tools/checker_train/land_prices.py
+    LandPrice:input.landPrice>0?Math.log(input.landPrice):null,LandPriceMatchLevel:input.landPrice>0?Number(input.landPriceLevel)||0:0,
+    LandValue:input.landPrice>0&&area>0?Math.log(input.landPrice)+Math.log(area):null,
     LogArea:Math.log1p(area),LogTotalFloorArea:Math.log1p(floor),LandBuildingRatio:floor>0?area/floor:null,
     MunicipalityCode:input.city,DistrictName:input.districtKey||input.district||null,Prefecture:input.prefecture,
     Structure:input.structure||null,CityPlanning:input.planning||null,FloorPlan:input.layout||null,Use:input.type!=='used_condo'?'住宅':null};

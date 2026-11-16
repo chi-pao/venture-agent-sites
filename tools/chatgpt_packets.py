@@ -20,8 +20,11 @@ import urllib.parse
 ROOT = Path(__file__).resolve().parent.parent
 QUEUE = ROOT / 'ops' / 'tasks' / 'queue.json'
 OUTBOX = ROOT / 'ops' / 'chatgpt' / 'outbox'
-KINDS = {'sns_post_draft': 'SNS投稿文', 'image_asset': '画像', 'video_script': '動画の絵コンテ'}
-STATUSES = ('承認待ち', '承認済み', '投稿済み', '取消')
+KINDS = {'sns_post_draft': 'SNS投稿文', 'image_asset': '画像', 'video_script': '動画の絵コンテ',
+         'sns_post_schedule': 'SNS予約投稿（画像・文）', 'video_post_schedule': '動画の予約投稿'}
+# 予約投稿の依頼書は手書き（ops/chatgpt/outbox/）なので、--render では上書きしない
+RENDERED_KINDS = ('sns_post_draft', 'image_asset', 'video_script')
+STATUSES = ('承認待ち', '承認済み', '予約済み', '投稿済み', '取消')
 CHANNEL_LIMITS = {'X': 140, 'Threads': 500, 'Instagram': 2200, 'TikTok': 2200, 'YouTube': 1000, 'note': 3000}
 SECRET = re.compile(r'(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-[A-Za-z0-9]{16,}|[sr]k_(live|test)_|Bearer\s+\S{8,}|api_?key|password)', re.I)
 CLAIM = re.compile(r'\d[\d,.]*\s*(人|名|件|%|％|倍|万|億|円|位)')
@@ -149,7 +152,7 @@ def render_outbox(data, outbox=OUTBOX):
     outbox.mkdir(parents=True, exist_ok=True)
     written = []
     for task in data['tasks']:
-        if task.get('status') == '承認済み':
+        if task.get('status') == '承認済み' and task.get('kind') in RENDERED_KINDS:
             path = outbox / (task['id'] + '.md')
             path.write_text(render(task), encoding='utf-8')
             written.append(path)
