@@ -210,18 +210,26 @@
    "id": "Q01-VIDEO",
    "kind": "video_post_schedule",
    "title": "値段クイズ 第1回の動画を Instagram リール・YouTube ショート・TikTok・Threads に予約",
-   "status": "承認待ち",
+   "status": "予約済み",
    "payload": {
     "business": "お買い得物件チェッカー",
-    "video": "ops/sns/video/Q01-v1.mp4",
-    "texts": "ops/sns/video/Q01-posts.md",
+    "video": "ops/sns/video/Q01-final.mp4",
+    "texts": "ops/sns/video/Q01-final-posts.md",
     "schedule": "2026-11-11 18:00 JST",
     "channels": [
      "Instagram",
      "YouTube",
      "TikTok",
      "Threads"
-    ]
+    ],
+    "approved": "のぼるさん 2026-11-08「これを発信してみよう」",
+    "request": "ops/chatgpt/outbox/Q01-VIDEO.md",
+    "metricool_ids": {
+     "Instagram": "423854085",
+     "YouTube": "423854145",
+     "TikTok": "423854253",
+     "Threads": "423854197"
+    }
    }
   },
   {
@@ -241,6 +249,154 @@
      "TikTok": "420316474",
      "Threads": "420316372"
     }
+   }
+  },
+  {
+   "id": "D1118-Q02",
+   "kind": "video_post_schedule",
+   "title": "値段クイズ 第2回",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/Q02.mp4",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-18 18:00 JST",
+    "utm_campaign": "q02",
+    "channels": [
+     "Instagram",
+     "YouTube",
+     "TikTok",
+     "Threads"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1120-PREF",
+   "kind": "image_post_schedule",
+   "title": "県がちがうだけで約2.6倍",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1120-pref.png",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-20 18:00 JST",
+    "utm_campaign": "pref_diff",
+    "channels": [
+     "Instagram",
+     "Threads",
+     "Bluesky"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1122-2Y",
+   "kind": "video_post_schedule",
+   "title": "この2年でどう変わった？",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1122-2years.mp4",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-22 18:00 JST",
+    "utm_campaign": "two_years",
+    "channels": [
+     "Instagram",
+     "YouTube",
+     "TikTok",
+     "Threads"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1124-HOWTO",
+   "kind": "image_post_schedule",
+   "title": "3ステップで使い方",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1124-howto.png",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-24 18:00 JST",
+    "utm_campaign": "howto",
+    "channels": [
+     "Instagram",
+     "Threads",
+     "Bluesky"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1125-Q03",
+   "kind": "video_post_schedule",
+   "title": "値段クイズ 第3回",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/Q03.mp4",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-25 18:00 JST",
+    "utm_campaign": "q03",
+    "channels": [
+     "Instagram",
+     "YouTube",
+     "TikTok",
+     "Threads"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1127-VS",
+   "kind": "image_post_schedule",
+   "title": "売りたい値段VS売れた値段",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1127-vs.png",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-27 18:00 JST",
+    "utm_campaign": "sold_vs_ask",
+    "channels": [
+     "Instagram",
+     "Threads",
+     "Bluesky"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1129-TRY",
+   "kind": "video_post_schedule",
+   "title": "使ってみた",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1129-tryit.mp4",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-29 18:00 JST",
+    "utm_campaign": "tryit",
+    "channels": [
+     "Instagram",
+     "YouTube",
+     "TikTok",
+     "Threads"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+   }
+  },
+  {
+   "id": "D1130-CITY",
+   "kind": "image_post_schedule",
+   "title": "あなたの街の相場",
+   "status": "承認待ち",
+   "payload": {
+    "file": "ops/sns/drafts/2026-11-18/1130-city.png",
+    "texts": "ops/sns/drafts/2026-11-18/index.md",
+    "schedule": "2026-11-30 18:00 JST",
+    "utm_campaign": "area_pages",
+    "channels": [
+     "Instagram",
+     "Threads",
+     "Bluesky"
+    ],
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
    }
   }
  ]

@@ -1,0 +1,91 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Serif+JP:wght@900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:1080px;height:1350px;overflow:hidden;font-family:'M PLUS Rounded 1c',sans-serif}
+.c{position:absolute;inset:0;overflow:hidden}
+.foot{position:absolute;left:40px;right:40px;bottom:26px;font-size:22px;line-height:1.4;text-align:center}
+.cta{display:inline-block;font-family:'Dela Gothic One';font-size:44px;padding:16px 44px;border-radius:70px}
+/* 1: tabloid ranking */
+#t1{background:#111;color:#fff}
+#t1 .stripe{position:absolute;inset:0;background:repeating-linear-gradient(-45deg,#ffd400 0 40px,#111 40px 80px);opacity:.12}
+#t1 .top{position:absolute;top:60px;left:60px;right:60px}
+#t1 .kick{display:inline-block;background:#e6002d;font-family:'Dela Gothic One';font-size:42px;padding:8px 28px;transform:rotate(-2deg)}
+#t1 h1{font-family:'Dela Gothic One';font-size:92px;line-height:1.12;margin-top:22px}
+#t1 h1 em{font-style:normal;color:#ffd400;font-size:150px}
+#t1 .sub{font-size:34px;font-weight:800;color:#ddd;margin-top:10px}
+#t1 .rk{position:absolute;left:60px;right:60px;top:560px}
+#t1 .row{display:flex;align-items:center;margin-bottom:18px;font-weight:800;font-size:40px}
+#t1 .row .n{width:210px}
+#t1 .row .b{height:70px;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;font-family:'Dela Gothic One';font-size:40px;color:#111}
+#t1 .hi .b{background:#ffd400}#t1 .lo .b{background:#7cc7ff}
+#t1 .sep{border-top:4px dashed #555;margin:18px 0 26px}
+/* 2: steps */
+#t2{background:linear-gradient(180deg,#f2f7ff,#fff)}
+#t2 h1{position:absolute;top:56px;left:0;right:0;text-align:center;font-family:'Dela Gothic One';font-size:76px;color:#0d2b6b;line-height:1.2}
+#t2 h1 span{color:#1f5bff}
+#t2 .steps{position:absolute;top:290px;left:30px;right:30px;display:flex;gap:22px}
+#t2 .st{flex:1;text-align:center}
+#t2 .ph{height:560px;border-radius:34px;border:10px solid #0d2b6b;overflow:hidden;background:#fff;box-shadow:0 20px 40px rgba(13,43,107,.25)}
+#t2 .ph img{width:100%}
+#t2 .num{display:inline-flex;width:84px;height:84px;border-radius:50%;background:#1f5bff;color:#fff;font-family:'Dela Gothic One';font-size:50px;align-items:center;justify-content:center;margin-bottom:14px}
+#t2 .lab{font-family:'Dela Gothic One';font-size:32px;color:#0d2b6b;margin-top:18px;line-height:1.25}
+#t2 .bot{position:absolute;left:0;right:0;top:1130px;text-align:center}
+#t2 .cta{font-size:38px;background:#ff6a2b;color:#fff;box-shadow:0 8px 0 #c44a14}
+#t2 .foot{color:#556}
+/* 3: VS */
+#t3 .L{position:absolute;left:0;top:0;bottom:0;width:540px;background:#e9e9ee}
+#t3 .R{position:absolute;right:0;top:0;bottom:0;width:540px;background:#ff5a1f}
+#t3 .head{position:absolute;top:60px;left:0;right:0;text-align:center;font-family:'Noto Serif JP';font-size:62px;color:#111;z-index:2}
+#t3 .head span{background:#fff;padding:6px 20px}
+#t3 .col{position:absolute;top:250px;width:540px;text-align:center;padding:0 30px}
+#t3 .col .ic{font-size:150px}
+#t3 .col .t{font-family:'Dela Gothic One';font-size:62px;white-space:nowrap;margin-top:10px}
+#t3 .col .d{font-size:36px;font-weight:800;margin-top:22px;line-height:1.5}
+#t3 .vs{position:absolute;left:50%;top:620px;transform:translateX(-50%);width:170px;height:170px;border-radius:50%;background:#111;color:#ffd400;font-family:'Dela Gothic One';font-size:76px;display:flex;align-items:center;justify-content:center;border:8px solid #fff;z-index:3}
+#t3 .msg{position:absolute;left:60px;right:60px;top:960px;background:#111;color:#fff;border-radius:28px;padding:30px;text-align:center}
+#t3 .msg b{font-family:'Dela Gothic One';font-size:54px;color:#ffd400;font-weight:normal}
+#t3 .msg p{font-size:34px;font-weight:800;margin-top:10px}
+#t3 .foot{color:#333}
+/* 4: city */
+#t4{background:radial-gradient(900px 700px at 80% 20%,#3ee6a8,transparent 60%),linear-gradient(160deg,#04503f,#0b2d3c)}
+#t4 .tx{position:absolute;left:60px;top:80px;width:560px;color:#fff}
+#t4 .tx .k{font-size:34px;font-weight:800;color:#b8ffe4}
+#t4 .tx h1{font-family:'Dela Gothic One';font-size:72px;line-height:1.2;margin-top:14px}
+#t4 .tx .big{font-family:'Dela Gothic One';font-size:110px;white-space:nowrap;color:#ffe14d;margin-top:36px;line-height:1}
+#t4 .tx .big small{font-size:40px;color:#fff}
+#t4 .tx ul{list-style:none;margin-top:34px;font-size:34px;font-weight:800;line-height:1.7}
+#t4 .tx li:before{content:"✓ ";color:#3ee6a8}
+#t4 .ph{position:absolute;right:40px;top:150px;width:400px;height:900px;border-radius:50px;border:12px solid #0b1b22;overflow:hidden;background:#fff;box-shadow:0 30px 60px rgba(0,0,0,.4);transform:rotate(4deg)}
+#t4 .ph img{width:100%}
+#t4 .bot{position:absolute;left:60px;top:1110px}
+#t4 .cta{background:#ffe14d;color:#04503f}
+#t4 .foot{color:#b8ffe4}
+</style></head><body>
+<script>
+const id=new URLSearchParams(location.search).get('id');const P='file:///tmp/claude-0/-home-user-venture-agent-sites/68731e5c-3a0a-5d00-8f66-f41a7327d5b4/scratchpad/img/';
+const H={
+t1:`<div class="c" id="t1"><div class="stripe"></div><div class="top"><div class="kick">同じような家なのに…</div>
+<h1>県がちがうだけで<br>約<em>2.6</em>倍</h1><div class="sub">築10〜17年・建物100〜120㎡・土地150〜250㎡の戸建て</div></div>
+<div class="rk">${[['神奈川県',4400,'hi'],['東京都',4100,'hi'],['福岡県',2800,'hi'],0,['栃木県',2150,'lo'],['群馬県',1800,'lo'],['新潟県',1700,'lo']].map(r=>r?`<div class="row ${r[2]}"><div class="n">${r[0]}</div><div class="b" style="width:${120+r[1]/4400*560}px">${r[1].toLocaleString()}万円</div></div>`:'<div class="sep"></div>').join('')}</div>
+<div class="foot" style="color:#aaa">国の不動産取引データ（2024〜2025年の取引）より、上の条件の戸建ての取引価格の真ん中の値。取引が30件以上ある都道府県のみ。▶ プロフィールのリンクから、あなたの家の相場もチェック</div></div>`,
+t2:`<div class="c" id="t2"><h1>その物件、相場と比べて<br><span>高い？安い？</span> 3ステップ</h1>
+<div class="steps"><div class="st"><div class="num">1</div><div class="ph"><img src="${P}top.png"></div><div class="lab">チェッカーを<br>開く</div></div>
+<div class="st"><div class="num">2</div><div class="ph"><img src="${P}c4phone.png"></div><div class="lab">スクショを貼るか<br>条件を入れる</div></div>
+<div class="st"><div class="num">3</div><div class="ph"><img src="${P}c5phone.png"></div><div class="lab">参考価格と<br>比べられる</div></div></div>
+<div class="bot"><div class="cta">無料・登録不要 ▶ プロフィールのリンクから</div></div>
+<div class="foot">お買い得物件チェッカー｜国の取引データをもとに参考査定価格を出します。査定は参考値で、売買価格を保証するものではありません。画面の物件は架空です。</div></div>`,
+t3:`<div class="c" id="t3"><div class="L"></div><div class="R"></div><div class="head"><span>家の値段、どっちを見てる？</span></div>
+<div class="col" style="left:0;color:#333"><div class="ic">🏷️</div><div class="t">売りたい値段</div><div class="d">物件サイトに<br>出ている値段<br>＝売る側の希望</div></div>
+<div class="vs">VS</div>
+<div class="col" style="right:0;color:#fff"><div class="ic">🧾</div><div class="t">売れた値段</div><div class="d">国が公開している<br>実際の取引の記録<br>＝本当に決まった値段</div></div>
+<div class="msg"><b>比べるなら「売れた値段」</b><p>お買い得物件チェッカーは、国の取引データから<br>参考査定価格を出して、販売価格と比べます</p></div>
+<div class="foot">▶ プロフィールのリンクから無料でチェック（登録不要）｜査定は参考値で、売買価格を保証するものではありません</div></div>`,
+t4:`<div class="c" id="t4"><div class="tx"><div class="k">お買い得物件チェッカー</div><h1>あなたの街の<br>戸建ての相場、<br>見られます</h1>
+<div class="big">1,136<small> 市区町村</small></div>
+<ul><li>実際に売れた値段</li><li>築年数ごとの値段</li><li>2023〜2025年の取引</li></ul></div>
+<div class="ph"><img src="${P}city.png"></div>
+<div class="bot"><div class="cta">▶ プロフィールのリンクから</div></div>
+<div class="foot">国の不動産取引データ（2023〜2025年）をもとに集計。画面は埼玉県所沢市のページ（実際の画面）。</div></div>`};
+document.body.innerHTML+=H[id];
+</script></body></html>

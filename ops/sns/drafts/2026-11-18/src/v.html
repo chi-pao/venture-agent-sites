@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1920px;overflow:hidden;background:#0b1730;font-family:'M PLUS Rounded 1c',sans-serif;color:#fff}
+#r{position:absolute;inset:0}
+.grid{position:absolute;inset:0;background-image:linear-gradient(#ffffff0d 2px,transparent 2px),linear-gradient(90deg,#ffffff0d 2px,transparent 2px);background-size:60px 60px}
+.hd{position:absolute;top:110px;left:0;right:0;text-align:center}
+.hd .k{display:inline-block;background:#22d3a6;color:#0b1730;font-weight:800;font-size:38px;padding:8px 28px;border-radius:40px}
+.hd h1{font-family:'Dela Gothic One';font-size:84px;line-height:1.15;margin-top:22px}
+.hd h1 em{font-style:normal;color:#ffd84d}
+.cond{position:absolute;top:470px;left:0;right:0;text-align:center;font-size:25px;color:#9fb3d9;font-weight:800}
+.chart{position:absolute;left:70px;right:70px;top:580px}
+.row{margin-bottom:40px}
+.row .nm{font-family:'Dela Gothic One';font-size:52px;margin-bottom:10px;display:flex;align-items:center;gap:20px}
+.badge{font-size:40px;padding:4px 20px;border-radius:30px}
+.up{background:#ff4d6d}.dn{background:#3b82f6}
+.bar{height:62px;border-radius:0 18px 18px 0;margin-bottom:8px;display:flex;align-items:center;padding-left:18px;font-weight:800;font-size:32px;white-space:nowrap}
+.y23{background:#5b6b8c}.y25{background:#ffd84d;color:#0b1730}
+.sub{position:absolute;left:60px;right:60px;top:1560px;min-height:150px;background:rgba(0,0,0,.55);border-radius:28px;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:46px;line-height:1.35;padding:16px 28px}
+.foot{position:absolute;left:30px;right:30px;bottom:30px;font-size:22px;color:#9fb3d9;text-align:center;line-height:1.4}
+.end{position:absolute;left:0;right:0;top:640px;text-align:center}
+.pill{display:inline-block;background:#ff4d6d;font-family:'Dela Gothic One';font-size:56px;padding:22px 54px;border-radius:80px;box-shadow:0 0 40px #ff4d6d99}
+</style></head><body><div class="grid"></div><div id="r"></div>
+<script>
+let TL;window.setTL=x=>TL=x;const ease=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x)};const pop=x=>{x=Math.min(1,Math.max(0,x));return 1+Math.sin(x*Math.PI)*.2*(1-x)};
+const T={n1:'家の値段、この2年でどう変わった？<br>同じような家で比べてみました',n2:'大きく上がったのは山形県と宮崎県<br>2,400万円→2,900万円（約2割アップ）',n3:'一方、和歌山県は2,700万円→2,500万円<br>約7％ダウン',n4:'東京都は4,800万円→5,000万円<br>約4％アップ',n5:'気になる家の値段は<br>お買い得物件チェッカーで無料チェック'};
+const D=[['山形県',2400,2900,'+21%','up','n2'],['宮崎県',2400,2900,'+21%','up','n2'],['和歌山県',2700,2500,'−7%','dn','n3'],['東京都',4800,5000,'+4%','up','n4']];
+window.render=t=>{let c=TL.tl[0];for(const x of TL.tl)if(t>=x.t0)c=x;const st=n=>TL.tl.find(x=>x.n===n).t0;
+let h=`<div class="hd" style="opacity:${ease(t/0.5)}"><div class="k">国の取引データで比べた</div><h1>家の値段、<br>この<em>2年</em>でどう変わった？</h1></div>`;
+if(c.n!=='n5'){h+=`<div class="cond">2023年 → 2025年｜築20年以内・建物90〜130㎡・土地120〜250㎡の戸建て</div><div class="chart">`;
+ if(c.n==='n1'){h+=`<div style="text-align:center;margin-top:120px;font-family:'Dela Gothic One';font-size:150px;line-height:1.2;transform:scale(${pop((t-0.5)/0.6)})"><span style="color:#ff4d6d">↑</span>上がった？<br><span style="color:#3b82f6">↓</span>下がった？</div>`}
+ for(const [nm,a,b,pct,cl,n] of D){const s=st(n);if(t<s)continue;const k1=ease((t-s)/0.6),k2=ease((t-s-0.6)/0.8);
+  h+=`<div class="row"><div class="nm">${nm}<span class="badge ${cl}" style="transform:scale(${t>s+1.4?pop((t-s-1.4)/0.5):0})">${pct}</span></div>
+  <div class="bar y23" style="width:${(a/5000*800)*k1}px">2023年 ${a.toLocaleString()}万円</div>
+  <div class="bar y25" style="width:${(b/5000*800)*k2}px">2025年 ${b.toLocaleString()}万円</div></div>`}
+ h+='</div>'}
+else{const s=st('n5');h+=`<div class="end" style="opacity:${ease((t-s)/0.4)}"><div style="font-family:'Dela Gothic One';font-size:70px;line-height:1.3">気になる家は<br>相場と比べて<br>高い？安い？</div><div style="margin-top:50px;transform:scale(${pop((t-s-0.6)/0.5)})"><div class="pill">お買い得物件チェッカー</div></div><div style="margin-top:30px;font-size:44px;font-weight:800;color:#ffd84d">無料・登録不要 ▶ プロフィールのリンクから</div></div>`}
+h+=`<div class="sub" style="opacity:${ease((t-c.t0)/0.2)}">${T[c.n]}</div>`;
+h+=`<div class="foot">国の不動産取引データ（2023年・2025年の取引）より、上の条件の戸建ての取引価格の真ん中の値。各年20件以上の取引がある都道府県。声はAIで作成。</div>`;
+document.getElementById('r').innerHTML=h};
+</script></body></html>
