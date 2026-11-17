@@ -6,9 +6,12 @@
    {"市区町村コード": {"": 市区町村の地価, "取引データの町名": 町の地価, ...}}
    町の地価が分からない町は、市区町村の地価を使う（サイトも学習も同じ表を同じように引く）。
 
-データの取得（年1回、3月下旬に新しい年が出る。1回20MB）:
+都道府県地価調査（L02・無料、7月1日時点）の地点も足すと、町まで分かる取引が約54%から約67%に増える。
+
+データの取得（L01 は3月下旬、L02 は9月ごろに新しい年が出る。各20MB前後）:
   curl -O https://nlftp.mlit.go.jp/ksj/gml/data/L01/L01-25/L01-25_GML.zip && unzip L01-25_GML.zip
-  python tools/checker_train/land_prices.py --l01 L01-25_GML/L01-25.geojson --archive All.zip --site checker-site
+  curl -O https://nlftp.mlit.go.jp/ksj/gml/data/L02/L02-25/L02-25_GML.zip && unzip L02-25_GML.zip
+  python tools/checker_train/land_prices.py --l01 L01-25_GML/L01-25.geojson --l02 L02-25.geojson --archive All.zip --site checker-site
 """
 import argparse
 import json
@@ -44,16 +47,25 @@ def address_town(address):
     return town_key(a)
 
 
-def point_prices(geojson):
-    """{市区町村コード: {'': 中央値, 町の名前: 中央値}}（住宅地の地点だけ）。"""
+# 項目の名前: (市区町村コード, 1㎡あたりの価格, 所在地, 利用の現況)
+FIELDS = {'L01': ('L01_001', 'L01_008', 'L01_025', 'L01_028'), 'L02': ('L02_020', 'L02_006', 'L02_022', 'L02_025')}
+
+
+def point_prices(*geojsons):
+    """{市区町村コード: {'': 中央値, 町の名前: 中央値}}（住宅地の地点だけ。L01・L02 のどちらも、両方も可）。"""
     muni, town = {}, {}
-    for f in json.loads(Path(geojson).read_text(encoding='utf-8'))['features']:
+    features = []
+    for path in geojsons:
+        features += json.loads(Path(path).read_text(encoding='utf-8'))['features']
+    for f in features:
         p = f['properties']
-        code, price = str(p['L01_001']).zfill(5), p['L01_008']
-        if not price or '住宅' not in str(p.get('L01_028', '')):
+        kind = 'L02' if 'L02_020' in p else 'L01'
+        code_k, price_k, addr_k, use_k = FIELDS[kind]
+        code, price = str(p[code_k]).zfill(5), p[price_k]
+        if not price or '住宅' not in str(p.get(use_k, '')):
             continue
         muni.setdefault(code, []).append(price)
-        key = address_town(p['L01_025'])
+        key = address_town(p[addr_k])
         if key:
             town.setdefault(code, {}).setdefault(key, []).append(price)
     out = {}
@@ -96,12 +108,12 @@ def add_features(rows, table):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--l01', required=True); p.add_argument('--archive', required=True); p.add_argument('--extra')
+    p.add_argument('--l01', required=True); p.add_argument('--l02'); p.add_argument('--archive', required=True); p.add_argument('--extra')
     p.add_argument('--site', type=Path, required=True)
     a = p.parse_args()
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import train_used_house as T
-    table = site_table(point_prices(a.l01), T.load(a.archive, a.extra))
+    table = site_table(point_prices(*[x for x in (a.l01, a.l02) if x]), T.load(a.archive, a.extra))
     (a.site / 'land-prices.json').write_text(json.dumps(table, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
     print(len(table), '市区町村 /', sum(len(e) - 1 for e in table.values()), '町')
 

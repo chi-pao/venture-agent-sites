@@ -24,6 +24,22 @@ class LandPriceTests(unittest.TestCase):
         self.assertEqual(L.address_town('山口県　下関市山の田中央町１２番３'), '山の田中央町')
         self.assertEqual(L.address_town('福岡県　糟屋郡粕屋町大字仲原２５５５番'), '仲原')
 
+    def test_both_land_price_surveys_are_read(self):
+        import tempfile
+        def fc(props):
+            return {'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'properties': p, 'geometry': None} for p in props]}
+        l01 = fc([{'L01_001': '35202', 'L01_008': 40000, 'L01_025': '山口県　宇部市大字際波字中尾１番', 'L01_028': '住宅'},
+                  {'L01_001': '35202', 'L01_008': 90000, 'L01_025': '山口県　宇部市常盤町１丁目１番', 'L01_028': '店舗'}])
+        l02 = fc([{'L02_020': '35202', 'L02_006': 42000, 'L02_022': '山口県　宇部市大字際波２番', 'L02_025': '住宅'}])
+        with tempfile.TemporaryDirectory() as d:
+            paths = []
+            for name, data in (('a.geojson', l01), ('b.geojson', l02)):
+                path = Path(d) / name
+                path.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+                paths.append(path)
+            self.assertEqual(L.point_prices(*paths), {'35202': {'': 41000, '際波': 41000}})
+            self.assertEqual(L.point_prices(paths[0]), {'35202': {'': 40000, '際波': 40000}})
+
     def test_site_table_keys_are_the_transaction_names(self):
         points = {'35202': {'': 30000, '際波': 41000}}
         table = L.site_table(points, R.rows(DistrictName=['大字際波', '開']))
