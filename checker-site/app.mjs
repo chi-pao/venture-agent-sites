@@ -61,6 +61,13 @@ async function landPrice(city,district){
   const t=(await landPromise)[city];if(!t)return [null,0];
   return district&&t[district]?[t[district],2]:t['']?[t[''],1]:[null,0];
 }
+// 町ごとの「土地1㎡あたりの売れた値段」の目安（town-prices.json。採用されたモデルが使うときだけ置かれる）。
+let townPromise;
+async function townLogPpm(city,district){
+  townPromise??=fetch('town-prices.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
+  const all=await townPromise,t=all[city];
+  return t?(district&&district in t?t[district]:t['']):(all['*']?.['']??null);
+}
 async function districtKey(city,district){
   if(!city||!district)return district||'';
   aliasPromise??=fetch('town-aliases.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
@@ -182,7 +189,7 @@ function renderResult(yen,input,{moveFocus=true,modelInfo}={}){
   $('empty-result').hidden=true;$('result').hidden=false;if(moveFocus){$('result').focus({preventScroll:true});if(matchMedia('(max-width:690px)').matches)$('result').scrollIntoView({behavior:'smooth',block:'start'});}
 }
 form.addEventListener('submit',async event=>{event.preventDefault();if(busy||ocrBusy)return;await ready;const input=getInput(),errors=validate(input);if(errors.length){showErrors(errors);return;}autoEstimatePending=false;$('form-errors').hidden=true;setBusy(true);status('model-progress','査定を開始しています…');
-  try{input.districtKey=await districtKey(input.city,input.district);if(input.type==='used_house'&&!input.stationMinutes)input.stationDefault=await stationDefault(input.city,input.districtKey);if(input.type==='used_house'){const [p,l]=await landPrice(input.city,input.districtKey);if(p){input.landPrice=p;input.landPriceLevel=l;}}
+  try{input.districtKey=await districtKey(input.city,input.district);if(input.type==='used_house'&&!input.stationMinutes)input.stationDefault=await stationDefault(input.city,input.districtKey);if(input.type==='used_house'){const [p,l]=await landPrice(input.city,input.districtKey);if(p){input.landPrice=p;input.landPriceLevel=l;}const tp=await townLogPpm(input.city,input.districtKey);if(Number.isFinite(tp))input.townLogPpm=tp;}
   worker??=new Worker(new URL('./model-worker.mjs?v=20261107-land',import.meta.url),{type:'module'});worker.onmessage=e=>{const data=e.data;if(data.kind==='progress')status('model-progress',data.text);else{setBusy(false);if(data.kind==='result'){renderResult(data.yen,input,{modelInfo:data.modelInfo});status('model-progress','査定が完了しました。','success');}else status('model-progress',data.text,'error');}};worker.onerror=()=>{setBusy(false);status('model-progress','モデルの読み込みに失敗しました。再度お試しください。','error');worker?.terminate();worker=null;};worker.postMessage(input);}catch(error){setBusy(false);status('model-progress',error.message,'error');}
 });
 $('revise').onclick=()=>{$('input-title').scrollIntoView({behavior:'smooth',block:'start'});$('price').focus({preventScroll:true});};
