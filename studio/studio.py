@@ -206,11 +206,20 @@ def develop(cfg, store, eng, rec):
         qa = eng.ask_json("品質部", D.qa_prompt(spec, build), D.QA_REQUIRED,
                           tools=FILE_TOOLS + RUN_TOOLS, cwd=build_dir,
                           max_turns=cfg["max_turns"]["qa"], permission_mode="acceptEdits")
-        ok = "要修正" not in str(qa["verdict"]) and float(qa.get("design_score") or 0) >= cfg["min_design_score"]
+        print("⑥-2試用部: 利用者のつもりで、何十通りも実際に使っています…")
+        trial = eng.ask_json("試用部", D.trial_prompt(spec, build), D.TRIAL_REQUIRED,
+                             tools=FILE_TOOLS + RUN_TOOLS + RESEARCH_TOOLS, cwd=build_dir,
+                             max_turns=cfg["max_turns"].get("trial", cfg["max_turns"]["qa"]),
+                             permission_mode="acceptEdits")
+        rec["trial"] = trial
+        ok = ("要修正" not in str(qa["verdict"]) and float(qa.get("design_score") or 0) >= cfg["min_design_score"]
+              and D.trial_ok(trial))
         if ok or rounds >= cfg["auto_fix_rounds"]:
             return build, qa, ok
         rounds += 1
-        feedback = "品質部の指摘（すべて直す）:\n" + "\n".join(f"- {x}" for x in qa["blocking_issues"])
+        feedback = ("品質部の指摘（すべて直す）:\n" + "\n".join(f"- {x}" for x in qa["blocking_issues"]) +
+                    "\n試用部が実際に使って見つけた問題（すべて直す）:\n" +
+                    "\n".join(f"- {x}" for x in trial.get("problems", [])))
         print(f"品質部が要修正と判断したので、開発部が直します（{rounds}回目）…")
 
 
@@ -251,6 +260,13 @@ def owner_package(rec):
     out += [f"| {c.get('item')} | {c.get('result')} | {c.get('evidence')} |" for c in q.get("checks", [])]
     out += ["", "残っている問題:"]
     out += [f"- {x}" for x in q.get("blocking_issues", [])] or ["- なし"]
+    t = rec.get("trial") or {}
+    cases = t.get("cases", [])
+    bad = [c for c in cases if c.get("result") == "おかしい"]
+    out += ["", f"## 5-2. 試用部が実際に使ってみた結果（{len(cases)} 通り試して、おかしかったもの {len(bad)} 件）"]
+    out += [f"- 使う人: {x}" for x in t.get("personas", [])]
+    out += [f"- 「{c.get('input')}」→ {c.get('actual')}（期待: {c.get('expected')}）" for c in bad[:10]]
+    out += ["", "まだ残っている問題:"] + ([f"- {x}" for x in t.get("problems", [])] or ["- なし"])
     out += ["", f"## 6. 続ける場合の SNS（{len(s.get('posts', []))} 件の投稿案。続けると決めたら承認待ちで依頼一覧に入ります）"]
     out += [f"- {p.get('channel')}：{p.get('title')}" for p in s.get("posts", [])]
     out += ["", "## 7. やめる基準（続けた場合）"] + [f"- {x}" for x in r.get("kill_criteria", [])]

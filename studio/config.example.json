@@ -29,7 +29,8 @@
     "research": 40,
     "write": 40,
     "build": 150,
-    "qa": 60
+    "qa": 60,
+    "trial": 80
   },
   "discord_webhook_url": "",
   "mock": false,
