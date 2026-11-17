@@ -48,9 +48,11 @@ def article(path, i):
     tags = re.search(r'- ハッシュタグ: (.+)', meta).group(1).strip()
     img = re.search(r'- 見出し画像: `([^`]+)`', meta).group(1)
     ok = 'はい' if re.search(r'^- 公開OK: はい', meta, re.M) else 'いいえ（確認待ち）'
+    day = re.search(r'^- 公開日: (\d{4}-\d{2}-\d{2})', meta, re.M)
+    day = day.group(1) if day else 'なし'
     imgdir = 'ops/note/images'
     return f'''
-<section class="step" id="a{i}"><div class="step-h"><span>記事 {i}　公開してよい：<b>{ok}</b></span></div>
+<section class="step" id="a{i}"><div class="step-h"><span>記事 {i}　公開してよい：<b>{ok}</b>　公開日：<b>{day}</b></span></div>
 <div class="title" id="t{i}">{html.escape(title)}</div>
 <div class="step-h"><span>見出し画像</span></div><img src="{embed(img)}" alt="{html.escape(title)} の見出し画像">
 <div class="step-h"><span>題名</span><button data-copy="t{i}">題名をコピー</button></div>
@@ -66,7 +68,7 @@ def main(dest):
     parts = [article(p, i + 1) for i, p in enumerate(paths)]
     pc = '''<section class="step" id="pc"><div class="step-h"><span>パソコンの Claude への指示（毎週火曜 夜7時50分）</span></div><div class="body">
 <ol>
-<li>このページの記事を上から順に見る。「公開してよい：はい」の記事のうち、note にまだ同じ題名で公開されていない<b>最初の1本だけ</b>を選ぶ。1回に公開するのは1本だけ。</li>
+<li>このページの記事を上から順に見る。「公開してよい：はい」で、<b>公開日が今日か、今日より前</b>の記事のうち、note にまだ同じ題名で公開されていない<b>最初の1本だけ</b>を選ぶ。公開日が今日より後の記事は、公開しない。1回に公開するのは1本だけ。</li>
 <li>選べる記事がなければ、何もしないで終わる。</li>
 <li>note にその題名の下書きがなければ、新しい記事を作る。見出し画像は「見出し画像」の欄に設定する（本文には入れない）。題名・本文（本文中の画像も、その位置に）を入れる。題名は省かない。本文の「[目次]」の行は、note の目次（「＋」→「目次」）に置き換える。</li>
 <li>本文の最後の行まで入っているか、画像がそろっているかを確かめる。</li>
