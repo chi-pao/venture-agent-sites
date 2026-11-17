@@ -311,5 +311,245 @@
     "typography": "見出し32px",
     "layout": "見出し＋ボタン＋イラスト",
     "visuals": "SVGで自作"
-  }
+  },
+  "試用部": [
+    {
+      "personas": [
+        "初めて使う人"
+      ],
+      "cases": [
+        {
+          "input": "練習の入力0",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力1",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力2",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力3",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力4",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "道頓堀",
+          "expected": "大阪",
+          "actual": "東京の劇場",
+          "result": "おかしい"
+        }
+      ],
+      "problems": [
+        "「道頓堀」で東京の劇場が出る"
+      ],
+      "verdict": "要修正"
+    },
+    {
+      "personas": [
+        "初めて使う人",
+        "急いでいる人",
+        "入力が雑な人"
+      ],
+      "cases": [
+        {
+          "input": "練習の入力0",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力1",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力2",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力3",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力4",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力5",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力6",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力7",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力8",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力9",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力10",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力11",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力12",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力13",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力14",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力15",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力16",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力17",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力18",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力19",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力20",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力21",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力22",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力23",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力24",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力25",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力26",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力27",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力28",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        },
+        {
+          "input": "練習の入力29",
+          "expected": "正しい結果",
+          "actual": "正しい結果",
+          "result": "合格"
+        }
+      ],
+      "problems": [],
+      "verdict": "レビュー可"
+    }
+  ]
 }

@@ -72,8 +72,10 @@ class FlowTest(unittest.TestCase):
         a = r["練習用の案A"]
         self.assertEqual(len([h for h in a["history"] if h["stage"] == "開発中"]), 1)
         self.assertEqual(a["qa"]["verdict"], "レビュー可")               # 品質部の要修正 → 自動で直した
+        self.assertEqual(a["trial"]["verdict"], "レビュー可")            # 試用部が実際に30通り使って確かめた
+        self.assertGreaterEqual(len(a["trial"]["cases"]), 30)
         doc = (self.tmp / "data" / "ideas" / a["id"] / "最終確認.md").read_text(encoding="utf-8")
-        for words in ("なぜ収益化できそうか", "心配な点", "decide", "continue"):
+        for words in ("なぜ収益化できそうか", "心配な点", "decide", "continue", "試用部が実際に使ってみた結果"):
             self.assertIn(words, doc)
         self.assertIn("【最終確認】", (self.tmp / "data" / "INBOX.md").read_text(encoding="utf-8"))
         self.assertEqual(self.queue_tasks("ST-"), [])                   # 続けると決めるまで SNS には入れない
