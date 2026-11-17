@@ -194,3 +194,5 @@ html,body{overflow-x:clip}
 .spark-meta{margin:12px 0 0;font-size:12px;color:#b9a7d6}
 .spark-logo{width:100%;height:480px;position:relative}
 @media(max-width:760px){.spark-in{grid-template-columns:1fr;gap:0}.spark-logo{height:280px;order:-1}.spark-copy{padding:0 0 30px}.spark-h{font-size:30px}}
+.old-note{margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#fff8e6;border:1px solid #f1d58a;color:#4a3b12;font-size:14px;line-height:1.6}
+.old-note p{margin:0 0 6px}.old-note p:last-child{margin:0}.old-note small{color:#6b5a2a}

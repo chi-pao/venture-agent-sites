@@ -31,6 +31,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import train_used_house as T  # noqa: E402
 import land_prices as L  # noqa: E402
+import town_prices as TP  # noqa: E402
 
 ROOT = HERE.parent.parent
 PREDICT = ROOT / 'tools' / 'checker_eval' / 'predict.mjs'
@@ -43,6 +44,10 @@ RECIPES = {
     'filled': {'decay': None, 'fill': True, 'land': False},
     'recent+filled': {'decay': 0.8, 'fill': True, 'land': False},
     'filled+land': {'decay': None, 'fill': True, 'land': True},
+    # 'town' adds the town's typical price per m² of land (town_prices.py); 'params' overrides the LightGBM settings.
+    'filled+land+town': {'decay': None, 'fill': True, 'land': True, 'town': True},
+    'filled+land+town+tuned': {'decay': None, 'fill': True, 'land': True, 'town': True,
+                               'params': {'num_leaves': 255, 'min_child_samples': 10}},
 }
 MIN_GAIN, MAX_WITHIN_LOSS = 0.3, 1.0
 # The served model was trained on every sale, the held-out ones included, so its own score on them is too
@@ -102,7 +107,7 @@ def fill_station(rows, table):
     return rows
 
 
-def site_inputs(rows, land=None):
+def site_inputs(rows, land=None, town=None):
     """The page's input objects for these sales (station minutes already filled where possible)."""
     out = []
     for r in rows.itertuples(index=False):
@@ -119,6 +124,10 @@ def site_inputs(rows, land=None):
             price, level = L.lookup(land, r.MunicipalityCode, r.DistrictName)
             if price:
                 d['landPrice'], d['landPriceLevel'] = price, level
+        if town:
+            value = TP.lookup(town, r.MunicipalityCode, r.DistrictName)
+            if value is not None:
+                d['townLogPpm'] = value
         out.append(d)
     return out
 
@@ -163,12 +172,20 @@ def train(rows, recipe, table, land=None):
     weight = None
     if recipe['decay']:
         weight = recipe['decay'] ** ((period(rows).max() - period(rows)) / 4)
+    nums = list(T.NUMS)
     if recipe.get('land'):
-        return T.fit(L.add_features(rows, land), weight, T.NUMS + L.FEATURES)
-    return T.fit(rows, weight)
+        rows, nums = L.add_features(rows, land), nums + L.FEATURES
+    if recipe.get('town'):
+        rows, nums = TP.add_out_of_fold(rows), nums + [TP.FEATURE]
+    saved = dict(T.PARAMS)
+    T.PARAMS.update(recipe.get('params') or {})
+    try:
+        return T.fit(rows, weight, nums)
+    finally:
+        T.PARAMS.clear(); T.PARAMS.update(saved)
 
 
-def install(pipe, rows, site, table, report, work, land=None):
+def install(pipe, rows, site, table, report, work, land=None, town=None):
     """Write the winning model into the site: binary, split table, catalog entry, station table."""
     stamp = date.today().strftime('%Y%m%d')
     models = site / 'models'
@@ -183,6 +200,9 @@ def install(pipe, rows, site, table, report, work, land=None):
     sample = rows.sample(64, random_state=3)
     if land:
         sample = L.add_features(sample, land)
+    if town:
+        sample = TP.add_feature(sample, town)
+        (site / 'town-prices.json').write_text(json.dumps(town, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
     cols = T.numeric_of(pipe) + T.CATS
     (work / 'component.json').write_text(json.dumps(component, ensure_ascii=False), encoding='utf-8')
     shutil.copy(dat, work / 'used_house.dat')
@@ -229,7 +249,7 @@ def main():
     land_path = a.site / 'land-prices.json'
     land = json.loads(land_path.read_text(encoding='utf-8')) if land_path.exists() else None
     recipes = {n: r for n, r in RECIPES.items() if land or not r['land']}
-    hold_inputs = site_inputs(fill_station(hold, train_table), land)
+    hold_inputs = site_inputs(fill_station(hold, train_table), land, TP.build(before))
     actual = hold['price_yen'].to_numpy(float)
     report = {'holdout': f'{len(hold)} sales from the latest {a.holdout_quarters} quarters (period index > {last - a.holdout_quarters})',
               'validation': {'trainedThrough': month_end(last - a.holdout_quarters),
@@ -251,8 +271,9 @@ def main():
     live = report['live']
     if changed:
         full_table = station_table(data)
-        uses_land = RECIPES[winner]['land']
-        install(train(data, RECIPES[winner], full_table, land), data, a.site, full_table, report, a.work, land if uses_land else None)
+        recipe = RECIPES[winner]
+        install(train(data, recipe, full_table, land), data, a.site, full_table, report, a.work,
+                land if recipe['land'] else None, TP.build(data) if recipe.get('town') else None)
     lines = ['# 中古戸建てモデルの自動学習', '', f"- 検証: {report['holdout']}",
              f"- 公開中のモデル（検証の取引も学習済みなので参考）: 誤差中央値 {live['median_ape_pct']}% / ±20%以内 {live['within20_pct']}%",
              f"- 比べる基準: 公開中と同じ作り方 {live_recipe} を同じ取引で学習し直したもの", '']
