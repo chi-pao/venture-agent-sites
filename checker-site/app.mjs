@@ -62,10 +62,10 @@ async function landPrice(city,district){
   return district&&t[district]?[t[district],2]:t['']?[t[''],1]:[null,0];
 }
 // 町ごとの「土地1㎡あたりの売れた値段」の目安（town-prices.json。採用されたモデルが使うときだけ置かれる）。
-let townPromise;
+let townPricePromise;
 async function townLogPpm(city,district){
-  townPromise??=fetch('town-prices.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
-  const all=await townPromise,t=all[city];
+  townPricePromise??=fetch('town-prices.json').then(r=>r.ok?r.json():{}).catch(()=>({}));
+  const all=await townPricePromise,t=all[city];
   return t?(district&&district in t?t[district]:t['']):(all['*']?.['']??null);
 }
 async function districtKey(city,district){

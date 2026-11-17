@@ -285,7 +285,10 @@
      "Threads",
      "Bluesky"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "facts": [
+     "築10〜17年・建物100〜120㎡・土地150〜250㎡の戸建ての実際に売れた値段（真ん中の値）：神奈川県 4,400万円、新潟県 1,700万円（4,400÷1,700＝約2.6倍）。出典：国土交通省 不動産情報ライブラリ（ops/sns/drafts/2026-11-18/index.md）"
+    ]
    }
   },
   {
