@@ -401,6 +401,19 @@
     ],
     "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
    }
+  },
+  {
+   "id": "NOTE03-PROMO",
+   "kind": "video_post_schedule",
+   "title": "note 第3話の告知動画（5か所）",
+   "status": "承認済み",
+   "payload": {
+    "video": "ops/sns/video/NOTE03-promo.mp4",
+    "request": "ops/chatgpt/outbox/NOTE03-PROMO.md",
+    "schedule": "2026-11-19 18:00 JST",
+    "link": "https://note.com/okaidoku_bukkenn/n/n039ff5e1ba87",
+    "approved": "のぼるさん 2026-11-18「ノートの投稿があったときは、すべて SNS で発信をしてほしい」"
+   }
   }
  ]
 }
