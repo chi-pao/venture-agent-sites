@@ -29,7 +29,7 @@ import affiliate as A  # noqa: E402
 import departments as D  # noqa: E402
 import publish as P  # noqa: E402
 import sns as S  # noqa: E402
-from engine import Engine, EngineError, LimitError  # noqa: E402
+from engine import Engine, EngineError, LimitError, TimeUpError  # noqa: E402
 from store import STAGES, Store, next_action, notify, now  # noqa: E402
 
 RESEARCH_TOOLS = ["WebSearch", "WebFetch"]
@@ -352,6 +352,10 @@ def process_queue(cfg, store, eng):
 
 
 def paused_notice(cfg, e):
+    if isinstance(e, TimeUpError):
+        notify(cfg, cfg["_data"], "今日の作業時間が終わったので区切りました（失敗ではありません）",
+               f"1回に動ける時間の区切りに来たので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
+        return
     notify(cfg, cfg["_data"], "利用上限で一時停止しました（失敗ではありません）",
            f"Claude Code の利用上限にかかったので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
 
@@ -394,7 +398,8 @@ def _due(key, days):
 def cmd_auto(cfg, store, eng, args):
     """定期実行用。利用上限で止まった続き→直し・作りかけ→新しい企画 の順。判断待ちが多いときは新しく作らない。"""
     try:
-        resume_paused(cfg, store, eng)
+        if cfg.get("auto_build", True):
+            resume_paused(cfg, store, eng)
         _cmd_auto(cfg, store, eng, args)
     except LimitError as e:
         store.write_board()
@@ -403,7 +408,9 @@ def cmd_auto(cfg, store, eng, args):
 
 def _cmd_auto(cfg, store, eng, args):
     waiting = [r for r in store.all() if r["stage"] in ("owner_check", "needs_fix")]
-    if any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
+    if not cfg.get("auto_build", True):
+        print("企画・開発はクラウドの担当なので、ここでは SNS とアフィリエイトだけ進めます。")
+    elif any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
         process_queue(cfg, store, eng)
     elif len(waiting) >= cfg["max_waiting_for_owner"]:
         print(f"あなたの判断待ちが {len(waiting)} 件あるので、新しい企画はお休みします。")

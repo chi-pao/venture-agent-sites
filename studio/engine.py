@@ -10,7 +10,12 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
+
+# 部門（claude -p）には渡さない秘密の値。部門が読んだ Web ページにだまされても外に出せないようにする。
+HIDDEN_ENV = ("STUDIO_PUSH_TOKEN", "STUDIO_DISCORD_WEBHOOK", "GITHUB_TOKEN", "GH_TOKEN",
+              "RAKUTEN_APP_ID", "RAKUTEN_ACCESS_KEY", "RAKUTEN_AFFILIATE_ID", "ANTHROPIC_API_KEY")
 
 
 class EngineError(RuntimeError):
@@ -19,6 +24,10 @@ class EngineError(RuntimeError):
 
 class LimitError(EngineError):
     """Claude Code の利用上限（5時間・週）にかかった。失敗ではなく一時停止として扱う。"""
+
+
+class TimeUpError(LimitError):
+    """1回に動ける時間（クラウドは最長6時間）の区切りに来た。利用上限と同じく、次の auto で続きから。"""
 
 
 def extract_json(text):
@@ -64,6 +73,9 @@ class Engine:
         self.mock = bool(cfg.get("mock")) or os.environ.get("STUDIO_MOCK") == "1"
         self.mock_answers = None
         self.total_cost = 0.0
+        # 何分たったら新しい部門の仕事を始めないか（0 なら区切らない）。クラウドでは 6 時間の上限より手前に置く。
+        minutes = float(os.environ.get("STUDIO_STOP_AFTER_MINUTES") or cfg.get("stop_after_minutes") or 0)
+        self.deadline = time.monotonic() + minutes * 60 if minutes > 0 else None
 
     # ---- 共通 ----
     def _log(self, dept, prompt, result, cost):
@@ -82,6 +94,8 @@ class Engine:
         return path
 
     def _run(self, prompt, tools, cwd, max_turns, permission_mode=None, resume=None):
+        if self.deadline is not None and time.monotonic() > self.deadline and not resume:
+            raise TimeUpError("今回の持ち時間を使い切ったので、ここで区切りました")
         cmd = [self.claude_cmd(), "-p", "--output-format", "json",
                "--max-turns", str(max_turns)]
         if self.cfg.get("model"):
@@ -95,6 +109,7 @@ class Engine:
         try:
             proc = subprocess.run(cmd, input=prompt, text=True, encoding="utf-8",
                                   capture_output=True, cwd=str(cwd),
+                                  env={k: v for k, v in os.environ.items() if k not in HIDDEN_ENV},
                                   timeout=int(self.cfg.get("timeout_minutes", 60)) * 60)
         except subprocess.TimeoutExpired as e:
             raise EngineError("時間切れ（timeout_minutes を見直す）") from e
