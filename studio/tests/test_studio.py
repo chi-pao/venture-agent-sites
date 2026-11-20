@@ -109,6 +109,39 @@ class FlowTest(unittest.TestCase):
         out = self.cli("auto")                                           # 7日たっていないので企画はしない
         self.assertNotIn("①企画部", out)
 
+    def test_limit_pauses_and_auto_resumes(self):
+        """利用上限は「失敗」ではなく一時停止。次の auto で続きから進む。"""
+        from unittest import mock
+        import engine
+        real = engine.Engine._mock
+        calls = {"n": 0}
+
+        def limited(self_, dept):
+            if dept == "市場・競合部" and calls["n"] == 0:
+                calls["n"] += 1
+                raise engine.LimitError("You've hit your 5-hour limit")
+            return real(self_, dept)
+        with mock.patch.object(engine.Engine, "_mock", limited):
+            self.cli("run")
+        stages = {r["stage"] for r in self.recs().values()}
+        self.assertIn("paused", stages)
+        self.assertNotIn("error", stages)
+        inbox = (self.tmp / "data" / "INBOX.md").read_text(encoding="utf-8")
+        self.assertIn("一時停止", inbox)
+        self.assertNotIn("審査を通った案がありません", inbox)
+        out = self.cli("auto")
+        self.assertIn("続きから", out)
+        self.assertNotIn("paused", {r["stage"] for r in self.recs().values()})
+
+    def test_sectors_mix_personal_and_business(self):
+        studio._CFG.clear()
+        studio._CFG["_data"] = str(self.tmp / "data")
+        picked = studio.next_sectors()
+        self.assertEqual(len(picked), 4)
+        self.assertTrue(set(picked[:2]) <= set(studio.SECTORS))
+        self.assertTrue(set(picked[2:]) <= set(studio.BIZ_SECTORS))
+        self.assertNotEqual(picked, studio.next_sectors())               # 次は別の分野
+
     def test_weekly_sns_and_affiliate(self):
         self.cli("sns")
         self.assertEqual(len(self.queue_tasks("CH-")), 2)

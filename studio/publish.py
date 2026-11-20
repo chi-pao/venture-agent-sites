@@ -9,7 +9,9 @@
 - 実際に開けたかを確かめ、開けなければ「未確認」と正直に書く。
 """
 import re
+import os
 import shutil
+import stat
 import subprocess
 import time
 import urllib.request
@@ -55,8 +57,8 @@ def publish(cfg, work_dir, idea_id, static_dir):
     if not static_dir:
         return "", "開ける画面（index.html）が見つからないため公開していません"
     stage = Path(work_dir) / f"publish-{idea_id}"
-    if stage.exists():
-        shutil.rmtree(stage)
+    if stage.exists():  # git の中身は読み取り専用なので、書き込みできるようにしてから消す
+        shutil.rmtree(stage, onexc=lambda f, p, e: (os.chmod(p, stat.S_IWRITE), f(p)))
     ignore = shutil.ignore_patterns("node_modules", ".git", ".env", ".env.*", "*.map")
     shutil.copytree(static_dir, stage, ignore=ignore)
     add_noindex(stage)
