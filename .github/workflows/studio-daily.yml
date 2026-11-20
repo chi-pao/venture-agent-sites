@@ -1,0 +1,129 @@
+# 事業スタジオを毎朝クラウドで動かす（オーナーのパソコンが止まっていても動く）。
+# - Claude は CLAUDE_CODE_OAUTH_TOKEN（`claude setup-token` で作る合鍵）で、今の契約の範囲で動く。
+#   ANTHROPIC_API_KEY は絶対に置かない（置くとそちらが優先され、従量課金になる）。
+# - 記録は非公開リポジトリ chi-pao/venture-studio-data に置く（このリポジトリは公開なので、ここには置かない）。
+# - このリポジトリの実行記録は誰でも見られるので、スタジオの出力は画面に出さず、非公開リポジトリの auto.log にだけ書く。
+# - 1回の上限は6時間。4時間たったら新しい部門の仕事を始めずに区切り、次の朝に続きから進める。
+name: Studio daily (cloud)
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 日本時間の毎朝 07:00
+  workflow_dispatch:
+    inputs:
+      practice:
+        description: '練習モード（AIを呼ばず、記録も保存しない。つながりの確認用）'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'studio/**'
+      - '.github/workflows/studio-daily.yml'
+
+permissions:
+  contents: write   # 確認用ページを preview/ ブランチに送るため
+
+concurrency:
+  group: studio-daily
+  cancel-in-progress: false
+
+jobs:
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      TZ: Asia/Tokyo
+      PRACTICE: ${{ github.event_name == 'pull_request' || inputs.practice == true }}
+      DATA_DIR: ${{ github.workspace }}/studio-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 記録の置き場所（非公開リポジトリ）を取り出す
+        uses: actions/checkout@v4
+        with:
+          repository: chi-pao/venture-studio-data
+          ssh-key: ${{ secrets.STUDIO_DATA_DEPLOY_KEY }}
+          path: studio-data
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 道具をそろえる
+        run: |
+          npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
+          # 部門は Windows と同じく `py` で Python を呼ぶので、同じ名前で使えるようにする
+          mkdir -p "$HOME/bin" && ln -sf "$(command -v python3)" "$HOME/bin/py" && echo "$HOME/bin" >> "$GITHUB_PATH"
+          if [ "$PRACTICE" != "true" ]; then
+            npx -y playwright install --with-deps chromium >/dev/null 2>&1 || echo "ブラウザの準備に失敗（品質部の撮影ができない可能性）"
+          fi
+
+      - name: 設定を作る
+        working-directory: studio
+        env:
+          STUDIO_DATA_DIR: ${{ env.PRACTICE == 'true' && format('{0}/practice-data', runner.temp) || env.DATA_DIR }}
+          STUDIO_SETTINGS: ${{ vars.STUDIO_SETTINGS }}
+          STUDIO_MOCK: ${{ env.PRACTICE == 'true' && '1' || '' }}
+          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+          RAKUTEN_AFFILIATE_ID: ${{ secrets.RAKUTEN_AFFILIATE_ID }}
+        run: python cloud/make_config.py
+
+      - name: 合鍵が使えるか確かめる
+        if: env.PRACTICE != 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then echo "合鍵（CLAUDE_CODE_OAUTH_TOKEN）がまだ登録されていません"; exit 1; fi
+          if ! claude -p --max-turns 1 "OK とだけ返して" >/dev/null 2>&1; then
+            echo "合鍵で Claude を呼べませんでした（期限切れ・利用上限など）"; exit 1
+          fi
+
+      - name: スタジオを動かす
+        working-directory: studio
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          STUDIO_PUSH_TOKEN: ${{ github.token }}
+          STUDIO_DISCORD_WEBHOOK: ${{ secrets.STUDIO_DISCORD_WEBHOOK }}
+          STUDIO_STOP_AFTER_MINUTES: '240'
+          BASH_DEFAULT_TIMEOUT_MS: '1800000'
+          BASH_MAX_TIMEOUT_MS: '3600000'
+        run: |
+          if [ "$PRACTICE" = "true" ]; then
+            python studio.py doctor
+            python studio.py auto > "$RUNNER_TEMP/practice.log" 2>&1 && echo "練習モードの auto が最後まで動きました" \
+              || { echo "練習モードの auto が失敗しました"; tail -n 30 "$RUNNER_TEMP/practice.log"; exit 1; }
+            exit 0
+          fi
+          # 途中で止まっても失わないよう、10分ごとに記録を保存する
+          ( while sleep 600; do bash cloud/save_data.sh "$DATA_DIR" "途中の記録" >/dev/null 2>&1; done ) &
+          saver=$!
+          echo "=== $(date '+%Y-%m-%d %H:%M') クラウドで開始" >> "$DATA_DIR/auto.log"
+          python studio.py auto >> "$DATA_DIR/auto.log" 2>&1 || echo "スタジオが途中で止まりました（記録は auto.log）"
+          kill "$saver" 2>/dev/null || true
+          echo "スタジオの今回の分が終わりました（中身は非公開の記録にあります）"
+
+      - name: 記録を保存する
+        if: always() && env.PRACTICE != 'true'
+        run: bash studio/cloud/save_data.sh "$DATA_DIR" "毎朝の記録"
+
+      - name: 止まったことを知らせる
+        if: failure() && env.PRACTICE != 'true'
+        env:
+          STUDIO_DISCORD_WEBHOOK: ${{ secrets.STUDIO_DISCORD_WEBHOOK }}
+        run: |
+          echo "## $(date '+%Y-%m-%d %H:%M') クラウドのスタジオが動けませんでした" >> "$DATA_DIR/INBOX.md"
+          echo "" >> "$DATA_DIR/INBOX.md"
+          echo "合鍵の期限切れ・利用上限・GitHub の不調などが考えられます。Claude Code に「クラウドのスタジオが止まった」と伝えてください。" >> "$DATA_DIR/INBOX.md"
+          bash studio/cloud/save_data.sh "$DATA_DIR" "止まった記録"
+          if [ -n "$STUDIO_DISCORD_WEBHOOK" ]; then
+            curl -s -o /dev/null -H 'Content-Type: application/json' \
+              -d '{"content":"**クラウドの事業スタジオが動けませんでした**\nClaude Code に「クラウドのスタジオが止まった」と伝えてください。"}' \
+              "$STUDIO_DISCORD_WEBHOOK" || true
+          fi

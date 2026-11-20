@@ -8,6 +8,7 @@
 - 以前の review-previews/ のように main に溜まり続けない（案ごとに1つのブランチを上書き）。
 - 実際に開けたかを確かめ、開けなければ「未確認」と正直に書く。
 """
+import base64
 import re
 import os
 import shutil
@@ -64,14 +65,20 @@ def publish(cfg, work_dir, idea_id, static_dir):
     add_noindex(stage)
     branch = f"preview/{idea_id.lower()}"
     remote = f"https://github.com/{cfg['github_repo']}.git"
+    push = ["push", "-q", "--force", remote, f"HEAD:refs/heads/{branch}"]
+    token = os.environ.get("STUDIO_PUSH_TOKEN")  # クラウド（GitHub Actions）で動くときの書き込み権。画面には出さない
+    if token:
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        push = ["-c", f"http.https://github.com/.extraheader=AUTHORIZATION: basic {basic}"] + push
     steps = [["init", "-q"], ["checkout", "-q", "-b", branch], ["add", "-A"],
              ["-c", "user.name=venture-studio", "-c", "user.email=venture-studio@users.noreply.github.com",
               "commit", "-q", "-m", f"確認用ページ {idea_id}"],
-             ["push", "-q", "--force", remote, f"HEAD:refs/heads/{branch}"]]
+             push]
     for step in steps:
         r = _git(step, stage)
         if r.returncode != 0:
-            return "", f"GitHub への送信に失敗（{' '.join(step[:2])}）: {r.stderr.strip()[:300]}"
+            what = "push" if step is push else " ".join(step[:2])
+            return "", f"GitHub への送信に失敗（{what}）: {r.stderr.strip()[:300]}"
     url = preview_url(cfg, idea_id)
     for _ in range(int(cfg.get("preview_wait_checks", 10))):
         time.sleep(30)

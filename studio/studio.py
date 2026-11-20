@@ -29,7 +29,7 @@ import affiliate as A  # noqa: E402
 import departments as D  # noqa: E402
 import publish as P  # noqa: E402
 import sns as S  # noqa: E402
-from engine import Engine, EngineError, LimitError  # noqa: E402
+from engine import Engine, EngineError, LimitError, TimeUpError  # noqa: E402
 from store import STAGES, Store, next_action, notify, now  # noqa: E402
 
 RESEARCH_TOOLS = ["WebSearch", "WebFetch"]
@@ -352,6 +352,10 @@ def process_queue(cfg, store, eng):
 
 
 def paused_notice(cfg, e):
+    if isinstance(e, TimeUpError):
+        notify(cfg, cfg["_data"], "今日の作業時間が終わったので区切りました（失敗ではありません）",
+               f"1回に動ける時間の区切りに来たので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
+        return
     notify(cfg, cfg["_data"], "利用上限で一時停止しました（失敗ではありません）",
            f"Claude Code の利用上限にかかったので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
 

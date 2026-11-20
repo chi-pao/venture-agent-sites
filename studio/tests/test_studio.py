@@ -198,3 +198,36 @@ class PartsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloudTest(unittest.TestCase):
+    """クラウド（GitHub Actions）で動かすための部品。"""
+
+    def test_make_config_keeps_secrets_out_unless_given(self):
+        spec = importlib.util.spec_from_file_location("make_config", STUDIO / "cloud" / "make_config.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cfg = mod.build({"STUDIO_DATA_DIR": "/tmp/d", "STUDIO_SETTINGS": '{"ideas_per_run": 4}'})
+        self.assertEqual(cfg["data_dir"], "/tmp/d")
+        self.assertEqual(cfg["ideas_per_run"], 4)
+        self.assertFalse(cfg["weekly_sns"])  # main のファイルに書く仕事はクラウドでは止めておく
+        self.assertFalse(cfg["weekly_affiliate"])
+        self.assertEqual(cfg["discord_webhook_url"], "")  # 通知先は環境変数で渡し、ファイルには書かない
+        self.assertFalse(cfg["mock"])
+        cfg = mod.build({"STUDIO_DATA_DIR": "/tmp/d", "RAKUTEN_APP_ID": "x", "STUDIO_MOCK": "1"})
+        self.assertEqual(cfg["rakuten_app_id"], "x")
+        self.assertTrue(cfg["mock"])
+
+    def test_time_up_pauses_instead_of_failing(self):
+        import engine
+        eng = engine.Engine({"model": "opus"}, Path(tempfile.mkdtemp()) / "log.jsonl")
+        eng.deadline = 0  # もう持ち時間を過ぎている
+        with self.assertRaises(engine.TimeUpError):
+            eng._run("x", [], ".", 1)
+        self.assertTrue(issubclass(engine.TimeUpError, engine.LimitError))  # 利用上限と同じく「続きから」になる
+
+    def test_departments_do_not_get_secrets(self):
+        import engine
+        for name in ("STUDIO_PUSH_TOKEN", "STUDIO_DISCORD_WEBHOOK", "ANTHROPIC_API_KEY"):
+            self.assertIn(name, engine.HIDDEN_ENV)
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", engine.HIDDEN_ENV)  # これが無いと部門が動けない
