@@ -19,6 +19,7 @@ STAGES = {
     "continuing": "続ける（事業として独立）",
     "killed": "やめる",
     "error": "途中で失敗（記録を確認）",
+    "paused": "利用上限で一時停止（次の auto で続きから）",
 }
 WAITING_ON_OWNER = ("owner_check", "needs_fix")
 

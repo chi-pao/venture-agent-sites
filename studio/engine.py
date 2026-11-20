@@ -17,6 +17,10 @@ class EngineError(RuntimeError):
     pass
 
 
+class LimitError(EngineError):
+    """Claude Code の利用上限（5時間・週）にかかった。失敗ではなく一時停止として扱う。"""
+
+
 def extract_json(text):
     """返事から JSON（オブジェクト）を取り出す。```json の囲みを優先し、なければ最後の {...}。"""
     blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
@@ -101,6 +105,9 @@ class Engine:
         except ValueError as e:
             raise EngineError(f"Claude Code の出力を読めない: {proc.stdout[:500]}") from e
         if out.get("is_error"):
+            msg = str(out.get("result"))
+            if "hit your" in msg and "limit" in msg:
+                raise LimitError(f"Claude Code の利用上限: {msg[:300]}")
             raise EngineError(f"Claude Code がエラーで終了: {str(out.get('result'))[:800]}")
         cost = float(out.get("total_cost_usd") or 0)
         self.total_cost += cost
