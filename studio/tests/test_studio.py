@@ -231,3 +231,20 @@ class CloudTest(unittest.TestCase):
         for name in ("STUDIO_PUSH_TOKEN", "STUDIO_DISCORD_WEBHOOK", "ANTHROPIC_API_KEY"):
             self.assertIn(name, engine.HIDDEN_ENV)
         self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", engine.HIDDEN_ENV)  # これが無いと部門が動けない
+
+    def test_auto_build_off_only_does_sns_and_affiliate(self):
+        tmp = Path(tempfile.mkdtemp())
+        queue = tmp / "queue.json"
+        queue.write_text('{"tasks": []}', encoding="utf-8")
+        cfg = json.loads((STUDIO / "config.example.json").read_text(encoding="utf-8"))
+        cfg.update(mock=True, queue_path=str(queue), auto_build=False)
+        (tmp / "config.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            studio.main(["--config", str(tmp / "config.json"), "auto"])
+        self.assertIn("SNS とアフィリエイトだけ", buf.getvalue())
+        self.assertEqual(list((tmp / "data" / "ideas").glob("*/record.json")), [])  # 企画・開発はしない
+        state = json.loads((tmp / "data" / "auto.json").read_text(encoding="utf-8"))
+        self.assertIn("last_sns", state)
+        self.assertNotIn("last_plan", state)
+        shutil.rmtree(tmp, ignore_errors=True)

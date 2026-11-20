@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   studio:
+    # 毎朝の自動実行は、リポジトリの変数 STUDIO_CLOUD_ENABLED を true にした日から動く
+    # （手元のタスクを「SNS・アフィリエイトだけ」に切り替える日とそろえ、企画・開発が二重に動かないようにする）
+    if: github.event_name != 'schedule' || vars.STUDIO_CLOUD_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:

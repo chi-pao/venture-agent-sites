@@ -398,7 +398,8 @@ def _due(key, days):
 def cmd_auto(cfg, store, eng, args):
     """定期実行用。利用上限で止まった続き→直し・作りかけ→新しい企画 の順。判断待ちが多いときは新しく作らない。"""
     try:
-        resume_paused(cfg, store, eng)
+        if cfg.get("auto_build", True):
+            resume_paused(cfg, store, eng)
         _cmd_auto(cfg, store, eng, args)
     except LimitError as e:
         store.write_board()
@@ -407,7 +408,9 @@ def cmd_auto(cfg, store, eng, args):
 
 def _cmd_auto(cfg, store, eng, args):
     waiting = [r for r in store.all() if r["stage"] in ("owner_check", "needs_fix")]
-    if any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
+    if not cfg.get("auto_build", True):
+        print("企画・開発はクラウドの担当なので、ここでは SNS とアフィリエイトだけ進めます。")
+    elif any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
         process_queue(cfg, store, eng)
     elif len(waiting) >= cfg["max_waiting_for_owner"]:
         print(f"あなたの判断待ちが {len(waiting)} 件あるので、新しい企画はお休みします。")

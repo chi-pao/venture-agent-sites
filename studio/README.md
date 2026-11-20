@@ -86,7 +86,8 @@ schtasks /create /tn "事業スタジオ" /tr "C:\場所\venture-agent-sites\stu
 - 4時間たったら新しい部門の仕事を始めずに区切り、次の朝に続きから進めます（1回6時間の上限の手前）。
 - このリポジトリの実行記録は誰でも見られるので、スタジオの出力は画面に出さず、非公開の `auto.log` にだけ書きます。
 - 部門（`claude -p`）には、GitHub の書き込み権・通知先などの秘密を渡しません。
-- SNS の投稿案と楽天まとめページ（main の中のファイルに書く仕事）は、扱いが決まるまでクラウドでは作りません。
+- SNS の投稿案と楽天まとめページ（main の中のファイルに書く仕事）は、クラウドでは作りません。手元のパソコンの毎朝のタスクが「予備」として、これだけを続けます（手元の config.json に `"auto_build": false` を書くと、企画・開発をせず SNS とアフィリエイトだけ進めます）。
+- 毎朝の自動実行は、リポジトリの変数 `STUDIO_CLOUD_ENABLED` を `true` にした日から動きます。手元を `"auto_build": false` にする日と同じ日にそろえます（企画・開発が二重に動かないように）。
 - 秘密でない設定を変えたいときは、リポジトリの変数 `STUDIO_SETTINGS` に JSON で書きます（例: `{"ideas_per_run": 4}`）。
 - GitHub の秘密欄: `CLAUDE_CODE_OAUTH_TOKEN`（オーナー）、`STUDIO_DATA_DEPLOY_KEY`（記録の置き場所への書き込み用。登録済み）、任意で `STUDIO_DISCORD_WEBHOOK`・`RAKUTEN_APP_ID` など。
 - 手動で動かす: GitHub の Actions →「Studio daily (cloud)」→ Run workflow（「練習モード」にチェックすると AI を呼ばずにつながりだけ確かめます）。
