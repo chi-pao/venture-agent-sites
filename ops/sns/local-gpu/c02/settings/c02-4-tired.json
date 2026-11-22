@@ -1,0 +1,7 @@
+{
+ "seed": 42,
+ "prefix": "c02-4-tired",
+ "image": "baby720.png",
+ "pos": "Close-up portrait of a one-year-old baby sitting in front of a laptop in a dark room at night, face lit by the cool blue light of the screen. Static camera, fixed shot, no camera movement, no zoom, no pan. The body, shoulders and hands stay still; only the facial expression changes. The dark blurred background stays exactly the same. Soft 3D CG style, smooth natural motion. The baby looks deadpan and unimpressed: the upper eyelids slowly droop to half closed with a flat, bored look, the eyebrows stay relaxed, the mouth stays closed in a flat straight line, and the shoulders drop slightly with a slow, quiet sigh through the nose. Calm, not in pain.",
+ "neg": "camera movement, zoom, pan, shaking, jitter, flicker, morphing, body movement, moving hands, hands visible, background change, text, subtitles, watermark, logo, distorted face, deformed face, different child, aging, adult, extra people, blurry, low quality, fast motion, crying, tears, squinting, grimace, pain, frowning, open mouth"
+}
