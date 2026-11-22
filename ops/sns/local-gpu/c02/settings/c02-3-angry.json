@@ -1,0 +1,7 @@
+{
+ "seed": 42,
+ "prefix": "c02-3-angry",
+ "image": "baby720.png",
+ "pos": "Close-up portrait of a one-year-old baby sitting in front of a laptop in a dark room at night, face lit by the cool blue light of the screen. Static camera, fixed shot, no camera movement, no zoom, no pan. The body, shoulders and hands stay still; only the facial expression changes. The dark blurred background stays exactly the same. Soft 3D CG style, smooth natural motion. The baby becomes angry and sulky: eyes stay open and glare at the screen, the eyebrows knit together in a frown, both cheeks puff out round like balloons, and the lips push forward in a pout. The lighting stays the same cool blue screen light.",
+ "neg": "camera movement, zoom, pan, shaking, jitter, flicker, morphing, body movement, moving hands, hands visible, background change, text, subtitles, watermark, logo, distorted face, deformed face, different child, aging, adult, extra people, blurry, low quality, fast motion, crying, tears, red light, strong red tint, color change, squinting, closed eyes, smiling, crying"
+}

@@ -1,0 +1,7 @@
+{
+ "seed": 42,
+ "prefix": "c02-2-surprised",
+ "image": "baby720.png",
+ "pos": "Close-up portrait of a one-year-old baby sitting in front of a laptop in a dark room at night, face lit by the cool blue light of the screen. Static camera, fixed shot, no camera movement, no zoom, no pan. The body, shoulders and hands stay still; only the facial expression changes. The dark blurred background stays exactly the same. Soft 3D CG style, smooth natural motion. The baby becomes surprised: the eyes open wide and round, the eyebrows rise, and the mouth opens into a small round 'o' shape. The head pulls back just slightly.",
+ "neg": "camera movement, zoom, pan, shaking, jitter, flicker, morphing, body movement, moving hands, hands visible, background change, text, subtitles, watermark, logo, distorted face, deformed face, different child, aging, adult, extra people, blurry, low quality, fast motion, crying, tears"
+}
