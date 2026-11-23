@@ -22,7 +22,9 @@
   "affiliate_themes": 3,
   "affiliate_min_reviews": 30,
   "rakuten_app_id": "",
+  "rakuten_access_key": "",
   "rakuten_affiliate_id": "",
+  "rakuten_site_url": "https://venture-agent-sites.pages.dev",
   "rakuten_endpoint": "",
   "timeout_minutes": 90,
   "max_turns": {
@@ -37,5 +39,13 @@
   "sns_rules": "- 投稿は全部「承認待ち」。オーナーが文・画像・リンクを全部見てOKしたものだけ予約する\n- 使ってよい事実だけを書く。利用者数・効果・実績の数字を作らない\n- 広告・アフィリエイトを含む投稿は「PR」を明記。AIで作った画像・動画は「AIで作成」を表示\n- リンクには UTM（utm_source=SNS名, utm_medium=social, utm_campaign=施策名）\n- 全SNS合計で1日3投稿まで。有料広告は使わない（使うなら要承認）\n- 画像は毎回違うデザインで、ひと目で目を引くこと。動画を増やす",
   "max_pivots_per_run": 2,
   "min_pivot_win_probability": 30,
-  "min_design_score": 4
+  "min_design_score": 4,
+  "threads_amazon_tag": "",
+  "threads_max_per_day": 3,
+  "threads_same_product_gap_hours": 4,
+  "threads_pace_slots": [
+    "10:00",
+    "14:00",
+    "21:00"
+  ]
 }

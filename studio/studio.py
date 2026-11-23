@@ -440,7 +440,7 @@ def cmd_affiliate(cfg, store, eng, args):
         items = []
         if cfg.get("mock"):
             items = eng._mock("楽天商品")["items"]
-        elif cfg.get("rakuten_app_id"):
+        elif A.ready(cfg):
             for kw in theme.get("search_keywords", [])[:2]:
                 try:
                     items += A.search(cfg, kw)
@@ -509,7 +509,7 @@ def cmd_doctor(cfg, store, eng, args):
     print("データの場所:", cfg["_data"])
     print("SNS の依頼一覧:", S.queue_path(cfg))
     print("確認用ページの公開:", "オン" if cfg.get("publish_previews") else "オフ", f"（{cfg['github_repo']} の preview/ ブランチ）")
-    print("楽天の商品検索:", "設定あり" if cfg.get("rakuten_app_id") else "未設定（テーマと探すキーワードだけ作ります）",
+    print("楽天の商品検索:", "設定あり" if A.ready(cfg) else "未設定（テーマと探すキーワードだけ作ります）",
           "／アフィリエイトID:", "設定あり" if cfg.get("rakuten_affiliate_id") else "未設定")
     print("Discord 通知:", "設定あり" if cfg.get("discord_webhook_url") else "未設定（data/INBOX.md にだけ残ります）")
     print("練習モード:", "オン" if eng.mock else "オフ")

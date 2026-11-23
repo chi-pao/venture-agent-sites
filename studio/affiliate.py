@@ -1,40 +1,62 @@
 # -*- coding: utf-8 -*-
-"""⑩物販・アフィリエイト部の道具：楽天の商品検索と、商品まとめページづくり。
+"""⑩物販・アフィリエイト部の道具：楽天の商品検索・ランキングと、商品まとめページづくり。
 
-- 楽天ウェブサービスの「楽天市場商品検索API」を、設定（rakuten_app_id）があるときだけ使う。
-  アプリIDは楽天ウェブサービスで無料登録して取る。アフィリエイトIDを渡すと、紹介リンク（affiliateUrl）付きで返る。
-- 仕様（URL・項目名）は以前の公開版に合わせた。2026-11-11 は公式ページが混雑で開けず未確認。
-  変わっていたら config.json の rakuten_endpoint で直せる。
+- 楽天ウェブサービス（Rakuten Developers）の API を、設定があるときだけ使う。
+  2026年2月の仕様変更後の形：窓口は openapi.rakuten.co.jp、applicationId と accessKey の両方が必要、
+  登録した Web サイトの URL を Referer として送る（2026-11-13 に窓口の返事で確認）。
+- config.json に rakuten_app_id / rakuten_access_key / rakuten_affiliate_id / rakuten_site_url を書く。
+  アフィリエイトIDを渡すと、紹介リンク（affiliateUrl）付きで返る。
 - まとめページは PR 表記を一番上に出し、リンクには rel="sponsored nofollow" を付ける。価格は取得日時点と書く。
 """
 import html
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-DEFAULT_ENDPOINT = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601"
+SEARCH_ENDPOINT = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601"
+RANKING_ENDPOINT = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601"
+DEFAULT_ENDPOINT = SEARCH_ENDPOINT
 
 
 class RakutenError(RuntimeError):
     pass
 
 
-def search(cfg, keyword, hits=10):
-    """楽天市場で探す。レビューの多い順。戻り値は扱いやすい形の商品リスト。"""
-    params = {"applicationId": cfg["rakuten_app_id"], "keyword": keyword, "hits": hits,
-              "sort": "-reviewCount", "formatVersion": 2, "availability": 1}
+def ready(cfg):
+    return bool(cfg.get("rakuten_app_id") and cfg.get("rakuten_access_key"))
+
+
+def _get(cfg, endpoint, params):
+    if not ready(cfg):
+        raise RakutenError("楽天のアプリIDとアクセスキーがありません（secrets/rakuten.json か config.json に書く）")
+    params = dict(params, applicationId=cfg["rakuten_app_id"], accessKey=cfg["rakuten_access_key"],
+                  format="json", formatVersion=2)
     if cfg.get("rakuten_affiliate_id"):
         params["affiliateId"] = cfg["rakuten_affiliate_id"]
-    url = (cfg.get("rakuten_endpoint") or DEFAULT_ENDPOINT) + "?" + urllib.parse.urlencode(params)
+    headers = {"User-Agent": "venture-studio"}
+    site = cfg.get("rakuten_site_url")
+    if site:
+        headers["Referer"] = site.rstrip("/") + "/"
+        headers["Origin"] = site.rstrip("/")
+    url = endpoint + "?" + urllib.parse.urlencode(params)
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "venture-studio"}),
-                                    timeout=20) as res:
-            data = json.load(res)
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=20) as res:
+            return json.load(res)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")[:300]
+        for secret in (cfg.get("rakuten_app_id"), cfg.get("rakuten_access_key")):
+            if secret:
+                body = body.replace(secret, "***")
+        raise RakutenError(f"楽天が {e.code} を返しました: {body}") from None
     except Exception as e:
-        raise RakutenError(f"楽天の商品検索に失敗: {e}") from e
+        raise RakutenError(f"楽天につながりませんでした: {e}") from None
+
+
+def _items(data):
     items = []
     for it in data.get("Items", []):
         it = it.get("Item", it)  # formatVersion=1 の形にも対応
@@ -45,9 +67,27 @@ def search(cfg, keyword, hits=10):
         img = images[0] if images else ""
         img = img.get("imageUrl", "") if isinstance(img, dict) else img
         items.append({"name": it.get("itemName", ""), "price": it.get("itemPrice"), "shop": it.get("shopName", ""),
-                      "url": link, "is_affiliate": bool(it.get("affiliateUrl")),
-                      "reviews": it.get("reviewCount", 0), "rating": it.get("reviewAverage", 0), "image": img})
+                      "url": link, "item_url": it.get("itemUrl", ""), "is_affiliate": bool(it.get("affiliateUrl")),
+                      "code": it.get("itemCode", ""), "rank": it.get("rank"),
+                      "caption": (it.get("itemCaption") or "")[:400], "catch": it.get("catchcopy", ""),
+                      "postage": it.get("postageFlag"), "point_rate": it.get("pointRate"),
+                      "reviews": it.get("reviewCount", 0) or 0, "rating": it.get("reviewAverage", 0) or 0,
+                      "image": img})
     return items
+
+
+def search(cfg, keyword, hits=10):
+    """楽天市場で探す。レビューの多い順。戻り値は扱いやすい形の商品リスト。"""
+    return _items(_get(cfg, cfg.get("rakuten_endpoint") or SEARCH_ENDPOINT,
+                       {"keyword": keyword, "hits": hits, "sort": "-reviewCount", "availability": 1}))
+
+
+def ranking(cfg, genre_id=None, page=1):
+    """楽天市場ランキング（デイリー）。genre_id なしは総合。"""
+    params = {"page": page}
+    if genre_id:
+        params["genreId"] = genre_id
+    return _items(_get(cfg, RANKING_ENDPOINT, params))
 
 
 def pick(items, min_reviews=30, limit=5):
