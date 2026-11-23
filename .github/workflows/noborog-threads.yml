@@ -1,0 +1,87 @@
+# ノボログの Threads 投稿を、クラウドで15分ごとに出す（パソコンが止まっていても出る）。
+# - 予約は非公開リポジトリ chi-pao/venture-studio-data の noborog/ に置く（threads_queue.json。手元の `py threads.py sync` が送る）。
+# - 出すのは「承認済み」で時間になった物だけ。1日の本数・時間の決まりは threads.py のまま。
+# - 合いことばは noborog/token.enc（鍵 THREADS_TOKEN_KEY でかぎをかけた物）。そのままの文字は画面にもどこにも出さない。
+# - このリポジトリは公開なので、投稿の記録は画面に出さず、非公開リポジトリの noborog/threads_log.txt にだけ書く。
+name: Noborog Threads (cloud)
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      practice:
+        description: '練習（つながりの確認だけ。投稿しない・記録を保存しない）'
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - 'studio/threads*.py'
+      - '.github/workflows/noborog-threads.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noborog-threads
+  cancel-in-progress: false
+
+jobs:
+  post:
+    # 15分ごとの投稿は、リポジトリの変数 THREADS_CLOUD_ENABLED を true にした時から動く
+    # （手元の config の threads_cloud を true にして、手元が投稿しないようにした後に切りかえる）
+    if: github.event_name != 'schedule' || vars.THREADS_CLOUD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Tokyo
+      PRACTICE: ${{ github.event_name == 'pull_request' || inputs.practice == true }}
+      THREADS_IN_CLOUD: '1'
+      THREADS_DATA_DIR: ${{ github.workspace }}/studio-data/noborog
+      THREADS_SECRETS_DIR: ${{ runner.temp }}/secrets
+      THREADS_CONFIG: ${{ github.workspace }}/studio-data/noborog/config.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 予約の置き場所（非公開リポジトリ）を取り出す
+        uses: actions/checkout@v4
+        with:
+          repository: chi-pao/venture-studio-data
+          ssh-key: ${{ secrets.STUDIO_DATA_DEPLOY_KEY }}
+          path: studio-data
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 合いことばを取り出す
+        env:
+          KEY: ${{ secrets.THREADS_TOKEN_KEY }}
+        run: bash studio/cloud/threads_token.sh open
+      - name: 投稿する
+        working-directory: studio
+        run: |
+          if [ "$PRACTICE" = "true" ]; then
+            python threads.py check >/dev/null 2>&1 && echo "Threads につながりました" || { echo "Threads につながりませんでした"; exit 1; }
+            python threads.py run --dry >/dev/null 2>&1 && echo "練習の投稿（出さない）が最後まで動きました" || { echo "練習の投稿が失敗しました"; exit 1; }
+            exit 0
+          fi
+          python threads.py run >/dev/null 2>&1 || echo "投稿の途中で止まりました（中身は非公開の記録にあります）"
+          echo "今回の分が終わりました"
+      - name: 記録を保存する
+        if: always() && env.PRACTICE != 'true'
+        env:
+          KEY: ${{ secrets.THREADS_TOKEN_KEY }}
+        run: |
+          bash studio/cloud/threads_token.sh close
+          bash studio/cloud/save_data.sh studio-data "ノボログの投稿"
+      - name: 止まったことを知らせる
+        if: failure() && env.PRACTICE != 'true'
+        env:
+          STUDIO_DISCORD_WEBHOOK: ${{ secrets.STUDIO_DISCORD_WEBHOOK }}
+        run: |
+          if [ -n "$STUDIO_DISCORD_WEBHOOK" ]; then
+            curl -s -o /dev/null -H 'Content-Type: application/json' \
+              -d '{"content":"**ノボログのクラウド投稿が動けませんでした**\nClaude Code に「ノボログのクラウド投稿が止まった」と伝えてください。"}' \
+              "$STUDIO_DISCORD_WEBHOOK" || true
+          fi

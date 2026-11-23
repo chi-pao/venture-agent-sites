@@ -22,10 +22,12 @@
   py threads.py pick ID [ID ...]  選んだ候補を、候補に書いてある日・時間でまとめて承認する
   py threads.py cancel ID        取り消す
   py threads.py run [--dry]      時間になった物を投稿する（タスクスケジューラーが10分ごとに呼ぶ）
+  py threads.py sync [--token]   クラウドの予約と合わせる（--token は合いことばも送る）
   py threads.py refresh          合いことばを延長する（run の中でも7日ごとに自動で行う）
 """
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -49,8 +51,9 @@ def _add_user_site():
 _add_user_site()
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "data"
-SECRETS = HERE / "secrets"
+# クラウド（GitHub Actions）では、予約の置き場所と合いことばの場所を環境変数で変える
+DATA = Path(os.environ.get("THREADS_DATA_DIR") or HERE / "data")
+SECRETS = Path(os.environ.get("THREADS_SECRETS_DIR") or HERE / "secrets")
 QUEUE = DATA / "threads_queue.json"
 LOG = DATA / "threads_log.txt"
 TOKEN_FILE = SECRETS / "threads_token.txt"
@@ -85,7 +88,7 @@ def log(msg):
 
 def load_cfg():
     cfg = dict(DEFAULTS)
-    p = HERE / "config.json"
+    p = Path(os.environ.get("THREADS_CONFIG") or HERE / "config.json")
     if p.exists():
         try:
             cfg.update({k: v for k, v in json.loads(p.read_text(encoding="utf-8")).items() if k.startswith("threads_")})
@@ -105,6 +108,11 @@ def save_queue(items):
     tmp = QUEUE.with_suffix(".tmp")
     tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(QUEUE)
+
+
+def touch(it):
+    """予約の中身や状態を変えた時刻。手元とクラウドの予約を合わせるとき、新しい方を残すのに使う。"""
+    it["changed_at"] = now().isoformat()
 
 
 def parse_time(s):
@@ -316,6 +324,7 @@ def post_item(client, it):
     it["status"] = "投稿済み"
     it["posted_at"] = now().isoformat()
     it.pop("error", None)
+    touch(it)
 
 
 def run(client, items, cfg, dry=False, at=None):
@@ -331,6 +340,7 @@ def run(client, items, cfg, dry=False, at=None):
             continue
         if at - t > late and not it.get("posted_ids"):
             it["status"] = "期限切れ"
+            touch(it)
             log(f"{it['id']} は予定（{t:%m/%d %H:%M}）から時間がたちすぎたので出しませんでした")
             continue
         if it["status"] == "失敗" and it.get("tries", 0) >= 3:
@@ -340,6 +350,7 @@ def run(client, items, cfg, dry=False, at=None):
             it["status"] = "失敗"
             it["tries"] = 3  # 直さない限り何度やっても同じなので、もう試さない
             it["error"] = " / ".join(problems)
+            touch(it)
             log(f"{it['id']} は決まりに合わないので出しませんでした: {it['error']}")
             continue
         if posted_today(items, day) >= cfg["threads_max_per_day"]:
@@ -356,6 +367,7 @@ def run(client, items, cfg, dry=False, at=None):
             it["status"] = "失敗"
             it["tries"] = it.get("tries", 0) + 1
             it["error"] = str(e)
+            touch(it)
             log(f"{it['id']} の投稿に失敗しました（{it['tries']}回目）: {e}")
     return done
 
@@ -434,6 +446,7 @@ def cmd_approve(args):
     it["status"] = "承認済み"
     it.pop("error", None)
     it["tries"] = 0
+    touch(it)
     save_queue(items)
     log(f"{it['id']} を承認しました（{t:%m/%d %H:%M} に投稿）")
 
@@ -462,6 +475,7 @@ def cmd_pick(args):
             t = moved
         it.update(time=t.isoformat(), status="承認済み", tries=0)
         it.pop("error", None)
+        touch(it)
         log(f"{it['id']} を承認しました（{t:%m/%d %H:%M} に投稿）")
     save_queue(items)
     ensure_media(items)
@@ -505,6 +519,7 @@ def add_amazon(it, asin_or_url, tag):
     second = re.sub(r"\n\n▽Amazon の商品ページ\n\S+\n※[^\n]*", "", it["parts"][1])
     it["parts"][1] = second + AMAZON_BLOCK.format(url=url)
     it.setdefault("product", {})["amazon_url"] = url
+    touch(it)
     return it
 
 
@@ -527,6 +542,7 @@ def cmd_cancel(args):
     if it["status"] == "投稿済み":
         raise ThreadsError("もう投稿済みです。消すときは Threads の画面から消してください")
     it["status"] = "取り消し"
+    touch(it)
     save_queue(items)
     log(f"{it['id']} を取り消しました")
 
@@ -558,18 +574,29 @@ def cmd_test(args):
 
 def cmd_run(args):
     cfg = load_cfg()
+    if cfg.get("threads_cloud") and not os.environ.get("THREADS_IN_CLOUD"):
+        # 投稿はクラウドが出す。手元は予約を合わせるだけ（二重に出さないため）
+        import threads_cloud
+        threads_cloud.sync()
+        return
     items = load_queue()
     if not any(it["status"] in ("承認済み", "失敗") for it in items):
         return
     c = Client(read_token(), wait=cfg["threads_publish_wait_seconds"])
     try:
-        maybe_refresh(c)
+        if not args.dry:  # 練習では延長しない（新しい合いことばを保存しないまま捨てないため）
+            maybe_refresh(c)
     except ThreadsError as e:
         log(f"合いことばの延長に失敗しました: {e}")
     if not args.dry:
         ensure_media(items)
     run(c, items, cfg, dry=args.dry)
     save_queue(items)
+
+
+def cmd_sync(args):
+    import threads_cloud
+    threads_cloud.sync(upload_token=args.token)
 
 
 def cmd_refresh(args):
@@ -594,10 +621,11 @@ def main(argv=None):
     p = sub.add_parser("cancel"); p.add_argument("id")
     p = sub.add_parser("amazon"); p.add_argument("id"); p.add_argument("asin")
     p = sub.add_parser("run"); p.add_argument("--dry", action="store_true")
+    p = sub.add_parser("sync"); p.add_argument("--token", action="store_true")
     args = ap.parse_args(argv)
     try:
         {"check": cmd_check, "test": cmd_test, "refresh": cmd_refresh, "list": cmd_list, "add": cmd_add,
-         "approve": cmd_approve, "pick": cmd_pick, "cancel": cmd_cancel, "amazon": cmd_amazon, "run": cmd_run}[args.cmd](args)
+         "approve": cmd_approve, "pick": cmd_pick, "cancel": cmd_cancel, "amazon": cmd_amazon, "run": cmd_run, "sync": cmd_sync}[args.cmd](args)
     except ThreadsError as e:
         log(f"止まりました: {e}")
         return 1
