@@ -71,13 +71,31 @@ SNS の投稿は全部「承認待ち」で今の依頼一覧（`ops/tasks/queue
 
 `studio.cmd` を使えば `studio run` のようにも書けます。
 
-`auto` は、毎日動かす前提のコマンドです。直しの依頼や作りかけを先に進めます。前回の企画から7日たっていれば、新しく企画します。ただし、のぼるさんの判断待ちが3件以上あるときは、新しく作るのを休みます。SNS と楽天の企画は週1回です。
+`auto` は、毎日動かす前提のコマンドです。Claude Code の利用上限にかかったときは「失敗」にせず一時停止にし、次の `auto` で止まったところから続けます。企画は毎回、個人の暮らし向けの分野2つと、会社・お店向けの分野2つから考え、半分以上を会社で使える物・販売できる物にします。直しの依頼や作りかけを先に進めます。前回の企画から7日たっていれば、新しく企画します。ただし、のぼるさんの判断待ちが3件以上あるときは、新しく作るのを休みます。SNS と楽天の企画は週1回です。
 毎日朝7時に動かすなら、タスク スケジューラに登録します（登録するかは、のぼるさんが決めてから）。
 ```bash
 schtasks /create /tn "事業スタジオ" /tr "C:\場所\venture-agent-sites\studio\studio.cmd auto" /sc daily /st 07:00
 ```
 
-## 作られるもの（`studio/data/`。GitHub には上げません）
+## クラウドで毎朝動かす（パソコンが止まっていても動く）
+
+`.github/workflows/studio-daily.yml` が、毎朝 07:00 に GitHub のサーバーで `studio auto` を動かします。
+
+- Claude は、オーナーが `claude setup-token` で作った合鍵（GitHub の秘密欄 `CLAUDE_CODE_OAUTH_TOKEN`）で、今の契約の範囲で動きます。**`ANTHROPIC_API_KEY` は置かない**（置くとそちらが優先され、従量課金になります）。合鍵は1年で切れるので作り直します。
+- 記録（`studio/data/`）は**非公開リポジトリ `chi-pao/venture-studio-data`** に置きます（このリポジトリは公開なので、ここには置きません）。10分ごとと終わりに保存します。
+- 4時間たったら新しい部門の仕事を始めずに区切り、次の朝に続きから進めます（1回6時間の上限の手前）。
+- このリポジトリの実行記録は誰でも見られるので、スタジオの出力は画面に出さず、非公開の `auto.log` にだけ書きます。
+- 部門（`claude -p`）には、GitHub の書き込み権・通知先などの秘密を渡しません。
+- SNS の投稿案と楽天まとめページ（main の中のファイルに書く仕事）は、クラウドでは作りません。手元のパソコンの毎朝のタスクが「予備」として、これだけを続けます（手元の config.json に `"auto_build": false` を書くと、企画・開発をせず SNS とアフィリエイトだけ進めます）。
+- 毎朝の自動実行は、リポジトリの変数 `STUDIO_CLOUD_ENABLED` を `true` にした日から動きます。手元を `"auto_build": false` にする日と同じ日にそろえます（企画・開発が二重に動かないように）。
+- 秘密でない設定を変えたいときは、リポジトリの変数 `STUDIO_SETTINGS` に JSON で書きます（例: `{"ideas_per_run": 4}`）。
+- GitHub の秘密欄: `CLAUDE_CODE_OAUTH_TOKEN`（オーナー）、`STUDIO_DATA_DEPLOY_KEY`（記録の置き場所への書き込み用。登録済み）、任意で `STUDIO_DISCORD_WEBHOOK`・`RAKUTEN_APP_ID` など。
+- 手動で動かす: GitHub の Actions →「Studio daily (cloud)」→ Run workflow（「練習モード」にチェックすると AI を呼ばずにつながりだけ確かめます）。
+
+**手元のパソコンで記録を触るとき**（`decide` など）: `studio/data` は非公開リポジトリと同じ物なので、
+`git pull` → 作業 → `git add -A` → `git commit -m "判断"` → `git push` の順にします（クラウドとぶつからないように）。
+
+## 作られるもの（`studio/data/`。非公開リポジトリ `chi-pao/venture-studio-data` に保存）
 
 | 場所 | 中身 |
 |---|---|

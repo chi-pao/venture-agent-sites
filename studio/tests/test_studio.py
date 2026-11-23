@@ -72,8 +72,10 @@ class FlowTest(unittest.TestCase):
         a = r["練習用の案A"]
         self.assertEqual(len([h for h in a["history"] if h["stage"] == "開発中"]), 1)
         self.assertEqual(a["qa"]["verdict"], "レビュー可")               # 品質部の要修正 → 自動で直した
+        self.assertEqual(a["trial"]["verdict"], "レビュー可")            # 試用部が実際に30通り使って確かめた
+        self.assertGreaterEqual(len(a["trial"]["cases"]), 30)
         doc = (self.tmp / "data" / "ideas" / a["id"] / "最終確認.md").read_text(encoding="utf-8")
-        for words in ("なぜ収益化できそうか", "心配な点", "decide", "continue"):
+        for words in ("なぜ収益化できそうか", "心配な点", "decide", "continue", "試用部が実際に使ってみた結果"):
             self.assertIn(words, doc)
         self.assertIn("【最終確認】", (self.tmp / "data" / "INBOX.md").read_text(encoding="utf-8"))
         self.assertEqual(self.queue_tasks("ST-"), [])                   # 続けると決めるまで SNS には入れない
@@ -106,6 +108,39 @@ class FlowTest(unittest.TestCase):
         self.assertIn("訪問 10", (self.tmp / "data" / "learning.md").read_text(encoding="utf-8"))
         out = self.cli("auto")                                           # 7日たっていないので企画はしない
         self.assertNotIn("①企画部", out)
+
+    def test_limit_pauses_and_auto_resumes(self):
+        """利用上限は「失敗」ではなく一時停止。次の auto で続きから進む。"""
+        from unittest import mock
+        import engine
+        real = engine.Engine._mock
+        calls = {"n": 0}
+
+        def limited(self_, dept):
+            if dept == "市場・競合部" and calls["n"] == 0:
+                calls["n"] += 1
+                raise engine.LimitError("You've hit your 5-hour limit")
+            return real(self_, dept)
+        with mock.patch.object(engine.Engine, "_mock", limited):
+            self.cli("run")
+        stages = {r["stage"] for r in self.recs().values()}
+        self.assertIn("paused", stages)
+        self.assertNotIn("error", stages)
+        inbox = (self.tmp / "data" / "INBOX.md").read_text(encoding="utf-8")
+        self.assertIn("一時停止", inbox)
+        self.assertNotIn("審査を通った案がありません", inbox)
+        out = self.cli("auto")
+        self.assertIn("続きから", out)
+        self.assertNotIn("paused", {r["stage"] for r in self.recs().values()})
+
+    def test_sectors_mix_personal_and_business(self):
+        studio._CFG.clear()
+        studio._CFG["_data"] = str(self.tmp / "data")
+        picked = studio.next_sectors()
+        self.assertEqual(len(picked), 4)
+        self.assertTrue(set(picked[:2]) <= set(studio.SECTORS))
+        self.assertTrue(set(picked[2:]) <= set(studio.BIZ_SECTORS))
+        self.assertNotEqual(picked, studio.next_sectors())               # 次は別の分野
 
     def test_weekly_sns_and_affiliate(self):
         self.cli("sns")
@@ -163,3 +198,53 @@ class PartsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloudTest(unittest.TestCase):
+    """クラウド（GitHub Actions）で動かすための部品。"""
+
+    def test_make_config_keeps_secrets_out_unless_given(self):
+        spec = importlib.util.spec_from_file_location("make_config", STUDIO / "cloud" / "make_config.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        cfg = mod.build({"STUDIO_DATA_DIR": "/tmp/d", "STUDIO_SETTINGS": '{"ideas_per_run": 4}'})
+        self.assertEqual(cfg["data_dir"], "/tmp/d")
+        self.assertEqual(cfg["ideas_per_run"], 4)
+        self.assertFalse(cfg["weekly_sns"])  # main のファイルに書く仕事はクラウドでは止めておく
+        self.assertFalse(cfg["weekly_affiliate"])
+        self.assertEqual(cfg["discord_webhook_url"], "")  # 通知先は環境変数で渡し、ファイルには書かない
+        self.assertFalse(cfg["mock"])
+        cfg = mod.build({"STUDIO_DATA_DIR": "/tmp/d", "RAKUTEN_APP_ID": "x", "STUDIO_MOCK": "1"})
+        self.assertEqual(cfg["rakuten_app_id"], "x")
+        self.assertTrue(cfg["mock"])
+
+    def test_time_up_pauses_instead_of_failing(self):
+        import engine
+        eng = engine.Engine({"model": "opus"}, Path(tempfile.mkdtemp()) / "log.jsonl")
+        eng.deadline = 0  # もう持ち時間を過ぎている
+        with self.assertRaises(engine.TimeUpError):
+            eng._run("x", [], ".", 1)
+        self.assertTrue(issubclass(engine.TimeUpError, engine.LimitError))  # 利用上限と同じく「続きから」になる
+
+    def test_departments_do_not_get_secrets(self):
+        import engine
+        for name in ("STUDIO_PUSH_TOKEN", "STUDIO_DISCORD_WEBHOOK", "ANTHROPIC_API_KEY"):
+            self.assertIn(name, engine.HIDDEN_ENV)
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", engine.HIDDEN_ENV)  # これが無いと部門が動けない
+
+    def test_auto_build_off_only_does_sns_and_affiliate(self):
+        tmp = Path(tempfile.mkdtemp())
+        queue = tmp / "queue.json"
+        queue.write_text('{"tasks": []}', encoding="utf-8")
+        cfg = json.loads((STUDIO / "config.example.json").read_text(encoding="utf-8"))
+        cfg.update(mock=True, queue_path=str(queue), auto_build=False)
+        (tmp / "config.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            studio.main(["--config", str(tmp / "config.json"), "auto"])
+        self.assertIn("SNS とアフィリエイトだけ", buf.getvalue())
+        self.assertEqual(list((tmp / "data" / "ideas").glob("*/record.json")), [])  # 企画・開発はしない
+        state = json.loads((tmp / "data" / "auto.json").read_text(encoding="utf-8"))
+        self.assertIn("last_sns", state)
+        self.assertNotIn("last_plan", state)
+        shutil.rmtree(tmp, ignore_errors=True)

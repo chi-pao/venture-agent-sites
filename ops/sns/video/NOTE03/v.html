@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&family=Source+Code+Pro:wght@500&display=swap" rel="stylesheet">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1920px;overflow:hidden;background:#0d0420;font-family:'M PLUS Rounded 1c',sans-serif;color:#fff}
+#r{position:absolute;inset:0}
+.top{position:absolute;top:70px;left:0;right:0;text-align:center}
+.tag{display:inline-block;border:4px solid #ff4fd8;font-weight:800;font-size:40px;padding:10px 34px;border-radius:60px;box-shadow:0 0 24px #ff4fd8,inset 0 0 14px #ff4fd8;background:rgba(13,4,32,.6)}
+.neon{font-family:'Dela Gothic One';text-align:center;text-shadow:0 0 10px #fff,0 0 30px #ff4fd8,0 0 60px #ff4fd8}
+.cy{text-shadow:0 0 10px #fff,0 0 30px #29e7ff,0 0 60px #29e7ff}
+.sub{position:absolute;left:60px;right:60px;top:1500px;min-height:150px;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:50px;line-height:1.3;padding:16px 30px;background:rgba(10,0,30,.75);border:4px solid rgba(255,255,255,.25);border-radius:30px}
+.who{position:absolute;left:80px;top:1470px;font-size:30px;font-weight:800;color:#0d0420;background:#29e7ff;padding:4px 18px;border-radius:14px;z-index:3}
+.term{position:absolute;left:80px;right:80px;top:420px;height:900px;background:#111;border-radius:24px;border:5px solid #29e7ff;box-shadow:0 0 40px #29e7ff;padding:70px 40px 30px;font-family:'Source Code Pro',monospace;font-size:34px;color:#9aff9a;line-height:1.6;overflow:hidden}
+.term:before{content:"● ● ●";position:absolute;top:16px;left:24px;color:#ff5f57;font-size:26px;letter-spacing:6px}
+.fail{position:absolute;left:70px;right:70px;height:250px;border-radius:26px;background:rgba(255,255,255,.08);border:4px solid rgba(255,255,255,.3);display:flex;align-items:center;padding:0 40px;gap:30px}
+.fail .n{font-family:'Dela Gothic One';font-size:80px;color:#29e7ff}
+.fail .d{font-size:38px;font-weight:800;line-height:1.35}
+.fail .x{position:absolute;right:30px;top:50%;margin-top:-80px;width:160px;height:160px;border:10px solid #ff3b5c;border-radius:50%;color:#ff3b5c;font-family:'Dela Gothic One';font-size:46px;display:flex;align-items:center;justify-content:center;transform:rotate(-14deg);background:rgba(13,4,32,.7)}
+.chip{display:inline-block;background:#fff;color:#0d0420;font-weight:800;font-size:38px;padding:12px 26px;border-radius:40px;margin:10px}
+.pill{display:inline-block;background:#ff4fd8;font-family:'Dela Gothic One';font-size:50px;padding:20px 50px;border-radius:80px;box-shadow:0 0 30px #ff4fd8}
+.ai{position:absolute;right:40px;bottom:40px;font-size:24px;color:#cbb8ff}
+</style></head><body><div id="r"></div>
+<script>
+let TL;window.setTL=x=>TL=x;const ease=x=>{x=Math.min(1,Math.max(0,x));return x*x*(3-2*x)};const pop=x=>{x=Math.min(1,Math.max(0,x));return 1+Math.sin(x*Math.PI)*.25*(1-x)};
+function grid(t){let g=`<svg width="1080" height="1920" style="position:absolute;inset:0"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d0420"/><stop offset=".6" stop-color="#2a0a4f"/><stop offset="1" stop-color="#3b0a5a"/></linearGradient></defs><rect width="1080" height="1920" fill="url(#s)"/>`;
+ for(let i=0;i<60;i++){const x=(i*131)%1080,y=(i*197)%1200;g+=`<circle cx="${x}" cy="${y}" r="2.5" fill="#fff" opacity="${.3+.7*Math.abs(Math.sin(t*2+i))}"/>`}
+ const hz=1300;for(let i=-12;i<=12;i++)g+=`<line x1="540" y1="${hz}" x2="${540+i*160}" y2="1920" stroke="#ff4fd8" stroke-width="3" opacity=".5"/>`;
+ for(let k=0;k<12;k++){const p=((k+(t*0.8)%1)/12);const y=hz+Math.pow(p,2.2)*(1920-hz);g+=`<line x1="0" y1="${y}" x2="1080" y2="${y}" stroke="#ff4fd8" stroke-width="3" opacity="${.2+.6*p}"/>`}
+ return g+'</svg>'}
+const st=sc=>TL.tl.find(x=>x.scene===sc).t0;
+const LINES=['> Task completed successfully.','> Updated 12 files.','> Build passed. Deployed.','> Next steps: please review','  the changes in the PR.','> All tests passed (48/48).'];
+const F={
+s1:t=>{const s=st('s1');return `<div class="neon" style="position:absolute;top:560px;left:0;right:0;font-size:120px;line-height:1.25;transform:scale(${pop((t-s)/0.6)})">AIに<br>丸投げ<br>してみた</div>`},
+s2:t=>{const s=st('s2');const n=Math.floor((t-s)*4);let h=`<div class="term">${LINES.slice(0,Math.min(n,LINES.length)).join('<br>')}</div>`;
+ if(t>s+1.6)h+=`<div class="neon cy" style="position:absolute;top:1030px;left:0;right:0;font-size:110px;transform:rotate(-6deg) scale(${pop((t-s-1.6)/0.5)})">全部、英語。</div>`;
+ h+=`<div style="position:absolute;top:1330px;left:0;right:0;text-align:center;font-size:24px;color:#cbb8ff">※ 再現した画面です</div>`;return h},
+s3:t=>{const s=st('s3'),s4=TL.tl.find(x=>x.n==='v4').t0;let h=`<div class="neon" style="position:absolute;top:330px;left:0;right:0;font-size:64px">「かっこいいサイトにして」</div>`;
+ const D=[['1','真っ白と真っ黒の<br>美術館みたいな画面','やりすぎ'],['2','動き出す凝った画面<br>入力欄ははるか下','改悪'],['3','色の案 A と B','違いが<br>わからない']];
+ D.forEach((d,i)=>{const ts=s4+i*0.9;if(t<s+0.3+i*0.4)return;h+=`<div class="fail" style="top:${480+i*300}px;opacity:${ease((t-s-0.3-i*0.4)/0.4)}"><div class="n">${d[0]}</div><div class="d">${d[1]}</div>${t>ts?`<div class="x" style="transform:rotate(-14deg) scale(${pop((t-ts)/0.4)});font-size:${d[2].length>4?26:(d[2].length>2?34:46)}px">${d[2]}</div>`:''}</div>`});return h},
+s4:t=>{const s=st('s4');return `<div class="neon" style="position:absolute;top:470px;left:0;right:0;font-size:84px;line-height:1.35;opacity:${ease((t-s)/0.4)}">AIが悪いんじゃない。<br><span style="color:#ffe14d">頼み方が<br>悪かった。</span></div>
+ <div style="position:absolute;top:1010px;left:40px;right:40px;text-align:center">${['日本語で、短く','「何のためか」を言う','エラーはそのまま見せる'].map((c,i)=>`<div class="chip" style="transform:scale(${t>s+1.2+i*0.4?pop((t-s-1.2-i*0.4)/0.4):0})">${i+1}. ${c}</div>`).join('')}</div>`},
+s5:t=>{const s=st('s5');const plain='48歳 AI初心者の挑戦は続く……';const n=Math.floor(Math.min(1,(t-s)/2.2)*plain.length);let sh=plain.slice(0,n);sh=sh.length>10?sh.slice(0,10)+'<br>'+sh.slice(10):sh;
+ return `<div class="neon" style="position:absolute;top:520px;left:0;right:0;font-size:96px;line-height:1.3">${sh}</div>
+ <div style="position:absolute;top:900px;left:0;right:0;text-align:center;opacity:${ease((t-s-2.4)/0.4)};transform:scale(${pop((t-s-2.4)/0.5)})"><div class="pill">第3話は note で ▶</div><div class="neon cy" style="font-size:40px;margin-top:26px">プロフィールのリンクから</div></div>`}};
+window.render=t=>{let c=TL.tl[0];for(const x of TL.tl)if(t>=x.t0)c=x;const order=['s1','s2','s3','s4','s5'];const i=order.indexOf(c.scene);const s0=st(c.scene);const f=ease((t-s0)/0.35);
+ let h=grid(t)+`<div class="top"><div class="tag">バツイチ48歳のAI挑戦記 #3</div></div>`;
+ if(i>0&&f<1)h+=`<div style="position:absolute;inset:0;opacity:${1-f};transform:translateX(${-f*200}px)">${F[order[i-1]](t)}</div>`;
+ h+=`<div style="position:absolute;inset:0;opacity:${i>0?f:1};transform:translateX(${i>0?(1-f)*200:0}px)">${F[c.scene](t)}</div>`;
+ if(c.scene!=='s5')h+=`<div class="who">のぼる</div><div class="sub" style="opacity:${ease((t-c.t0)/0.2)}">${c.text}</div>`;
+ h+=`<div class="ai">声：AI（AivisSpeech）</div>`;document.getElementById('r').innerHTML=h};
+</script></body></html>

@@ -255,7 +255,7 @@
    "id": "D1118-Q02",
    "kind": "video_post_schedule",
    "title": "値段クイズ 第2回",
-   "status": "承認待ち",
+   "status": "保留（VS Code 側でリアルな版を作成中）",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/Q02.mp4",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -274,7 +274,7 @@
    "id": "D1120-PREF",
    "kind": "image_post_schedule",
    "title": "県がちがうだけで約2.6倍",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1120-pref.png",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -285,14 +285,18 @@
      "Threads",
      "Bluesky"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "facts": [
+     "築10〜17年・建物100〜120㎡・土地150〜250㎡の戸建ての実際に売れた値段（真ん中の値）：神奈川県 4,400万円、新潟県 1,700万円（4,400÷1,700＝約2.6倍）。出典：国土交通省 不動産情報ライブラリ（ops/sns/drafts/2026-11-18/index.md）"
+    ],
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
    }
   },
   {
    "id": "D1122-2Y",
    "kind": "video_post_schedule",
    "title": "この2年でどう変わった？",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1122-2years.mp4",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -304,14 +308,15 @@
      "TikTok",
      "Threads"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
    }
   },
   {
    "id": "D1124-HOWTO",
    "kind": "image_post_schedule",
    "title": "3ステップで使い方",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1124-howto.png",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -322,14 +327,15 @@
      "Threads",
      "Bluesky"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
    }
   },
   {
    "id": "D1125-Q03",
    "kind": "video_post_schedule",
    "title": "値段クイズ 第3回",
-   "status": "承認待ち",
+   "status": "保留（VS Code 側でリアルな版を作成中）",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/Q03.mp4",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -348,7 +354,7 @@
    "id": "D1127-VS",
    "kind": "image_post_schedule",
    "title": "売りたい値段VS売れた値段",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1127-vs.png",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -359,14 +365,15 @@
      "Threads",
      "Bluesky"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
    }
   },
   {
    "id": "D1129-TRY",
    "kind": "video_post_schedule",
    "title": "使ってみた",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1129-tryit.mp4",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -378,14 +385,15 @@
      "TikTok",
      "Threads"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
    }
   },
   {
    "id": "D1130-CITY",
    "kind": "image_post_schedule",
    "title": "あなたの街の相場",
-   "status": "承認待ち",
+   "status": "承認済み",
    "payload": {
     "file": "ops/sns/drafts/2026-11-18/1130-city.png",
     "texts": "ops/sns/drafts/2026-11-18/index.md",
@@ -396,7 +404,21 @@
      "Threads",
      "Bluesky"
     ],
-    "request": "ops/chatgpt/outbox/DRAFTS-1118.md"
+    "request": "ops/chatgpt/outbox/DRAFTS-1118.md",
+    "approved": "のぼるさん 2026-11-18「とりあえず外していいよ」（値段クイズ2本を外して6本 OK）"
+   }
+  },
+  {
+   "id": "NOTE03-PROMO",
+   "kind": "video_post_schedule",
+   "title": "note 第3話の告知動画（5か所）",
+   "status": "承認済み",
+   "payload": {
+    "video": "ops/sns/video/NOTE03-promo.mp4",
+    "request": "ops/chatgpt/outbox/NOTE03-PROMO.md",
+    "schedule": "2026-11-19 18:00 JST",
+    "link": "https://note.com/okaidoku_bukkenn/n/n039ff5e1ba87",
+    "approved": "のぼるさん 2026-11-18「ノートの投稿があったときは、すべて SNS で発信をしてほしい」"
    }
   }
  ]

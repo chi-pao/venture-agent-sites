@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 QUEUE = ROOT / 'ops' / 'tasks' / 'queue.json'
 OUTBOX = ROOT / 'ops' / 'chatgpt' / 'outbox'
 KINDS = {'sns_post_draft': 'SNS投稿文', 'image_asset': '画像', 'video_script': '動画の絵コンテ',
-         'sns_post_schedule': 'SNS予約投稿（画像・文）', 'video_post_schedule': '動画の予約投稿'}
+         'sns_post_schedule': 'SNS予約投稿（画像・文）', 'video_post_schedule': '動画の予約投稿',
+         'image_post_schedule': '画像の予約投稿'}
 # 予約投稿の依頼書は手書き（ops/chatgpt/outbox/）なので、--render では上書きしない
 RENDERED_KINDS = ('sns_post_draft', 'image_asset', 'video_script')
 STATUSES = ('承認待ち', '承認済み', '予約済み', '投稿済み', '取消')

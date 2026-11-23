@@ -29,7 +29,7 @@ import affiliate as A  # noqa: E402
 import departments as D  # noqa: E402
 import publish as P  # noqa: E402
 import sns as S  # noqa: E402
-from engine import Engine, EngineError  # noqa: E402
+from engine import Engine, EngineError, LimitError, TimeUpError  # noqa: E402
 from store import STAGES, Store, next_action, notify, now  # noqa: E402
 
 RESEARCH_TOOLS = ["WebSearch", "WebFetch"]
@@ -75,18 +75,26 @@ def spec_text(rec):
 
 
 # ------------------------------------------------------------------ ①②③
-SECTORS = ["小さなお店・個人事業の業務", "学び・資格・子どもの勉強", "趣味・ゲーム・推し活", "健康づくり・運動（医療の判断はしない）",
+# 個人の暮らしを楽にする分野
+SECTORS = ["学び・資格・子どもの勉強", "趣味・ゲーム・推し活", "健康づくり・運動（医療の判断はしない）",
            "お金・家計・節約", "仕事探し・副業・フリーランス", "ペット", "旅行・おでかけ", "料理・食事", "ものづくり・クリエイター",
            "介護・家族のサポート", "地域・自治会・サークル運営", "SNS運用・動画づくり", "住まい・暮らし"]
+# 会社・お店・団体が使う／お金を払う分野（オーナーの依頼: 個人だけでなく会社で便利な物・販売できる物も）
+BIZ_SECTORS = ["小さなお店・飲食店の業務", "会社の事務・経理・請求", "人事・採用・社内の教育", "建設・リフォーム・現場仕事",
+               "不動産・賃貸管理", "製造・物流・倉庫", "介護・保育・医療の事業所の事務（医療の判断はしない）",
+               "士業・会計事務所・社労士", "営業・見積り・顧客管理", "ネットショップ・物販の運営", "農業・漁業・地域の生産者",
+               "美容室・サロン・教室の運営"]
 
 
-def next_sectors(n=3):
-    """毎回ちがう分野を3つずつ順番に渡す（分野の偏りをなくす）。"""
+def next_sectors(n=2):
+    """毎回ちがう分野を、個人向けと会社向けから n こずつ順番に渡す（分野の偏りをなくす）。"""
     p = _state_path()
     data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    cur = int(data.get("sector_cursor", 0))
-    picked = [SECTORS[(cur + i) % len(SECTORS)] for i in range(n)]
+    cur, bcur = int(data.get("sector_cursor", 0)), int(data.get("biz_sector_cursor", 0))
+    picked = ([SECTORS[(cur + i) % len(SECTORS)] for i in range(n)] +
+              [BIZ_SECTORS[(bcur + i) % len(BIZ_SECTORS)] for i in range(n)])
     data["sector_cursor"] = (cur + n) % len(SECTORS)
+    data["biz_sector_cursor"] = (bcur + n) % len(BIZ_SECTORS)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return picked
@@ -142,6 +150,12 @@ def plan_ideas(cfg, store, eng, count=None):
     for r in recs:
         if r not in picked:
             store.set_stage(r, "market_no_go", "企画の点数が足りない、または上位に入らなかった")
+    return recs, screen(cfg, store, eng, picked)
+
+
+def screen(cfg, store, eng, picked):
+    """市場・競合部→審査部。利用上限にかかったら、残りを一時停止にして LimitError を上に伝える。"""
+    work = Path(cfg["_data"]) / "work"
     passed, pivots, queue = [], 0, list(picked)
     while queue:
         rec = queue.pop(0)
@@ -176,10 +190,23 @@ def plan_ideas(cfg, store, eng, count=None):
                 continue
             store.set_stage(rec, QUEUED, "3部門を通過。自動で開発に進む")
             passed.append(rec)
+        except LimitError:
+            for r in [rec] + queue:
+                store.set_stage(r, "paused", "利用上限で一時停止。次の auto で、ここから続ける")
+            store.write_board()
+            raise
         except EngineError as e:
             store.set_stage(rec, "error", str(e))
             print(f"  失敗: {e}")
-    return recs, passed
+    return passed
+
+
+def resume_paused(cfg, store, eng):
+    """利用上限で止まった審査の続き。"""
+    paused = [r for r in store.all() if r["stage"] == "paused" and not r.get("build")]
+    if paused:
+        print(f"利用上限で止まっていた案 {len(paused)} 件の続きから進めます。")
+        screen(cfg, store, eng, paused)
 
 
 # ------------------------------------------------------------------ ⑤⑥⑦⑧
@@ -206,11 +233,20 @@ def develop(cfg, store, eng, rec):
         qa = eng.ask_json("品質部", D.qa_prompt(spec, build), D.QA_REQUIRED,
                           tools=FILE_TOOLS + RUN_TOOLS, cwd=build_dir,
                           max_turns=cfg["max_turns"]["qa"], permission_mode="acceptEdits")
-        ok = "要修正" not in str(qa["verdict"]) and float(qa.get("design_score") or 0) >= cfg["min_design_score"]
+        print("⑥-2試用部: 利用者のつもりで、何十通りも実際に使っています…")
+        trial = eng.ask_json("試用部", D.trial_prompt(spec, build), D.TRIAL_REQUIRED,
+                             tools=FILE_TOOLS + RUN_TOOLS + RESEARCH_TOOLS, cwd=build_dir,
+                             max_turns=cfg["max_turns"].get("trial", cfg["max_turns"]["qa"]),
+                             permission_mode="acceptEdits")
+        rec["trial"] = trial
+        ok = ("要修正" not in str(qa["verdict"]) and float(qa.get("design_score") or 0) >= cfg["min_design_score"]
+              and D.trial_ok(trial))
         if ok or rounds >= cfg["auto_fix_rounds"]:
             return build, qa, ok
         rounds += 1
-        feedback = "品質部の指摘（すべて直す）:\n" + "\n".join(f"- {x}" for x in qa["blocking_issues"])
+        feedback = ("品質部の指摘（すべて直す）:\n" + "\n".join(f"- {x}" for x in qa["blocking_issues"]) +
+                    "\n試用部が実際に使って見つけた問題（すべて直す）:\n" +
+                    "\n".join(f"- {x}" for x in trial.get("problems", [])))
         print(f"品質部が要修正と判断したので、開発部が直します（{rounds}回目）…")
 
 
@@ -251,6 +287,13 @@ def owner_package(rec):
     out += [f"| {c.get('item')} | {c.get('result')} | {c.get('evidence')} |" for c in q.get("checks", [])]
     out += ["", "残っている問題:"]
     out += [f"- {x}" for x in q.get("blocking_issues", [])] or ["- なし"]
+    t = rec.get("trial") or {}
+    cases = t.get("cases", [])
+    bad = [c for c in cases if c.get("result") == "おかしい"]
+    out += ["", f"## 5-2. 試用部が実際に使ってみた結果（{len(cases)} 通り試して、おかしかったもの {len(bad)} 件）"]
+    out += [f"- 使う人: {x}" for x in t.get("personas", [])]
+    out += [f"- 「{c.get('input')}」→ {c.get('actual')}（期待: {c.get('expected')}）" for c in bad[:10]]
+    out += ["", "まだ残っている問題:"] + ([f"- {x}" for x in t.get("problems", [])] or ["- なし"])
     out += ["", f"## 6. 続ける場合の SNS（{len(s.get('posts', []))} 件の投稿案。続けると決めたら承認待ちで依頼一覧に入ります）"]
     out += [f"- {p.get('channel')}：{p.get('title')}" for p in s.get("posts", [])]
     out += ["", "## 7. やめる基準（続けた場合）"] + [f"- {x}" for x in r.get("kill_criteria", [])]
@@ -262,6 +305,7 @@ def owner_package(rec):
 
 
 def build_and_package(cfg, store, eng, rec):
+    before = rec["stage"] if rec["stage"] in (QUEUED, "brushup") else QUEUED
     store.set_stage(rec, "building", "開発部が作業中")
     store.write_board()
     try:
@@ -276,6 +320,10 @@ def build_and_package(cfg, store, eng, rec):
                                                           S.existing_titles(cfg)),
                                   D.SNS_REQUIRED, tools=RESEARCH_TOOLS, cwd=Path(cfg["_data"]) / "work",
                                   max_turns=cfg["max_turns"]["research"])
+    except LimitError:
+        store.set_stage(rec, before, "利用上限で一時停止。作りかけはフォルダーに残り、次の auto で続きから作る")
+        store.write_board()
+        raise
     except EngineError as e:
         store.set_stage(rec, "error", str(e))
         store.write_board()
@@ -303,7 +351,23 @@ def process_queue(cfg, store, eng):
         print(f"開発の順番待ちが {left} 件あります（次の run / auto で進みます）。")
 
 
+def paused_notice(cfg, e):
+    if isinstance(e, TimeUpError):
+        notify(cfg, cfg["_data"], "今日の作業時間が終わったので区切りました（失敗ではありません）",
+               f"1回に動ける時間の区切りに来たので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
+        return
+    notify(cfg, cfg["_data"], "利用上限で一時停止しました（失敗ではありません）",
+           f"Claude Code の利用上限にかかったので止めました。止まったところは記録してあり、次の auto で続きから進めます。\n{e}")
+
+
 def cmd_run(cfg, store, eng, args):
+    try:
+        _cmd_run(cfg, store, eng, args)
+    except LimitError as e:
+        paused_notice(cfg, e)
+
+
+def _cmd_run(cfg, store, eng, args):
     recs, passed = plan_ideas(cfg, store, eng, args.count)
     store.write_board()
     _mark("last_plan")
@@ -332,14 +396,26 @@ def _due(key, days):
 
 
 def cmd_auto(cfg, store, eng, args):
-    """定期実行用。あなたの判断待ちが多いときは新しく作らない。"""
+    """定期実行用。利用上限で止まった続き→直し・作りかけ→新しい企画 の順。判断待ちが多いときは新しく作らない。"""
+    try:
+        if cfg.get("auto_build", True):
+            resume_paused(cfg, store, eng)
+        _cmd_auto(cfg, store, eng, args)
+    except LimitError as e:
+        store.write_board()
+        paused_notice(cfg, e)
+
+
+def _cmd_auto(cfg, store, eng, args):
     waiting = [r for r in store.all() if r["stage"] in ("owner_check", "needs_fix")]
-    if any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
+    if not cfg.get("auto_build", True):
+        print("企画・開発はクラウドの担当なので、ここでは SNS とアフィリエイトだけ進めます。")
+    elif any(r["stage"] in (QUEUED, "brushup") for r in store.all()):
         process_queue(cfg, store, eng)
     elif len(waiting) >= cfg["max_waiting_for_owner"]:
         print(f"あなたの判断待ちが {len(waiting)} 件あるので、新しい企画はお休みします。")
     elif _due("last_plan", cfg["plan_every_days"]):
-        cmd_run(cfg, store, eng, argparse.Namespace(count=None))
+        _cmd_run(cfg, store, eng, argparse.Namespace(count=None))
     if cfg.get("weekly_sns") and _due("last_sns", 7):
         cmd_sns(cfg, store, eng, args)
     if cfg.get("weekly_affiliate") and _due("last_affiliate", 7):

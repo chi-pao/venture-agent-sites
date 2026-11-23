@@ -1,0 +1,7 @@
+{
+ "seed": 42,
+ "prefix": "c02-5-happy",
+ "image": "baby720.png",
+ "pos": "Close-up portrait of a one-year-old baby sitting in front of a laptop in a dark room at night, face lit by the cool blue light of the screen. Static camera, fixed shot, no camera movement, no zoom, no pan. The body, shoulders and hands stay still; only the facial expression changes. The dark blurred background stays exactly the same. Soft 3D CG style, smooth natural motion. The baby looks relieved and happy: the eyes narrow into a gentle smile, the cheeks lift, and the baby smiles warmly.",
+ "neg": "camera movement, zoom, pan, shaking, jitter, flicker, morphing, body movement, moving hands, hands visible, background change, text, subtitles, watermark, logo, distorted face, deformed face, different child, aging, adult, extra people, blurry, low quality, fast motion, crying, tears"
+}

@@ -1,10 +1,10 @@
-承認待ち（のぼるさんの OK が出たら「承認済み」に書きかえる）
+承認済み（のぼるさん 2026-11-18「とりあえず外していいよ」。値段クイズ2本＝#1・#5 は予約しない。残り6本を予約する）
 
 # ChatGPTへの依頼: 2週間分（8本）をまとめて予約投稿
 
 - 依頼ID: `DRAFTS-1118`
 - 種類: 完成した画像・動画の予約投稿（制作はしない）
-- ファイルと投稿の文: GitHub `chi-pao/venture-agent-sites` の `ops/sns/drafts/2026-11-18/`（main ブランチ）。投稿の文は同じ場所の `index.md` の 1〜8 をそのまま使う
+- ファイルと投稿の文: GitHub `chi-pao/venture-agent-sites` の `ops/sns/drafts/2026-11-18/`（main ブランチ）。投稿の文は同じ場所の `index.md` の 2・3・4・6・7・8 をそのまま使う（1 と 5 は予約しない）
 
 ## 守ること
 - 画像・動画は**作り直さない・加工しない**
@@ -17,11 +17,11 @@
 ## 予約（Metricool ブランドID 7545667、すべて 18:00 日本時間）
 | # | 日にち | ファイル | SNS | utm_campaign |
 |---|---|---|---|---|
-| 1 | 11/18（水） | Q02.mp4 | Instagram リール・YouTube ショート・TikTok・Threads | q02 |
+| 1 | （予約しない） | Q02.mp4 | — | — |
 | 2 | 11/20（金） | 1120-pref.png | Instagram・Threads・Bluesky | pref_diff |
 | 3 | 11/22（日） | 1122-2years.mp4 | Instagram リール・YouTube ショート・TikTok・Threads | two_years |
 | 4 | 11/24（月） | 1124-howto.png | Instagram・Threads・Bluesky | howto |
-| 5 | 11/25（水） | Q03.mp4 | Instagram リール・YouTube ショート・TikTok・Threads | q03 |
+| 5 | （予約しない） | Q03.mp4 | — | — |
 | 6 | 11/27（金） | 1127-vs.png | Instagram・Threads・Bluesky | sold_vs_ask |
 | 7 | 11/29（日） | 1129-tryit.mp4 | Instagram リール・YouTube ショート・TikTok・Threads | tryit |
 | 8 | 11/30（月） | 1130-city.png | Instagram・Threads・Bluesky | area_pages |

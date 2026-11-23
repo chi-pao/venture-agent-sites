@@ -1,0 +1,14 @@
+# データ用の非公開リポジトリ（venture-studio-data）の .gitignore の見本。
+# 作り直せる物・大きい物・SNS担当の物は入れない。
+node_modules/
+dist/
+test-results/
+playwright-report/
+.cache/
+work/
+media/
+threads_*
+*.log.tmp
+.env
+.env.*
+!.env.example
