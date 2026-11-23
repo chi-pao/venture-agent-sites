@@ -6,7 +6,7 @@ for e in ev:
     if segs and segs[-1][0]==e['expr']: segs[-1][2]=end
     else: segs.append([e['expr'],e['t0'],end])
 F={'normal':'c02-1-normal','surprised':'c02-2-surprised','angry':'c02-3-angry','tired':'c02-4-tired','happy':'c02-5-happy','typing':'c02-6-typing'}
-X=0.35;parts=[]
+X=0.2;parts=[]
 for i,(e,a,b) in enumerate(segs):
     L=b-a+(X if i<len(segs)-1 else 0)
     src=f'../c02g/{F[e]}.mp4'
