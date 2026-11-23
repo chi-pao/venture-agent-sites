@@ -425,12 +425,16 @@
    "id": "C02-VIDEO",
    "kind": "video_post_schedule",
    "title": "「AIの報告が、全部英語」赤ちゃんのぼる（4か所）",
-   "status": "承認済み",
+   "status": "予約済み",
    "payload": {
     "video": "ops/sns/video/C02/C02.mp4",
     "request": "ops/chatgpt/outbox/C02-VIDEO.md",
     "schedule": "2026-11-25 18:00 JST",
-    "approved": "のぼるさん 2026-11-24「これでいいと思う。この形で出すように依頼書作って」"
+    "approved": "のぼるさん 2026-11-24「これでいいと思う。この形で出すように依頼書作って」",
+    "metricool_ids": {
+     "Instagram・TikTok・Threads": "439195471",
+     "YouTube": "439195570"
+    }
    }
   }
  ]
