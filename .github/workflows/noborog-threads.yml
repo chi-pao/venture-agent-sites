@@ -38,9 +38,10 @@ jobs:
       PRACTICE: ${{ github.event_name == 'pull_request' || inputs.practice == true }}
       THREADS_IN_CLOUD: '1'
       THREADS_DATA_DIR: ${{ github.workspace }}/studio-data/noborog
-      THREADS_SECRETS_DIR: ${{ runner.temp }}/secrets
       THREADS_CONFIG: ${{ github.workspace }}/studio-data/noborog/config.json
     steps:
+      - name: 合いことばの一時的な置き場所を決める
+        run: echo "THREADS_SECRETS_DIR=$RUNNER_TEMP/secrets" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
