@@ -22,6 +22,10 @@
   py threads.py pick ID [ID ...]  選んだ候補を、候補に書いてある日・時間でまとめて承認する
   py threads.py cancel ID        取り消す
   py threads.py run [--dry]      時間になった物を投稿する（タスクスケジューラーが10分ごとに呼ぶ）
+  py threads.py replies fetch    自分の投稿への、まだ答えていない返信を集める
+  py threads.py replies draft R3 "文"   返事の下書きを入れる（毎朝の候補づくりが使う）
+  py threads.py replies ok R3 ["文"]    OK が出た返事を、すぐ出す予約にする
+  py threads.py replies skip R3  答えない
   py threads.py sync [--token]   クラウドの予約と合わせる（--token は合いことばも送る）
   py threads.py refresh          合いことばを延長する（run の中でも7日ごとに自動で行う）
 """
@@ -290,7 +294,9 @@ def maybe_refresh(client, force=False):
 
 # ---------- 投稿 ----------
 def posted_today(items, day):
-    return sum(1 for it in items if it["status"] == "投稿済み" and it.get("posted_at", "")[:10] == day)
+    # 返信への返事は、1日の本数に数えない
+    return sum(1 for it in items if it["status"] == "投稿済み" and it.get("posted_at", "")[:10] == day
+               and it.get("kind") != "返信")
 
 
 def attachments(it):
@@ -316,7 +322,7 @@ def post_item(client, it):
     """1本目から順に出す。途中で失敗したら、次の回はその続きから出す。"""
     ids = it.setdefault("posted_ids", [])
     for i in range(len(ids), len(it["parts"])):
-        reply_to = ids[-1] if ids else None
+        reply_to = ids[-1] if ids else it.get("reply_to")  # 返信は、相手の返信につなげる
         first = i == 0
         cid = client.create(it["parts"][i], reply_to, attachments(it) if first else None,
                             it.get("topic") if first else None)
@@ -599,6 +605,20 @@ def cmd_sync(args):
     threads_cloud.sync(upload_token=args.token)
 
 
+def cmd_replies(args):
+    import threads_replies as R
+    if args.action == "fetch":
+        R.cmd_fetch()
+    elif args.action == "list":
+        R.cmd_list()
+    elif args.action == "draft":
+        R.set_draft(args.no, args.text)
+    elif args.action == "ok":
+        R.answer(args.no, args.text)
+    elif args.action == "skip":
+        R.skip(args.no)
+
+
 def cmd_refresh(args):
     maybe_refresh(Client(read_token()), force=True)
 
@@ -622,10 +642,13 @@ def main(argv=None):
     p = sub.add_parser("amazon"); p.add_argument("id"); p.add_argument("asin")
     p = sub.add_parser("run"); p.add_argument("--dry", action="store_true")
     p = sub.add_parser("sync"); p.add_argument("--token", action="store_true")
+    p = sub.add_parser("replies"); p.add_argument("action", choices=["fetch", "list", "draft", "ok", "skip"])
+    p.add_argument("no", nargs="?"); p.add_argument("text", nargs="?")
     args = ap.parse_args(argv)
     try:
         {"check": cmd_check, "test": cmd_test, "refresh": cmd_refresh, "list": cmd_list, "add": cmd_add,
-         "approve": cmd_approve, "pick": cmd_pick, "cancel": cmd_cancel, "amazon": cmd_amazon, "run": cmd_run, "sync": cmd_sync}[args.cmd](args)
+         "approve": cmd_approve, "pick": cmd_pick, "cancel": cmd_cancel, "amazon": cmd_amazon, "run": cmd_run, "sync": cmd_sync,
+         "replies": cmd_replies}[args.cmd](args)
     except ThreadsError as e:
         log(f"止まりました: {e}")
         return 1

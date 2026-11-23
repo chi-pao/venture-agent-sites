@@ -232,6 +232,7 @@ def item_html(it, cache, icon):
   {f'<div class="why">💡 {html.escape(it["why"])}</div>' if it.get("why") else ""}
   {f'<div class="why">🎯 ' + html.escape("／".join(f"{k}：{v}" for k, v in it["target"].items())) + '</div>' if it.get("target") else ""}
   {f'<div class="why">✍️ まねた型：{html.escape(it["style"])}</div>' if it.get("style") else ""}
+  {f'<div class="why">💰 楽天の料率：{html.escape(str((it.get("product") or {}).get("rate")))}</div>' if (it.get("product") or {}).get("rate") else ""}
   <div>{status}</div></div></div>
   <div class="phone">{''.join(posts)}</div>
 </section>"""
@@ -270,6 +271,32 @@ background:#fff;scroll-snap-align:start}
 """
 
 
+def _room_html():
+    """楽天ROOM に載せる候補（data/room_candidates.json の「候補」）。OK の後に、のぼるさんの Chrome で載せる。"""
+    p = T.DATA / "room_candidates.json"
+    try:
+        rows = [r for r in json.loads(p.read_text(encoding="utf-8")) if r.get("status") == "候補"]
+    except (OSError, ValueError):
+        return ""
+    if not rows:
+        return ""
+    out = ["<h2>楽天ROOM に載せる候補（OK の番号を送ってください。例：「M1, M3」）</h2>"]
+    for r in rows:
+        img = f'<img src="{html.escape(r["image"])}" alt="" style="width:120px;border-radius:8px;float:right;margin-left:8px">' if r.get("image") else ""
+        out.append(f"""<div class="cand"><div class="why">{img}<b>{html.escape(r.get("no", ""))}</b>　{html.escape(r.get("name", "")[:60])}<br>
+💰 料率：{html.escape(str(r.get("rate") or "不明"))}　／　{html.escape(str(r.get("why", "")))}<br><br>
+<b>オススメポイント：</b>{body_html(r.get("text", ""))}<div style="clear:both"></div></div></div>""")
+    return "".join(out)
+
+
+def _replies_html():
+    try:
+        import threads_replies
+        return threads_replies.section_html(html.escape)
+    except Exception:
+        return ""
+
+
 def page(items, title, cache):
     icon = "data:image/png;base64," + base64.b64encode(ICON.read_bytes()).decode() if ICON.exists() else ""
     groups = {}
@@ -289,6 +316,8 @@ def page(items, title, cache):
 <p>出したい番号を送ってください（例：「01, 03, 06, 07, 10」）。直したい所もそのまま書いてOKです。</p>
 <p>作った時刻：{datetime.now():%m/%d %H:%M}</p></header>
 {''.join(body)}
+{_room_html()}
+{_replies_html()}
 </body></html>"""
 
 
