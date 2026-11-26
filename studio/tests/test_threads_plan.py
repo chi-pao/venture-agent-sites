@@ -28,7 +28,7 @@ def fetch(cfg, gid):
             product("same")]
 
 
-CFG = {"threads_genres": {"総合": None, "食品": 1, "壊れ": 999}}
+CFG = {"threads_genres": {"日用品": None, "家電": 1, "壊れ": 999}}
 DAY = datetime(2030, 1, 2)
 
 
@@ -113,12 +113,12 @@ class PlanTest(unittest.TestCase):
     def test_past_products_reused(self):
         old = (T.now() - timedelta(days=5)).isoformat()
         items = [{"id": "a", "status": "投稿済み", "posted_at": old, "made_at": old, "parts": ["年末の片づけ、\n本文"],
-                  "product": {"code": "c1", "name": "箱", "price": 2680, "url": "https://a.r10.to/x"},
+                  "product": {"code": "c1", "name": "箱", "genre": "日用品", "price": 2680, "url": "https://a.r10.to/x"},
                   "metrics": {"views": 105, "clicks": 1}},
                  {"id": "b", "status": "投稿済み", "posted_at": old, "parts": ["x"],
-                  "product": {"code": "c2", "name": "弱い", "price": 1, "url": "https://a.r10.to/y"}, "metrics": {"views": 3}},
+                  "product": {"code": "c2", "name": "弱い", "genre": "日用品", "price": 1, "url": "https://a.r10.to/y"}, "metrics": {"views": 3}},
                  {"id": "c", "status": "投稿済み", "posted_at": T.now().isoformat(), "parts": ["x"],
-                  "product": {"code": "c3", "name": "昨日", "price": 1, "url": "https://a.r10.to/z"}, "metrics": {"views": 500}}]
+                  "product": {"code": "c3", "name": "昨日", "genre": "日用品", "price": 1, "url": "https://a.r10.to/z"}, "metrics": {"views": 500}}]
         past = P.past_products(items, {})
         self.assertEqual([p["code"] for p in past], ["c1"])  # 反応が弱い物・出したばかりの物は外す
         self.assertEqual(past[0]["past"]["前の1本目の書き出し"], "年末の片づけ、")
@@ -133,7 +133,7 @@ class PlanTest(unittest.TestCase):
     def test_sold_product_repeats_often(self):
         old = (T.now() - timedelta(days=2, hours=1)).isoformat()
         items = [{"id": "s", "status": "投稿済み", "posted_at": old, "parts": ["片づけ\n本文"],
-                  "product": {"code": "box", "name": "箱", "price": 2680, "url": "https://a.r10.to/b",
+                  "product": {"code": "box", "name": "箱", "genre": "日用品", "price": 2680, "url": "https://a.r10.to/b",
                               "item_url": "https://item.rakuten.co.jp/shop/box/"}, "metrics": {"views": 0}}]
         report = {"order": {"rows": [{"item_url": "https://item.rakuten.co.jp/shop/box/"}]}}
         past = P.past_products(items, {}, sold=P.sold_counts(report))
@@ -141,6 +141,16 @@ class PlanTest(unittest.TestCase):
         self.assertIn("1件", past[0]["past"]["楽天で売れた"])
         self.assertEqual(P.past_products(items, {}, sold={}), [])  # 売れていなければ出さない
         self.assertIn("楽天で売れた", P.build_prompt(past, DAY, CFG))
+        items[0]["product"]["genre"] = "インテリア・寝具"
+        self.assertEqual(P.past_products(items, {}, sold=P.sold_counts(report)), [])  # 決めたジャンル以外は、売れた物でも出さない
+
+    def test_genre_share_and_filter(self):
+        ps = [{"code": f"d{i}", "genre": "日用品"} for i in range(6)] +              [{"code": "k", "genre": "家電"}, {"code": "f", "genre": "ファッション（インナー・下着）"},
+              {"code": "x", "genre": "インテリア・寝具"}, {"code": "y", "genre": "食品"}]
+        got = [g["code"] for g in P.mix_by_share(ps)]
+        self.assertEqual(got, ["d0", "d1", "k", "d2", "d3", "f", "d4", "d5"])  # 日用品2つ・サブ1つ、ほかのジャンルは入れない
+        self.assertEqual(P.genre_group("総合（キッチン家電）"), "家電")
+        self.assertIsNone(P.genre_group("インテリア・寝具"))
 
     def test_pick_uses_slot_time(self):
         day = (T.now() + timedelta(days=1)).strftime("%Y-%m-%d")

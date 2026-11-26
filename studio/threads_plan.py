@@ -39,8 +39,24 @@ SLOTS = [
     ("21:00", "挑戦記・日常・予告", "リンクなし。48歳の挑戦の記録、暮らしの一言、明日の予告など"),
 ]
 # 楽天のジャンル（間違っていても、そのジャンルが飛ばされるだけ）
-DEFAULT_GENRES = {"総合": None, "日用品雑貨": 215783, "キッチン用品": 558944, "食品": 100227,
-                  "インテリア・収納": 100804, "家電": 562637, "キッズ・ベビー": 100533}
+# 2026-11-26 のぼるさんの決まり：メインは日用品（6〜7割）、サブは家電・ファッション。ほかのジャンルは一切出さない（楽天ROOM も）。
+MAIN_GROUP = "日用品"
+SUB_GROUPS = ("家電", "ファッション")
+DEFAULT_GENRES = {"日用品": 215783, "家電": 562637, "ファッション（レディース）": 100371,
+                  "ファッション（メンズ）": 551177, "ファッション（インナー・下着）": 100433, "ファッション（靴）": 558885}
+
+
+def genre_group(label):
+    """ジャンル名から「日用品／家電／ファッション」を返す。決めたジャンルでなければ None。"""
+    g = str(label or "")
+    if "インテリア" in g or "寝具" in g or "収納" in g:
+        return None
+    for name in (MAIN_GROUP,) + SUB_GROUPS:
+        if name in g:
+            return name
+    if any(k in g for k in ("インナー", "下着", "靴", "バッグ")):
+        return "ファッション"
+    return None
 PROMPT_PRODUCTS = 30
 
 
@@ -83,6 +99,8 @@ def past_products(items, cfg, limit=4, sold=None):
     for it in items:
         p, m = it.get("product"), it.get("metrics") or {}
         if it.get("status") != "投稿済み" or not p or not p.get("url") or "PENDING" in p.get("url", ""):
+            continue
+        if not genre_group(p.get("genre")):  # 決めたジャンル以外は、売れた物でも出さない
             continue
         n_sold = sold.get((p.get("item_url") or "").split("?")[0].rstrip("/") + "/", 0)
         gap = timedelta(days=days_sold if n_sold else days)
@@ -130,16 +148,22 @@ def gather(cfg, items, fetch=A.ranking):
             out.append(dict(p, genre=label))
     if not out and errors:
         raise A.RakutenError(" / ".join(errors))
-    # ジャンルが偏らないように、順位の高い物から交互に並べる
-    by_genre = {}
-    for p in out:
-        by_genre.setdefault(p["genre"], []).append(p)
+    return mix_by_share(out)[:PROMPT_PRODUCTS], errors
+
+
+def mix_by_share(products):
+    """日用品を2つ、サブ（家電・ファッション）を1つ、の順にくり返して並べる（日用品が約6〜7割）。
+    決めたジャンル以外の物は入れない。"""
+    main = [p for p in products if genre_group(p.get("genre")) == MAIN_GROUP]
+    sub = [p for p in products if genre_group(p.get("genre")) in SUB_GROUPS]
     mixed = []
-    while any(by_genre.values()):
-        for g in list(by_genre):
-            if by_genre[g]:
-                mixed.append(by_genre[g].pop(0))
-    return mixed[:PROMPT_PRODUCTS], errors
+    while main or sub:
+        for _ in range(2):
+            if main:
+                mixed.append(main.pop(0))
+        if sub:
+            mixed.append(sub.pop(0))
+    return mixed
 
 
 # ---------- 2. AI に文を書いてもらう ----------
@@ -198,6 +222,8 @@ def build_prompt(products, day, cfg, fetched=None):
 
 ## 守ること（とても大事）
 - 紹介の案は、上の商品の no を "product" に入れる。紹介の時間（12:00・19:00）の4案は、全部ちがう商品にする。
+- ジャンルは「日用品」（メイン。紹介の6〜7割）と「家電」「ファッション」（サブ。残り）だけ。ほかのジャンルの物は一切紹介しない。
+- 商品は、料率（報酬の率）が高い／同じ商品を扱うお店が多い定番／悩みがはっきりしている／消耗品や買い替えがある物、を優先する。
 - 「前に出したとき」に「楽天で売れた」とある商品は、実際に売れた定番。毎日1案以上は必ずこれを使い、時刻・型・切り口を毎回変える
   （例：深掘りスレッドで選び方／比べるスレッドで別の物と比べる／保存用一覧の1行／季節の場面を変える）。
 - 「前に出したとき」がある商品は、前に反応があった売れ筋。新しい商品でなくてよいので、1〜2案はこれを使う。
