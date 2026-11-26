@@ -110,7 +110,7 @@ def sync(upload_token=False, tries=3):
         remote = _read(d / "threads_queue.json", [])
         merged = merge(local, remote)
         T.save_queue(merged)
-        (d / "threads_queue.json").write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
+        (d / "threads_queue.json").write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
         cfg = {k: v for k, v in T.load_cfg().items() if k not in CONFIG_KEYS_SKIP}
         (d / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
         _token(d, upload_token)
