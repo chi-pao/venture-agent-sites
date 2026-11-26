@@ -6,13 +6,13 @@ for e in ev:
     if segs and segs[-1][0]==e['expr']: segs[-1][2]=end
     else: segs.append([e['expr'],e['t0'],end])
 F={'normal':'c02-1-normal','surprised':'c02-2-surprised','angry':'c02-3-angry','tired':'c02-4-tired','happy':'c02-5-happy','typing':'c02-6-typing'}
-X=0.35;parts=[]
+X=0.2;parts=[]
 for i,(e,a,b) in enumerate(segs):
     L=b-a+(X if i<len(segs)-1 else 0)
     src=f'../c02g/{F[e]}.mp4'
     if not os.path.exists(src): src='../c02g/c02-1-normal.mp4'
     o=f'seg{i}.mp4'
-    subprocess.run(['ffmpeg','-v','error','-y','-i',src,'-filter_complex','[0:v]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1[p];[p]split[p1][p2];[p1][p2]concat=n=2:v=1,scale=1080:1920:flags=lanczos,fps=24,setsar=1[v]','-map','[v]','-t',f'{L:.3f}','-an','-c:v','libx264','-crf','16','-pix_fmt','yuv420p',o],check=True)
+    subprocess.run(['ffmpeg','-v','error','-y','-i',src,'-filter_complex','[0:v]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1[p];[p]split[p1][p2];[p1][p2]concat=n=2:v=1,scale=1080:1920:flags=lanczos,crop=1080:1670:0:250,pad=1080:1920:0:0:color=0x05060f,fps=24,setsar=1[v]','-map','[v]','-t',f'{L:.3f}','-an','-c:v','libx264','-crf','16','-pix_fmt','yuv420p',o],check=True)
     parts.append((o,b-a))
 ins=[];fl=[];prev='[0:v]';off=0
 for o,_ in parts: ins+=['-i',o]

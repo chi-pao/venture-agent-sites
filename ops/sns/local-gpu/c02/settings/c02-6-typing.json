@@ -1,0 +1,7 @@
+{
+ "seed": 42,
+ "prefix": "c02-6-typing",
+ "image": "baby720.png",
+ "pos": "Close-up portrait of a one-year-old baby sitting in front of a laptop in a dark room at night, face lit by the cool blue light of the screen. Static camera, fixed shot, no camera movement, no zoom, no pan. The dark blurred background stays exactly the same. Soft 3D CG style, smooth natural motion. The baby keeps the eyes fixed on the laptop screen, looking straight ahead, with a calm, serious neutral face and closed mouth, blinking occasionally. Both small chubby hands are visible at the bottom corners of the frame, on the left and right sides of the laptop, gently and slowly tapping the keyboard with small movements. The forearms and shoulders move slightly with the typing. The head stays still and does not look down.",
+ "neg": "camera movement, zoom, pan, shaking, jitter, flicker, morphing, background change, text, subtitles, watermark, logo, distorted face, deformed face, different child, aging, adult, adult hands, extra people, extra hands, extra fingers, deformed hands, fused fingers, big hand movements, fast motion, blurry, low quality, crying, smiling, open mouth, looking down, lowering head, eyes closed, half closed eyes"
+}

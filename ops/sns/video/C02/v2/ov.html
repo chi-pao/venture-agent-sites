@@ -4,8 +4,8 @@
 #r{position:absolute;inset:0}
 .top{position:absolute;top:50px;left:0;right:0;text-align:center;z-index:5}
 .tag{display:inline-block;border:4px solid #29e7ff;font-weight:800;font-size:32px;padding:6px 28px;border-radius:60px;box-shadow:0 0 20px #29e7ff;background:rgba(5,6,15,.6)}
-.ttl{font-family:'Dela Gothic One';font-size:72px;margin-top:12px;text-shadow:0 0 12px #000,0 0 30px #ff4fd8}
-.win{position:absolute;left:40px;right:40px;top:1210px;height:560px;background:rgba(10,14,30,.88);border:3px solid #3b4a7a;border-radius:28px;box-shadow:0 0 40px rgba(41,231,255,.25);z-index:4;overflow:hidden}
+.ttl{font-family:'Dela Gothic One';font-size:60px;margin-top:12px;text-shadow:0 0 12px #000,0 0 30px #ff4fd8}
+.win{position:absolute;left:40px;right:40px;top:1180px;height:620px;background:rgba(10,14,30,.88);border:3px solid #3b4a7a;border-radius:28px;box-shadow:0 0 40px rgba(41,231,255,.25);z-index:4;overflow:hidden}
 .bar{height:56px;background:#1b2340;display:flex;align-items:center;padding:0 22px;font-size:26px;font-weight:800;color:#9fb2d6;gap:14px}
 .bar i{width:16px;height:16px;border-radius:50%;display:inline-block}
 .msgs{position:absolute;left:24px;right:24px;top:72px;bottom:110px;display:flex;flex-direction:column;justify-content:flex-end;gap:16px}
@@ -18,10 +18,10 @@
 .cur{display:inline-block;width:14px;height:30px;background:#7dff9b;vertical-align:middle;margin-left:4px}
 .inp{position:absolute;left:24px;right:24px;bottom:22px;height:72px;border-radius:36px;background:#0b0f1c;border:2px solid #3b4a7a;display:flex;align-items:center;padding:0 24px;font-size:32px;font-weight:800;color:#dfe7ff}
 .inp .ph{color:#56628a}
-.cnt{position:absolute;right:56px;top:1150px;background:#ff3b5c;font-family:'Dela Gothic One';font-size:38px;padding:4px 20px;border-radius:14px;z-index:6;transform:rotate(6deg)}
+.cnt{position:absolute;right:56px;top:250px;background:#ff3b5c;font-family:'Dela Gothic One';font-size:38px;padding:4px 20px;border-radius:14px;z-index:6;transform:rotate(6deg)}
 .big{position:absolute;left:0;right:0;text-align:center;font-family:'Dela Gothic One';z-index:6;text-shadow:0 0 14px #000,0 0 30px #000}
-.sub{position:absolute;left:60px;right:60px;top:1010px;min-height:110px;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:44px;line-height:1.3;padding:12px 26px;background:rgba(5,6,20,.82);border:3px solid rgba(255,255,255,.25);border-radius:26px;z-index:6}
-.who{position:absolute;left:80px;top:982px;font-size:28px;font-weight:800;padding:3px 16px;border-radius:12px;z-index:7}
+.sub{font-size:40px!important;position:absolute;left:60px;right:60px;top:1050px;min-height:100px;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:44px;line-height:1.3;padding:12px 26px;background:rgba(5,6,20,.82);border:3px solid rgba(255,255,255,.25);border-radius:26px;z-index:6}
+.who{position:absolute;left:80px;top:1022px;font-size:28px;font-weight:800;padding:3px 16px;border-radius:12px;z-index:7}
 .note{position:absolute;right:30px;bottom:22px;font-size:22px;color:#9aa6d9;z-index:7}
 </style></head><body><div id="r"></div>
 <script>
@@ -39,9 +39,9 @@ window.render=t=>{const ev=D.ev;let ci=0;ev.forEach((e,i)=>{if(t>=e.t0)ci=i});co
  const last=c.end?[]:B.slice(-3);
  if(!c.end){h+=`<div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>AI とのやりとり（再現）</div><div class="msgs">${last.join('')}</div><div class="inp">${input?input+'<span class="cur" style="background:#dfe7ff"></span>':'<span class="ph">メッセージを入力</span>'}</div></div>`;}
  if(c.round)h+=`<div class="cnt" style="transform:rotate(6deg) scale(${pop((t-c.t0)/0.4)})">${c.round}回目</div>`;
- if(c.n==='v1')h+=`<div class="big" style="top:760px;font-size:120px;color:#ffe14d;transform:scale(${pop((t-c.t0)/0.4)})">え？</div>`;
- if(c.n==='v3')h+=`<div class="big" style="top:760px;font-size:110px;color:#ff3b5c;transform:rotate(-6deg) scale(${pop((t-c.t0)/0.4)})">日本語で！！</div>`;
- if(c.n==='v5')h+=`<div class="big" style="top:760px;font-size:110px;color:#c7d2ff;opacity:${ease((t-c.t0-0.6)/0.4)}">……読めない</div>`;
+ if(c.n==='v1')h+=`<div class="big" style="top:240px;font-size:120px;color:#ffe14d;transform:scale(${pop((t-c.t0)/0.4)})">え？</div>`;
+ if(c.n==='v3')h+=`<div class="big" style="top:240px;font-size:110px;color:#ff3b5c;transform:rotate(-6deg) scale(${pop((t-c.t0)/0.4)})">日本語で！！</div>`;
+ if(c.n==='v5')h+=`<div class="big" style="top:240px;font-size:110px;color:#c7d2ff;opacity:${ease((t-c.t0-0.6)/0.4)}">……読めない</div>`;
  if(c.end){h+=`<div style="position:absolute;inset:0;background:rgba(5,6,15,${0.72*ease((t-c.t0)/0.5)});z-index:6"></div><div class="big" style="top:760px;font-size:88px;line-height:1.35;text-shadow:0 0 12px #fff,0 0 34px #ff4fd8;opacity:${ease((t-c.t0)/0.5)}">AI初心者の<br>挑戦は、続く……</div><div class="big" style="top:1110px;font-size:42px;font-family:'M PLUS Rounded 1c';font-weight:800;color:#29e7ff;opacity:${ease((t-c.t0-1.2)/0.4)}">チャンネル登録で、続きを見てね</div>`}
  else if(c.kind==='voice'){const ai=c.who==='ai';h+=`<div class="who" style="background:${ai?'#10a37f':'#29e7ff'};color:${ai?'#fff':'#05060f'}">${ai?'AI':'赤ちゃんのぼる（心の声）'}</div><div class="sub" style="opacity:${ease((t-c.t0)/0.2)}">${c.text}</div>`}
  h+=`<div class="note">声・映像：AI で作成／画面は再現したイメージ</div>`;
