@@ -1,0 +1,58 @@
+# お買い得物件チェッカー（のぼるの挑戦記）の SNS 投稿を、クラウドで15分ごとに出す。
+# Metricool を通さないので、無料の枠に左右されない。パソコンが止まっていても出る。
+# - 出すのは ops/sns/autopost/posts.json の「approved」（のぼるさんの OK）がある物だけ。
+# - 合いことばは GitHub の秘密欄にだけ置く。画面にも記録にも出さない。
+# - 出した記録は ops/sns/autopost/log.json に書いて main に保存する（二重に出さないため）。
+name: SNS autopost (checker)
+
+on:
+  schedule:
+    - cron: '3,18,33,48 * * * *'
+  workflow_dispatch:
+    inputs:
+      practice:
+        description: '練習（つながりの確認だけ。投稿しない）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sns-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Tokyo
+      THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
+      INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
+      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: つながりの確認（練習）
+        if: github.event_name == 'workflow_dispatch' && inputs.practice
+        run: python tools/sns_autopost/post.py --check
+      - name: 投稿する
+        if: github.event_name == 'schedule' || !inputs.practice
+        run: python tools/sns_autopost/post.py
+      - name: 記録を保存する
+        if: always() && (github.event_name == 'schedule' || !inputs.practice)
+        run: |
+          git diff --quiet -- ops/sns/autopost/log.json && exit 0
+          git config user.name "sns-autopost"
+          git config user.email "sns-autopost@users.noreply.github.com"
+          git add ops/sns/autopost/log.json
+          git commit -m "SNS 自動投稿の記録"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep $((i * 15)); done
+          exit 1
