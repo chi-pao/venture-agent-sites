@@ -25,7 +25,9 @@ KINDS = {'sns_post_draft': 'SNS投稿文', 'image_asset': '画像', 'video_scrip
          'image_post_schedule': '画像の予約投稿'}
 # 予約投稿の依頼書は手書き（ops/chatgpt/outbox/）なので、--render では上書きしない
 RENDERED_KINDS = ('sns_post_draft', 'image_asset', 'video_script')
-STATUSES = ('承認待ち', '承認済み', '予約済み', '投稿済み', '取消')
+STATUSES = ('承認待ち', '承認済み', '予約済み', '投稿済み', '保留', '取消')
+# 状態のあとに（理由）を書いてよい。例: 「保留（VS Code 側でリアルな版を作成中）」
+STATUS_NOTE = re.compile(r'（[^（）]*）$')
 CHANNEL_LIMITS = {'X': 140, 'Threads': 500, 'Instagram': 2200, 'TikTok': 2200, 'YouTube': 1000, 'note': 3000}
 SECRET = re.compile(r'(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|sk-[A-Za-z0-9]{16,}|[sr]k_(live|test)_|Bearer\s+\S{8,}|api_?key|password)', re.I)
 CLAIM = re.compile(r'\d[\d,.]*\s*(人|名|件|%|％|倍|万|億|円|位)')
@@ -64,7 +66,7 @@ def check_task(task):
     kind = task.get('kind')
     if kind not in KINDS:
         errors.append('kind は ' + ' / '.join(KINDS) + ' のいずれか')
-    if task.get('status') not in STATUSES:
+    if STATUS_NOTE.sub('', str(task.get('status', ''))) not in STATUSES:
         errors.append('status は ' + ' / '.join(STATUSES) + ' のいずれか')
     payload = task.get('payload')
     if not isinstance(payload, dict):

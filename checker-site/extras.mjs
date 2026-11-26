@@ -3,7 +3,8 @@
 //    「実際の価格 ÷ 査定額」の真ん中の半分（25〜75%）。price-bands.json（tools/checker_train/build_bands.py）。
 //    読めないときや件数が少ない区分は、査定額だけで分けた幅を使う。
 // 1b) 築30年以上の家: 建物の状態で値段が大きく変わることと、土地だけの目安（公示地価×土地の広さ）を添える。
-// 2) 近くの似た取引: 同じ市区町村の実際の取引（area/<code>/sales.json）から、築年数・土地・建物の広さが近いもの5件。
+// 2) 近くの似た取引: 同じ市区町村の実際の取引（area/<code>/sales.json）から、築年数・広さが近く、家に近い町のもの5件（near.mjs）。
+import {nearestSales} from './near.mjs?v=20261126';
 const BANDS=[[800,.61,1.47],[1500,.67,1.43],[2500,.85,1.30],[4000,.90,1.21],[Infinity,.92,1.22]];
 const fmt=v=>Math.round(v).toLocaleString('ja-JP');
 const el=(tag,props={},...kids)=>{const e=document.createElement(tag);Object.assign(e,props);e.append(...kids);return e;};
@@ -49,15 +50,16 @@ async function show(d){
       land?el('p',{},el('strong',{textContent:`土地だけの目安：約${fmt(land)}万円`}),
         el('small',{textContent:` （公示地価 ${fmt(d.landPrice)}円/㎡ × 土地 ${fmt(d.landArea)}㎡。${d.landPriceLevel===2?'同じ町':'同じ市区町村'}の住宅地の地点の真ん中の値。土地の形や前の道で上下します）`})):''));
   }
-  let sales=[];
-  try{const r=await fetch(`area/${d.city}/sales.json`);if(r.ok)sales=await r.json();}catch{}
-  if(!sales.length)return;
-  const age=2026-d.year;
-  const score=s=>{const a=s[6]?2026-s[6]:null;return (a==null?1.5:Math.abs(a-age)/8)**2+(s[4]&&d.landArea?Math.log(s[4]/d.landArea)/.35:1)**2+(s[5]&&d.buildingArea?Math.log(s[5]/d.buildingArea)/.25:1)**2;};
-  const near=sales.map(s=>[score(s),s]).sort((x,y)=>x[0]-y[0]).slice(0,5).map(x=>x[1]);
-  const rows=near.map(s=>el('tr',{},...[`${s[0]}年${s[1]?`第${s[1]}四半期`:''}`,s[2],`${fmt(s[3])}万円`,s[4]?`${s[4]}㎡`:'',s[5]?`${s[5]}㎡`:'',s[6]?`${s[6]}年`:''].map((t,i)=>el('td',{textContent:t,className:i>=2?'num':''}))));
-  b.append(el('h3',{textContent:`${d.cityName}で築年数・広さが近い実際の取引`}),
-    el('div',{className:'tablewrap'},el('table',{},el('thead',{},el('tr',{},...['時期','地区','価格','土地','建物','建築年'].map(t=>el('th',{textContent:t})))),el('tbody',{},...rows))),
-    el('small',{textContent:'出典：国土交通省 不動産情報ライブラリ（当サイト集計）。取引ごとの事情や建物の状態は反映していません。'}));
+  const get=url=>fetch(url).then(r=>r.ok?r.json():null).catch(()=>null);
+  const [sales,towns,landAll]=await Promise.all([get(`area/${d.city}/sales.json`),get(`area/${d.city}/towns.json`),get('land-prices.json')]);
+  if(!sales?.length)return;
+  const district=d.districtKey||d.district||'';
+  const home={district,towns:towns||{},pos:towns?.[district]||null,landPrices:landAll?.[d.city]||{},landPrice:d.landPrice||null};
+  const near=nearestSales(sales,d,home);
+  const where=x=>x.km===0?'同じ町':x.km!=null?`約${x.km<1?'1km以内':Math.round(x.km)+'km'}`:'';
+  const rows=near.map(x=>{const s=x.s;return el('tr',{},...[`${s[0]}年${s[1]?`第${s[1]}四半期`:''}`,s[2],where(x),`${fmt(s[3])}万円`,s[4]?`${s[4]}㎡`:'',s[5]?`${s[5]}㎡`:'',s[6]?`${s[6]}年`:''].map((t,i)=>el('td',{textContent:t,className:i>=3?'num':''})));});
+  b.append(el('h3',{textContent:`${d.cityName}で、家の近く・築年数と広さが近い実際の取引`}),
+    el('div',{className:'tablewrap'},el('table',{},el('thead',{},el('tr',{},...['時期','地区','距離','価格','土地','建物','建築年'].map(t=>el('th',{textContent:t})))),el('tbody',{},...rows))),
+    el('small',{textContent:'出典：国土交通省 不動産情報ライブラリ（当サイト集計）。距離は町どうしのおおよその目安（国土数値情報の地価の地点から）。取引ごとの事情や建物の状態は反映していません。'}));
 }
 document.addEventListener('checker:result',e=>show(e.detail));
