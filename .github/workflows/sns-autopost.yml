@@ -1,8 +1,10 @@
 # お買い得物件チェッカー（のぼるの挑戦記）の SNS 投稿を、クラウドで15分ごとに出す。
 # Metricool を通さないので、無料の枠に左右されない。パソコンが止まっていても出る。
 # - 出すのは ops/sns/autopost/posts.json の「approved」（のぼるさんの OK）がある物だけ。
-# - 合いことばは GitHub の秘密欄にだけ置く。画面にも記録にも出さない。
-# - 出した記録は ops/sns/autopost/log.json に書いて main に保存する（二重に出さないため）。
+# - YouTube・TikTok の合いことばは、非公開リポジトリ venture-studio-data の autopost/tokens.enc
+#   （鍵 THREADS_TOKEN_KEY でかぎをかけた物）。そのままの文字は画面にもどこにも出さない。
+# - このリポジトリは公開なので、出した記録は画面に出さず、非公開リポジトリの autopost/log.json と
+#   INBOX.md にだけ書く（main には書かない）。お知らせは Discord（STUDIO_DISCORD_WEBHOOK）にも。
 name: SNS autopost (checker)
 
 on:
@@ -14,9 +16,17 @@ on:
         description: '練習（つながりの確認だけ。投稿しない）'
         type: boolean
         default: true
+      youtube_test:
+        description: 'YouTube の試し（2秒の動画を限定公開で上げて、状態を確かめて、すぐ消す）'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'tools/sns_autopost/**'
+      - '.github/workflows/sns-autopost.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sns-autopost
@@ -28,31 +38,54 @@ jobs:
     timeout-minutes: 40
     env:
       TZ: Asia/Tokyo
+      PRACTICE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.practice && !inputs.youtube_test) }}
+      AUTOPOST_DATA: ${{ github.workspace }}/studio-data/autopost
       THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
       INSTAGRAM_TOKEN: ${{ secrets.INSTAGRAM_TOKEN }}
       BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
       BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
-      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      STUDIO_DISCORD_WEBHOOK: ${{ secrets.STUDIO_DISCORD_WEBHOOK }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 記録と合いことばの置き場所（非公開リポジトリ）を取り出す
+        uses: actions/checkout@v4
+        with:
+          repository: chi-pao/venture-studio-data
+          ssh-key: ${{ secrets.STUDIO_DATA_DEPLOY_KEY }}
+          path: studio-data
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: 合いことばの鍵を一時的に置く
+        env:
+          KEY: ${{ secrets.THREADS_TOKEN_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/secrets" && chmod 700 "$RUNNER_TEMP/secrets"
+          printf '%s' "$KEY" > "$RUNNER_TEMP/secrets/key"
+          echo "AUTOPOST_KEY_FILE=$RUNNER_TEMP/secrets/key" >> "$GITHUB_ENV"
       - name: つながりの確認（練習）
-        if: github.event_name == 'workflow_dispatch' && inputs.practice
+        if: env.PRACTICE == 'true'
         run: python tools/sns_autopost/post.py --check
+      - name: YouTube の試し
+        if: github.event_name == 'workflow_dispatch' && inputs.youtube_test
+        run: python tools/sns_autopost/post.py --youtube-test
       - name: 投稿する
-        if: github.event_name == 'schedule' || !inputs.practice
+        if: env.PRACTICE != 'true' && !(github.event_name == 'workflow_dispatch' && inputs.youtube_test)
         run: python tools/sns_autopost/post.py
       - name: 記録を保存する
-        if: always() && (github.event_name == 'schedule' || !inputs.practice)
+        if: always() && env.PRACTICE != 'true'
+        run: bash studio/cloud/save_data.sh studio-data "SNS 自動投稿"
+      - name: 鍵を消す
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/secrets"
+      - name: 止まったことを知らせる
+        if: failure() && env.PRACTICE != 'true'
         run: |
-          git diff --quiet -- ops/sns/autopost/log.json && exit 0
-          git config user.name "sns-autopost"
-          git config user.email "sns-autopost@users.noreply.github.com"
-          git add ops/sns/autopost/log.json
-          git commit -m "SNS 自動投稿の記録"
-          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep $((i * 15)); done
-          exit 1
+          if [ -n "$STUDIO_DISCORD_WEBHOOK" ]; then
+            curl -s -o /dev/null -H 'Content-Type: application/json' \
+              -d '{"content":"**SNS の自動投稿が動けませんでした**\nClaude Code に「SNS の自動投稿が止まった」と伝えてください。"}' \
+              "$STUDIO_DISCORD_WEBHOOK" || true
+          fi
