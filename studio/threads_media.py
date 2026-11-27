@@ -213,6 +213,15 @@ def make_card(it, out, bg=None):
     return out
 
 
+def make_hook_image(it, out, bg):
+    """紹介の1本目の1枚目：自分で作った AI の場面に、つかみの言葉・「PR」をのせた画像。
+    続く楽天の商品写真には何も重ねない（楽天アフィリエイトの決まり）。"""
+    img = fit_cover(bg.convert("RGB")).convert("RGBA")
+    img.alpha_composite(hook_overlay(it, rank=False))  # 出す日には順位が変わっているので、順位は入れない
+    img.convert("RGB").save(out, "JPEG", quality=90)
+    return out
+
+
 # ---------- 紹介動画 ----------
 def fetch_image(url):
     Image, _, _ = _pil()
@@ -251,7 +260,7 @@ def photo_frame(photo, n, total, bg=None):
     return img
 
 
-def hook_overlay(it):
+def hook_overlay(it, rank=True):
     """AI の場面の上にのせる文字（つかみ・順位・PR）。下ほど暗くして読みやすくする。"""
     Image, ImageDraw, _ = _pil()
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -264,7 +273,7 @@ def hook_overlay(it):
     img.alpha_composite(shadow)
     d = ImageDraw.Draw(img, "RGBA")
     p = it.get("product") or {}
-    label = f"楽天 {p.get('genre') or '総合'} {p['rank']}位" if p.get("rank") else "楽天で見つけた物"
+    label = f"楽天 {p.get('genre') or '総合'} {p['rank']}位" if rank and p.get("rank") else "楽天で見つけた物"
     label = re.sub(r"（.*?）", "", label)
     f = font(40)
     tw = d.textlength(label, font=f)
@@ -272,9 +281,10 @@ def hook_overlay(it):
     d.text((96, 84), label, font=f, fill=BG)
     d.rounded_rectangle((W - 72 - 90, 72, W - 72, 144), radius=36, fill=(0, 0, 0, 150))
     d.text((W - 72 - 68, 84), "PR", font=f, fill=FG)
-    lines = [ln.strip() for ln in it["parts"][0].split("\n") if ln.strip()]
-    hook = re.sub(r"^【|】$", "", lines[0]) if lines else ""
-    hl = wrap(d, hook, font(80), W - 144)[:4]
+    # 絵文字は字体にないので画像には入れない（文の方には残る）
+    no_emoji = re.compile("[\U00010000-\U0010FFFF\uFE0E\uFE0F\u200D\u2600-\u27BF]")
+    lines = [re.sub(r"^【|】$", "", no_emoji.sub("", ln).strip()) for ln in it["parts"][0].split("\n") if ln.strip()]
+    hl = [w for ln in lines[:2] for w in wrap(d, ln, font(80), W - 144)][:5]
     y = H - 170 - int(80 * 1.3) * len(hl)
     for ln in hl:
         d.text((72, y), ln, font=font(80), fill=FG, stroke_width=2, stroke_fill=(0, 0, 0, 160))
@@ -390,6 +400,11 @@ def make_for(items, video=True, ai=None):
                     make_video(it, out, frames, bg)
                     make_video(it, folder / "preview.mp4", frames, bg, small=(432, 540))
                     it["video"] = {"local": str(out.relative_to(T.DATA)), "url": None}
+                    made.append(out.name)
+                else:  # 動画を作らない日は、つかみの画像を1枚目にする（続けて商品写真）
+                    out = folder / f"{it['id']}.jpg"
+                    make_hook_image(it, out, bg)
+                    it["card"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                     made.append(out.name)
             else:
                 out = folder / f"{it['id']}.jpg"

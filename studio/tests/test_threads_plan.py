@@ -88,6 +88,7 @@ class PlanTest(unittest.TestCase):
         promo = new[1]
         self.assertEqual(len(promo["parts"]), 2)
         self.assertTrue(promo["parts"][1].startswith("PR｜サイズを確かめてね"))
+        self.assertEqual(T.media_index(promo), 0)  # 写真は1本目（つかみ）に付ける
         self.assertIn("▽楽天市場の商品ページ\n" + products[0]["url"], promo["parts"][1])
         self.assertIn("1月1日時点 1,980円・送料無料", promo["parts"][1])
         self.assertEqual(T.check_rules(promo["parts"]), [])
