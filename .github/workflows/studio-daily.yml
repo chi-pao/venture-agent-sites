@@ -1,4 +1,4 @@
-# 事業スタジオを毎朝クラウドで動かす（オーナーのパソコンが止まっていても動く）。
+# 事業スタジオを3日に1回（2026-11-27 から。利用上限の節約のため）クラウドで動かす（オーナーのパソコンが止まっていても動く）。
 # - Claude は CLAUDE_CODE_OAUTH_TOKEN（`claude setup-token` で作る合鍵）で、今の契約の範囲で動く。
 #   ANTHROPIC_API_KEY は絶対に置かない（置くとそちらが優先され、従量課金になる）。
 # - 記録は非公開リポジトリ chi-pao/venture-studio-data に置く（このリポジトリは公開なので、ここには置かない）。
@@ -8,7 +8,7 @@ name: Studio daily (cloud)
 
 on:
   schedule:
-    - cron: '0 22 * * *'   # 日本時間の毎朝 07:00
+    - cron: '0 22 */3 * *'   # 日本時間の朝 07:00、3日に1回（月末は間が1〜2日になることがある）
   workflow_dispatch:
     inputs:
       practice:
@@ -104,6 +104,7 @@ jobs:
           STUDIO_PUSH_TOKEN: ${{ github.token }}
           STUDIO_DISCORD_WEBHOOK: ${{ secrets.STUDIO_DISCORD_WEBHOOK }}
           STUDIO_STOP_AFTER_MINUTES: '240'
+          STUDIO_STATUS_REPORT: '1'
           BASH_DEFAULT_TIMEOUT_MS: '1800000'
           BASH_MAX_TIMEOUT_MS: '3600000'
         run: |
@@ -117,6 +118,7 @@ jobs:
           ( while sleep 600; do bash cloud/save_data.sh "$DATA_DIR" "途中の記録" >/dev/null 2>&1; done ) &
           saver=$!
           echo "=== $(date '+%Y-%m-%d %H:%M') クラウドで開始" >> "$DATA_DIR/auto.log"
+          export STUDIO_NEXT_RUN="$(TZ=Asia/Tokyo date -d '+3 days' '+%-m/%-d')"
           python studio.py auto >> "$DATA_DIR/auto.log" 2>&1 || echo "スタジオが途中で止まりました（記録は auto.log）"
           kill "$saver" 2>/dev/null || true
           echo "スタジオの今回の分が終わりました（中身は非公開の記録にあります）"
