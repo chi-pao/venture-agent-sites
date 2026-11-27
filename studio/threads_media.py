@@ -379,7 +379,7 @@ def make_video(it, out, clip_frames, bg, photos=4, small=None):
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         # 1. AI の場面に文字をのせた動画
-        hook_overlay(it).save(tmp / "hook.png")
+        hook_overlay(it, rank=False).save(tmp / "hook.png")  # 出す日には順位が変わるので入れない
         first = Path(clip_frames[0])
         _ff(["-framerate", "24", "-i", str(first.parent / "f%04d.png"), "-i", str(tmp / "hook.png"),
              "-filter_complex",
@@ -434,23 +434,23 @@ def make_for(items, video=True, ai=None):
             scene = it.get("scene") or DEFAULT_SCENE
             bg_path = folder / "scene.png"
             if not bg_path.exists():
-                ai.image(scene, bg_path)
+                ai.image(scene, bg_path, art=it.get("art", "photo"))
             bg = Image.open(bg_path).convert("RGB")
             if it.get("product"):
-                if video and it.get("images"):
+                # つかみの画像（困りごとの場面＋実物写真）はいつも作る。動画がある日は、動画 → この画像 → 商品写真の順に並ぶ
+                out = folder / f"{it['id']}-hook.jpg"  # 前の画像と名前を分ける（古い物が出ないように）
+                make_hook_image(it, out, bg)
+                it["card"] = {"local": str(out.relative_to(T.DATA)), "url": None}
+                made.append(out.name)
+                if (video or it.get("make_video")) and it.get("images"):
                     frames_dir = folder / "clip"
                     frames = sorted(frames_dir.glob("f*.png")) if frames_dir.exists() else []
                     if not frames:
-                        frames = ai.video(bg_path, scene, frames_dir)
+                        frames = ai.video(bg_path, scene, frames_dir, art=it.get("art", "photo"))
                     out = folder / f"{it['id']}.mp4"
                     make_video(it, out, frames, bg)
                     make_video(it, folder / "preview.mp4", frames, bg, small=(432, 540))
                     it["video"] = {"local": str(out.relative_to(T.DATA)), "url": None}
-                    made.append(out.name)
-                else:  # 動画を作らない日は、つかみの画像を1枚目にする（続けて商品写真）
-                    out = folder / f"{it['id']}-hook.jpg"  # 前の画像と名前を分ける（古い物が出ないように）
-                    make_hook_image(it, out, bg)
-                    it["card"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                     made.append(out.name)
             else:
                 out = folder / f"{it['id']}.jpg"

@@ -21,6 +21,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 COMFY_DIR = Path("C:/AI/comfy/ComfyUI_windows_portable")
 HOST = "http://127.0.0.1:8188"
+# 絵の雰囲気（2026-11-27 のぼるさん：アニメ風でも、写真風でも、動画でもよい）
+STYLES = {
+    "photo": "photorealistic, natural soft light, cozy Japanese home, 35mm photo, high detail",
+    "anime": ("Japanese anime illustration, slice-of-life anime still, clean line art, soft cel shading, "
+              "warm pastel colors, cozy Japanese home"),
+}
 STYLE = ("photorealistic, natural soft light, cozy Japanese home, 35mm photo, high detail, "
          "no text, no letters, no logo, no watermark")
 NEGATIVE = "text, letters, words, logo, watermark, brand name, deformed hands, blurry, low quality"
@@ -105,12 +111,16 @@ def fetch(q, out):
     return out
 
 
-def image(prompt, out, width=896, height=1120, seed=None):
-    """FLUX.1 schnell で1枚作る（縦長 4:5）。"""
+def style_text(art):
+    return STYLES.get(art or "photo", STYLES["photo"]) + ", no text, no letters, no logo, no watermark"
+
+
+def image(prompt, out, width=896, height=1120, seed=None, art="photo"):
+    """FLUX.1 schnell で1枚作る（縦長 4:5）。art: "photo"（写真風）か "anime"（アニメ風）。"""
     seed = seed if seed is not None else int(time.time() * 1000) % 2**32
     wf = {
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "flux1-schnell-fp8.safetensors"}},
-        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {STYLE}", "clip": ["1", 1]}},
+        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {style_text(art)}", "clip": ["1", 1]}},
         "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
         "4": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
         "5": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
@@ -125,7 +135,7 @@ def image(prompt, out, width=896, height=1120, seed=None):
     return fetch(files[0], out)
 
 
-def video(start_image, prompt, out_dir, frames=73, width=704, height=896, seed=None):
+def video(start_image, prompt, out_dir, frames=73, width=704, height=896, seed=None, art="photo"):
     """Wan 2.2 5B で、1枚の画像から動く場面（24fps・frames 枚）を作り、連番 PNG で返す。"""
     seed = seed if seed is not None else int(time.time() * 1000) % 2**32
     name = upload(start_image)
@@ -135,7 +145,7 @@ def video(start_image, prompt, out_dir, frames=73, width=704, height=896, seed=N
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
                                                      "type": "wan", "device": "default"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": "wan2.2_vae.safetensors"}},
-        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {STYLE}, gentle natural motion, static camera",
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {style_text(art)}, gentle natural motion, static camera",
                                                          "clip": ["2", 0]}},
         "5": {"class_type": "CLIPTextEncode", "inputs": {"text": NEGATIVE + ", fast motion, camera shake, morphing",
                                                          "clip": ["2", 0]}},
