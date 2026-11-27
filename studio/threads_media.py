@@ -213,11 +213,57 @@ def make_card(it, out, bg=None):
     return out
 
 
-def make_hook_image(it, out, bg):
-    """紹介の1本目の1枚目：自分で作った AI の場面に、つかみの言葉・「PR」をのせた画像。
-    続く楽天の商品写真には何も重ねない（楽天アフィリエイトの決まり）。"""
+def make_hook_image(it, out, bg, photo=None):
+    """紹介の1本目の1枚目：その商品の困りごとの AI の場面（上）＋つかみの言葉＋楽天の商品写真（下の白い台）。
+    楽天の写真は縮小だけして全体を見せ、文字は写真の外にだけ置く（楽天アフィリエイトの決まり）。
+    写真が取れないときは、AI の場面に言葉をのせただけの画像にする。順位は入れない（出す日には変わるため）。"""
+    if photo is None:
+        urls = it.get("images") or []
+        try:
+            photo = fetch_image(urls[0]) if urls else None
+        except Exception:
+            photo = None
+    if photo is None:
+        img = fit_cover(bg.convert("RGB")).convert("RGBA")
+        img.alpha_composite(hook_overlay(it, rank=False))
+        img.convert("RGB").save(out, "JPEG", quality=90)
+        return out
+    Image, ImageDraw, _ = _pil()
     img = fit_cover(bg.convert("RGB")).convert("RGBA")
-    img.alpha_composite(hook_overlay(it, rank=False))  # 出す日には順位が変わっているので、順位は入れない
+    # 上半分の言葉が読めるように、上から下へ暗くする
+    grad = Image.new("L", (1, H))
+    for yy in range(H):
+        grad.putpixel((0, yy), int(70 + 150 * min(1, yy / (H * 0.42))))
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+    shadow.putalpha(grad.resize((W, H)))
+    img.alpha_composite(shadow)
+    d = ImageDraw.Draw(img, "RGBA")
+    f = font(36)
+    label = "楽天で見つけた物"
+    tw = d.textlength(label, font=f)
+    d.rounded_rectangle((60, 54, 60 + tw + 44, 54 + 60), radius=30, fill=ACCENT)
+    d.text((82, 64), label, font=f, fill=BG)
+    d.rounded_rectangle((W - 60 - 86, 54, W - 60, 114), radius=30, fill=(0, 0, 0, 160))
+    d.text((W - 60 - 64, 64), "PR", font=f, fill=FG)
+    no_emoji = re.compile("[\U00010000-\U0010FFFF︎️‍☀-➿]")
+    lines = [no_emoji.sub("", ln).strip() for ln in it["parts"][0].split("\n") if ln.strip()]
+    fh = font(64)
+    hl = [w for ln in lines[:2] for w in wrap(d, ln, fh, W - 120)][:5]
+    y = 150
+    for ln in hl:
+        d.text((60, y), ln, font=fh, fill=FG, stroke_width=2, stroke_fill=(0, 0, 0, 170))
+        y += 84
+    d.rectangle((60, y + 12, 180, y + 20), fill=ACCENT)
+    # 楽天の写真：白い台の上に、加工せず全体を置く
+    top = max(y + 50, 560)
+    box = (90, top, W - 90, H - 70)
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    d.rounded_rectangle((box[0] + 6, box[1] + 10, box[2] + 6, box[3] + 10), radius=30, fill=(0, 0, 0, 90))
+    d.rounded_rectangle(box, radius=30, fill=PHOTO_BG)
+    scale = min((bw - 40) / photo.width, (bh - 40) / photo.height)
+    p = photo.resize((max(1, int(photo.width * scale)), max(1, int(photo.height * scale))))
+    img.paste(p, (box[0] + (bw - p.width) // 2, box[1] + (bh - p.height) // 2))
+    d.text((92, H - 56), "写真：楽天の商品ページより", font=font(28, False), fill=SUB)
     img.convert("RGB").save(out, "JPEG", quality=90)
     return out
 
@@ -402,7 +448,7 @@ def make_for(items, video=True, ai=None):
                     it["video"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                     made.append(out.name)
                 else:  # 動画を作らない日は、つかみの画像を1枚目にする（続けて商品写真）
-                    out = folder / f"{it['id']}.jpg"
+                    out = folder / f"{it['id']}-hook.jpg"  # 前の画像と名前を分ける（古い物が出ないように）
                     make_hook_image(it, out, bg)
                     it["card"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                     made.append(out.name)
