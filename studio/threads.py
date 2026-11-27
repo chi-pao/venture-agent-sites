@@ -126,7 +126,7 @@ def parse_time(s):
 
 # ---------- 決まりの確認 ----------
 def check_rules(parts, images=None):
-    """守れていない所の一覧を返す（空なら OK）。images は1本目に付ける画像の URL。"""
+    """守れていない所の一覧を返す（空なら OK）。images は付ける画像の URL（付けるのは media_index の本）。"""
     problems = []
     images = images or []
     if len(images) > 20:
@@ -299,8 +299,16 @@ def posted_today(items, day):
                and it.get("kind") != "返信")
 
 
+def media_index(it):
+    """写真・動画を付ける本の番号。2026-11-27 のぼるさんの決まり：1本目は人を引きつける言葉だけにして、
+    写真・動画はつないだ2本目に付ける（1本だけの投稿は1本目）。"""
+    n = len(it.get("parts") or [])
+    i = it.get("media_part", 1 if n > 1 else 0)
+    return max(0, min(int(i), n - 1)) if n else 0
+
+
 def attachments(it):
-    """1本目に付ける物：動画（あれば先頭）→ 写真カード → 楽天の商品写真。最大20個。"""
+    """写真・動画の本（media_index）に付ける物：動画（あれば先頭）→ 写真カード → 楽天の商品写真。最大20個。"""
     media = []
     for key, kind in (("video", "video"), ("card", "image")):
         m = it.get(key)
@@ -321,10 +329,11 @@ def clean_topic(topic):
 def post_item(client, it):
     """1本目から順に出す。途中で失敗したら、次の回はその続きから出す。"""
     ids = it.setdefault("posted_ids", [])
+    media = attachments(it)  # 写真・動画の準備ができていなければ、1本目も出さずに止める
     for i in range(len(ids), len(it["parts"])):
         reply_to = ids[-1] if ids else it.get("reply_to")  # 返信は、相手の返信につなげる
         first = i == 0
-        cid = client.create(it["parts"][i], reply_to, attachments(it) if first else None,
+        cid = client.create(it["parts"][i], reply_to, media if i == media_index(it) else None,
                             it.get("topic") if first else None)
         ids.append(client.publish(cid))
     it["status"] = "投稿済み"
