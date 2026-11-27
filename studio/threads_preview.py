@@ -200,7 +200,7 @@ def item_html(it, cache, icon):
         if m:
             links.append(info)
         when = it.get("slot") or ""
-        gal = gallery_html(it, cache) if i == 0 else ""
+        gal = gallery_html(it, cache) if i == T.media_index(it) else ""
         posts.append(post_html(part, when if i == 0 else "", info, i == len(it["parts"]) - 1, icon, gal))
     problems = T.check_rules(it["parts"], it.get("images"))
     if any("（短縮URL）" in p for p in it["parts"]):
@@ -216,7 +216,7 @@ def item_html(it, cache, icon):
     if it.get("images"):
         extra.append(f"商品写真{len(it['images'])}枚")
     if extra:
-        counts += "／1本目に" + "・".join(extra)
+        counts += f"／{T.media_index(it) + 1}本目に" + "・".join(extra)
     num = it["id"].split("-")[-1]
     prod = ""
     if it.get("product"):

@@ -63,25 +63,41 @@ class RulesTest(unittest.TestCase):
 
 
 class MediaTest(unittest.TestCase):
-    def test_carousel_first_part(self):
+    def test_carousel_on_second_part(self):
         api = FakeAPI()
         it = item("m")
         it["images"] = ["https://img/1.jpg", "https://img/2.jpg", "https://img/3.jpg"]
         threads.post_item(client(api), it)
         posts = [c[2] for c in api.calls if c[1].endswith("/threads")]
-        self.assertEqual([p.get("is_carousel_item") for p in posts[:3]], ["true"] * 3)
-        self.assertEqual(posts[3]["media_type"], "CAROUSEL")
-        self.assertEqual(posts[3]["children"], "c1,c2,c3")
-        self.assertEqual(posts[4]["media_type"], "TEXT")  # 2本目は文だけ
+        self.assertEqual(posts[0]["media_type"], "TEXT")  # 1本目は言葉だけ（2026-11-27 の決まり）
+        self.assertEqual([p.get("is_carousel_item") for p in posts[1:4]], ["true"] * 3)
+        self.assertEqual(posts[4]["media_type"], "CAROUSEL")  # 写真は2本目
+        self.assertEqual(posts[4]["children"], "c2,c3,c4")
         self.assertEqual(it["status"], "投稿済み")
+
+    def test_one_part_keeps_media_on_first(self):
+        api = FakeAPI()
+        it = item("o", parts=GOOD[:1])
+        it["images"] = ["https://img/1.jpg"]
+        threads.post_item(client(api), it)
+        first = [c[2] for c in api.calls if c[1].endswith("/threads")][0]
+        self.assertEqual(first["media_type"], "IMAGE")
+
+    def test_media_part_explicit(self):
+        it = item("e", parts=["a", "b", "c"])
+        it["media_part"] = 2
+        self.assertEqual(threads.media_index(it), 2)
+        it["media_part"] = 9
+        self.assertEqual(threads.media_index(it), 2)
 
     def test_single_image(self):
         api = FakeAPI()
         it = item("s")
         it["images"] = ["https://img/1.jpg"]
         threads.post_item(client(api), it)
-        first = [c[2] for c in api.calls if c[1].endswith("/threads")][0]
-        self.assertEqual(first["media_type"], "IMAGE")
+        posts = [c[2] for c in api.calls if c[1].endswith("/threads")]
+        self.assertEqual(posts[0]["media_type"], "TEXT")
+        self.assertEqual(posts[1]["media_type"], "IMAGE")
 
     def test_video_card_first_then_photos(self):
         api = FakeAPI()
@@ -90,18 +106,19 @@ class MediaTest(unittest.TestCase):
         it["video"] = {"local": "media/v/v.mp4", "url": "https://m/v.mp4"}
         threads.post_item(client(api), it)
         posts = [c[2] for c in api.calls if c[1].endswith("/threads")]
-        self.assertEqual(posts[0]["media_type"], "VIDEO")
-        self.assertEqual(posts[0]["video_url"], "https://m/v.mp4")
-        self.assertEqual(posts[1]["image_url"], "https://img/1.jpg")
-        self.assertEqual(posts[2]["media_type"], "CAROUSEL")
+        self.assertEqual(posts[0]["media_type"], "TEXT")
+        self.assertEqual(posts[1]["media_type"], "VIDEO")
+        self.assertEqual(posts[1]["video_url"], "https://m/v.mp4")
+        self.assertEqual(posts[2]["image_url"], "https://img/1.jpg")
+        self.assertEqual(posts[3]["media_type"], "CAROUSEL")
 
     def test_card_only_single_image(self):
         api = FakeAPI()
         it = item("c")
         it["card"] = {"local": "media/c/c.jpg", "url": "https://m/c.jpg"}
         threads.post_item(client(api), it)
-        first = [c[2] for c in api.calls if c[1].endswith("/threads")][0]
-        self.assertEqual((first["media_type"], first["image_url"]), ("IMAGE", "https://m/c.jpg"))
+        second = [c[2] for c in api.calls if c[1].endswith("/threads")][1]
+        self.assertEqual((second["media_type"], second["image_url"]), ("IMAGE", "https://m/c.jpg"))
 
     def test_media_not_uploaded_is_not_posted(self):
         api = FakeAPI()
