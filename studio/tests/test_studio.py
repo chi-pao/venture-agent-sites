@@ -196,6 +196,27 @@ class PartsTest(unittest.TestCase):
         self.assertEqual([i["name"] for i in affiliate.pick(items, 30)], ["b"])
 
 
+
+class StatusReportTest(unittest.TestCase):
+    def test_status_report_sends_summary(self):
+        import os
+        import studio as ST
+        from store import Store
+        with tempfile.TemporaryDirectory() as d:
+            sent = []
+            orig = ST.notify
+            ST.notify = lambda cfg, dd, title, body: sent.append((title, body))
+            os.environ["STUDIO_NEXT_RUN"] = "11/30"
+            try:
+                ST.status_report({"_data": d}, Store(d))
+            finally:
+                ST.notify = orig
+                os.environ.pop("STUDIO_NEXT_RUN", None)
+            self.assertEqual(sent[0][0], "事業スタジオの今の状況")
+            self.assertIn("まだ案はありません", sent[0][1])
+            self.assertIn("11/30", sent[0][1])
+
+
 if __name__ == "__main__":
     unittest.main()
 

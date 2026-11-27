@@ -17,6 +17,7 @@
 """
 import argparse
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timedelta
@@ -404,6 +405,27 @@ def cmd_auto(cfg, store, eng, args):
     except LimitError as e:
         store.write_board()
         paused_notice(cfg, e)
+    finally:
+        if os.environ.get("STUDIO_STATUS_REPORT"):
+            status_report(cfg, store)
+
+
+def status_report(cfg, store):
+    """クラウドで動いた回の終わりに、今の状況をまとめて知らせる（できた物の知らせとは別）。"""
+    recs = store.all()
+    counts = {}
+    for r in recs:
+        counts[r["stage"]] = counts.get(r["stage"], 0) + 1
+    lines = ["**段階ごとの数**"] + ([f"- {STAGES.get(k, k)}：{v}件" for k, v in counts.items()] or ["- まだ案はありません"])
+    waiting = [r for r in recs if r["stage"] in ("owner_check", "needs_fix")]
+    lines += ["", "**あなたの番**"] + ([f"- {r['id']} {r['idea']['title']}（{STAGES[r['stage']]}）" for r in waiting] or ["- なし"])
+    recent = sorted(recs, key=lambda x: x["history"][-1]["at"], reverse=True)[:3]
+    if recent:
+        lines += ["", "**最近動いた案**"] + [f"- {r['idea']['title']}：{STAGES.get(r['stage'], r['stage'])}" for r in recent]
+    nxt = os.environ.get("STUDIO_NEXT_RUN")
+    if nxt:
+        lines += ["", f"次に動くのは {nxt} の朝7時ごろです。"]
+    notify(cfg, cfg["_data"], "事業スタジオの今の状況", chr(10).join(lines))
 
 
 def _cmd_auto(cfg, store, eng, args):
