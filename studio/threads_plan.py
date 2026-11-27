@@ -451,7 +451,10 @@ SCENE_PROMPT = """Threads の投稿に付ける「AI で作る写真・短い動
 
 決まり：
 - 投稿の話題に合う「日本の暮らしの一場面」。季節は今（11月・冬のはじめ）。
-- 商品そのものは描かない（実物と違う絵で誤解させないため）。困っている様子や、使う場所・時間の雰囲気を描く。
+- 商品そのものは描かない（実物と違う絵で誤解させないため。実物の写真は、こちらで画像の下半分に入れる）。
+  紹介の投稿は、その商品で解決する「困りごとの瞬間」を、見てすぐわかるように具体的に描く（場面は画像の上半分に見える）。
+  例：収納ボックス → 押し入れから布団やタオルがあふれている／敷きパッド → 冬の夜、冷たいシーツに足を入れて縮こまる足元／
+      ゴム手袋 → 大掃除で洗剤を使う荒れた手元／すき間ブラシ → ほこりのたまった窓のサッシのアップ。
   例：寒い寝室で布団にくるまる手元／湯気の立つ台所／積み上がった洗濯物／セール前にスマホを見るソファの夜
 - 人は出してよいが、顔ははっきり写さない（手元・後ろ姿・小さく）。実在の人物・有名人・キャラクターは出さない。
 - 文字・看板・ロゴ・ブランドは入れない。
@@ -473,7 +476,9 @@ def add_scenes(items, cfg, ask=None):
     targets = [it for it in items if not it.get("scene")]
     if not targets:
         return
-    posts = "\n\n".join(f"id: {it['id']}（{it.get('kind', '')}）\n{it['parts'][0]}" for it in targets)
+    posts = "\n\n".join(f"id: {it['id']}（{it.get('kind', '')}）\n{it['parts'][0]}" +
+                        (f"\n商品：{(it.get('product') or {}).get('name', '')[:80]}" if it.get("product") else "")
+                        for it in targets)
     answer = ask(SCENE_PROMPT.format(posts=posts), cfg)
     by_id = {c.get("id"): c.get("scene") for c in answer.get("scenes", []) if isinstance(c, dict)}
     for it in targets:
