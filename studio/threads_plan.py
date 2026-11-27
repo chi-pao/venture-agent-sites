@@ -459,13 +459,17 @@ SCENE_PROMPT = """Threads の投稿に付ける「AI で作る写真・短い動
 - 人は出してよいが、顔ははっきり写さない（手元・後ろ姿・小さく）。実在の人物・有名人・キャラクターは出さない。
 - 文字・看板・ロゴ・ブランドは入れない。
 - 動画になるので、ゆっくりした小さな動き（湯気・カーテン・手の動き）がある場面がよい。
+- 絵の雰囲気 "art" を選ぶ（2026-11-27 のぼるさん：アニメ風でも写真風でもよい）。
+  "photo"（写真風）：寝具・家電・収納など、質感や暮らしの空気を見せたい物。
+  "anime"（アニメ風）：家事・子育てのあるある、ちょっと笑える困りごと、気持ちを描きたい場面。
+  毎日まぜて、どちらかに偏らないようにする（10案なら3〜5案はアニメ風）。
 
 投稿：
 {posts}
 
 次の JSON だけを ```json で囲んで出してください。
 ```json
-{{"scenes": [{{"id": "投稿のid", "scene": "English prompt"}}]}}
+{{"scenes": [{{"id": "投稿のid", "scene": "English prompt", "art": "photo か anime"}}]}}
 ```
 """
 
@@ -480,10 +484,13 @@ def add_scenes(items, cfg, ask=None):
                         (f"\n商品：{(it.get('product') or {}).get('name', '')[:80]}" if it.get("product") else "")
                         for it in targets)
     answer = ask(SCENE_PROMPT.format(posts=posts), cfg)
-    by_id = {c.get("id"): c.get("scene") for c in answer.get("scenes", []) if isinstance(c, dict)}
+    by_id = {c.get("id"): c for c in answer.get("scenes", []) if isinstance(c, dict)}
     for it in targets:
-        if by_id.get(it["id"]):
-            it["scene"] = str(by_id[it["id"]])[:400]
+        c = by_id.get(it["id"]) or {}
+        if c.get("scene"):
+            it["scene"] = str(c["scene"])[:400]
+        if c.get("art") in ("photo", "anime"):
+            it["art"] = c["art"]
 
 
 def add_card_specs(items, cfg, ask=None):

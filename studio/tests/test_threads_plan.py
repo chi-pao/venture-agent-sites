@@ -245,11 +245,11 @@ class AIMediaTest(unittest.TestCase):
             def start(self):
                 pass
 
-            def image(self, prompt, out):
+            def image(self, prompt, out, art="photo"):
                 Image.new("RGB", (896, 1120), (120, 90, 60)).save(out)
                 return out
 
-            def video(self, start_image, prompt, out_dir):
+            def video(self, start_image, prompt, out_dir, art="photo"):
                 out_dir = Path(out_dir)
                 out_dir.mkdir(parents=True, exist_ok=True)
                 paths = []
@@ -269,7 +269,8 @@ class AIMediaTest(unittest.TestCase):
             made = M.make_for(items, ai=FakeAI())
         finally:
             M.fetch_image = saved_fetch
-        self.assertEqual(made, ["x-01.jpg", "x-02.mp4"])
+        self.assertEqual(made, ["x-01.jpg", "x-02-hook.jpg", "x-02.mp4"])
+        self.assertTrue((T.DATA / items[1]["card"]["local"]).exists())  # 動画の日も、つかみの画像を作る
         self.assertTrue((T.DATA / items[1]["video"]["local"]).exists())
         self.assertTrue((T.DATA / "media" / "x-02" / "preview.mp4").exists())
 
