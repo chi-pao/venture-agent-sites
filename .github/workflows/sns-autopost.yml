@@ -71,7 +71,9 @@ jobs:
         run: python tools/sns_autopost/post.py --check
       - name: YouTube の試し
         if: github.event_name == 'workflow_dispatch' && inputs.youtube_test
-        run: python tools/sns_autopost/post.py --youtube-test
+        run: |
+          sudo apt-get install -y -qq ffmpeg >/dev/null
+          python tools/sns_autopost/post.py --youtube-test
       - name: 投稿する
         if: env.PRACTICE != 'true' && !(github.event_name == 'workflow_dispatch' && inputs.youtube_test)
         run: python tools/sns_autopost/post.py
