@@ -514,6 +514,14 @@ def make_video(it, out, clip_frames, bg, photos=4, small=None, after_frames=None
 DEFAULT_SCENE = "a calm, warm Japanese living room in the evening, soft lamp light, winter"
 
 
+def edit_prompt(it):
+    """絵を直す AI への指示：1枚目（使う前の場面）の場所はそのまま、2枚目（楽天の写真）の商品を使っている所にする。"""
+    return ("Edit picture 1. Keep the same place, camera angle, lighting, room, furniture and person exactly as in picture 1. "
+            "The product shown in picture 2 must appear with exactly the same shape, color and texture, being used in the scene. "
+            f"{it['after']} "
+            "Do not copy any text, logos, badges, prices or labels from picture 2. No text in the image.")
+
+
 def make_for(items, video=True, ai=None):
     """各投稿に、AI の場面（画像・動画）を使った写真カード／紹介動画を作る。
     ai: threads_ai モジュール（テストでは差しかえる）。"""
@@ -541,7 +549,13 @@ def make_for(items, video=True, ai=None):
             if ba:
                 after_path = folder / "after.png"
                 if not after_path.exists():
-                    ai.image(it["after"], after_path, art=art, seed=seed)
+                    # 使う前の絵をもとに作る（同じ場所になる）。絵を直す AI があれば、楽天の写真を見せて商品の形をそろえる
+                    if getattr(ai, "can_edit", lambda: False)() and it.get("images"):
+                        ref = folder / "product_ref.png"
+                        fetch_image(it["images"][0]).save(ref)  # AI に見せるだけ（投稿には使わない）
+                        ai.edit(bg_path, edit_prompt(it), after_path, product=ref, seed=seed)
+                    else:
+                        ai.image(it["after"], after_path, art=art, seed=seed, init=bg_path, denoise=0.7)
                 after = Image.open(after_path).convert("RGB")
             if it.get("product"):
                 # つかみの画像（使う前と後＋実物写真）はいつも作る。動画がある日は、動画 → この画像 → 商品写真の順に並ぶ
@@ -559,7 +573,7 @@ def make_for(items, video=True, ai=None):
                         adir = folder / "clip_after"
                         after_frames = sorted(adir.glob("f*.png")) if adir.exists() else []
                         if not after_frames:
-                            after_frames = ai.video(folder / "after.png", it["after"], adir, art=art)
+                            after_frames = ai.video(folder / "after.png", it["after"].replace(" from picture 2", ""), adir, art=art)
                     out = folder / f"{it['id']}{'-ba' if ba else ''}.mp4"
                     make_video(it, out, frames, bg, after_frames=after_frames)
                     make_video(it, folder / "preview.mp4", frames, bg, small=(432, 540), after_frames=after_frames)

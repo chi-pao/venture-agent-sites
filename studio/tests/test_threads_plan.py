@@ -245,7 +245,7 @@ class AIMediaTest(unittest.TestCase):
             def start(self):
                 pass
 
-            def image(self, prompt, out, art="photo", seed=None):
+            def image(self, prompt, out, art="photo", seed=None, init=None, denoise=0.7):
                 Image.new("RGB", (896, 1120), (120, 90, 60)).save(out)
                 return out
 
