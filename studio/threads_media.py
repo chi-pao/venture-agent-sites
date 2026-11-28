@@ -552,7 +552,7 @@ def make_for(items, video=True, ai=None):
                     # 使う前の絵をもとに作る（同じ場所になる）。絵を直す AI があれば、楽天の写真を見せて商品の形をそろえる
                     if getattr(ai, "can_edit", lambda: False)() and it.get("images"):
                         ref = folder / "product_ref.png"
-                        fetch_image(it["images"][0]).save(ref)  # AI に見せるだけ（投稿には使わない）
+                        fetch_image(it.get("ref_image") or it["images"][0]).save(ref)  # AI に見せるだけ（投稿には使わない）。文字の少ない写真を ref_image に選べる
                         ai.edit(bg_path, edit_prompt(it), after_path, product=ref, seed=seed)
                     else:
                         ai.image(it["after"], after_path, art=art, seed=seed, init=bg_path, denoise=0.7)
