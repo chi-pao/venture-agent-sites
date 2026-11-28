@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -213,7 +214,62 @@ def make_card(it, out, bg=None):
     return out
 
 
-def make_hook_image(it, out, bg, photo=None):
+def make_ba_image(it, out, before, after, photo):
+    """紹介の1本目の1枚目（使う前と後）：つかみの言葉 → 左「いまは…」右「使うと（イメージ）」の2枚の絵 → 楽天の商品写真。
+    AI の絵は「イメージ」と書き、商品の本当の姿は下の楽天の写真で見せる（写真は縮小だけ・文字を重ねない）。"""
+    Image, ImageDraw, _ = _pil()
+    from PIL import ImageEnhance
+    img = ImageEnhance.Brightness(blur_bg(before)).enhance(0.45).convert("RGBA")
+    d = ImageDraw.Draw(img, "RGBA")
+    f = font(34)
+    label = "楽天で見つけた物"
+    tw = d.textlength(label, font=f)
+    d.rounded_rectangle((60, 50, 60 + tw + 40, 50 + 56), radius=28, fill=ACCENT)
+    d.text((80, 60), label, font=f, fill=BG)
+    d.rounded_rectangle((W - 60 - 82, 50, W - 60, 106), radius=28, fill=(0, 0, 0, 160))
+    d.text((W - 60 - 61, 60), "PR", font=f, fill=FG)
+    no_emoji = re.compile("[\U00010000-\U0010FFFF\uFE0E\uFE0F\u200D\u2600-\u27BF]")
+    lines = [no_emoji.sub("", ln).strip() for ln in it["parts"][0].split("\n") if ln.strip()]
+    fh = font(56)
+    y = 132
+    for ln in [w for ln in lines[:2] for w in wrap(d, ln, fh, W - 120)][:3]:
+        d.text((60, y), ln, font=fh, fill=FG, stroke_width=2, stroke_fill=(0, 0, 0, 170))
+        y += 74
+    # 使う前と後の2枚
+    top, ph, pw, gap = y + 22, 400, 465, 30
+    for k, (pic, tag, color, ink) in enumerate(((before, "いまは…", (0, 0, 0, 175), FG),
+                                                (after, "使うと（イメージ）", ACCENT, BG))):
+        x = 60 + k * (pw + gap)
+        tile = fit_cover(pic.convert("RGB"), pw, ph)
+        mask = Image.new("L", (pw, ph), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, pw - 1, ph - 1), radius=26, fill=255)
+        img.paste(tile, (x, top), mask)
+        ft = font(32)
+        tw = d.textlength(tag, font=ft)
+        d.rounded_rectangle((x + 14, top + 14, x + 14 + tw + 32, top + 64), radius=25, fill=color)
+        d.text((x + 30, top + 22), tag, font=ft, fill=ink)
+    cx, cy = W // 2, top + ph // 2
+    d.ellipse((cx - 34, cy - 34, cx + 34, cy + 34), fill=ACCENT)
+    d.polygon([(cx - 10, cy - 18), (cx + 16, cy), (cx - 10, cy + 18)], fill=BG)
+    y = top + ph + 18
+    text = no_emoji.sub("", str(it.get("after_text") or "")).strip()
+    if text:
+        fa = font(44)
+        d.text(((W - d.textlength(text, font=fa)) // 2, y), text, font=fa, fill=ACCENT)
+        y += 62
+    # 楽天の写真：白い台の上に、加工せず全体を置く
+    box = (90, y + 14, W - 90, H - 66)
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    d.rounded_rectangle(box, radius=26, fill=PHOTO_BG)
+    scale = min((bw - 30) / photo.width, (bh - 30) / photo.height)
+    p = photo.resize((max(1, int(photo.width * scale)), max(1, int(photo.height * scale))))
+    img.paste(p, (box[0] + (bw - p.width) // 2, box[1] + (bh - p.height) // 2))
+    d.text((92, H - 52), "写真：楽天の商品ページより　絵：AI のイメージ", font=font(26, False), fill=SUB)
+    img.convert("RGB").save(out, "JPEG", quality=90)
+    return out
+
+
+def make_hook_image(it, out, bg, photo=None, after=None):
     """紹介の1本目の1枚目：その商品の困りごとの AI の場面（上）＋つかみの言葉＋楽天の商品写真（下の白い台）。
     楽天の写真は縮小だけして全体を見せ、文字は写真の外にだけ置く（楽天アフィリエイトの決まり）。
     写真が取れないときは、AI の場面に言葉をのせただけの画像にする。順位は入れない（出す日には変わるため）。"""
@@ -223,6 +279,8 @@ def make_hook_image(it, out, bg, photo=None):
             photo = fetch_image(urls[0]) if urls else None
         except Exception:
             photo = None
+    if photo is not None and after is not None:
+        return make_ba_image(it, out, bg, after, photo)
     if photo is None:
         img = fit_cover(bg.convert("RGB")).convert("RGBA")
         img.alpha_composite(hook_overlay(it, rank=False))
@@ -339,6 +397,36 @@ def hook_overlay(it, rank=True):
     return img
 
 
+def after_overlay(it):
+    """使った後の場面にのせる文字：「使うと（イメージ）」と、変わったことのひとこと。"""
+    Image, ImageDraw, _ = _pil()
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    grad = Image.new("L", (1, H))
+    for yy in range(H):
+        grad.putpixel((0, yy), 0 if yy < H * 0.5 else int(200 * (yy - H * 0.5) / (H * 0.5)))
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+    shadow.putalpha(grad.resize((W, H)))
+    img.alpha_composite(shadow)
+    d = ImageDraw.Draw(img, "RGBA")
+    f = font(40)
+    tag = "使うと（イメージ）"
+    tw = d.textlength(tag, font=f)
+    d.rounded_rectangle((72, 72, 72 + tw + 48, 144), radius=36, fill=ACCENT)
+    d.text((96, 84), tag, font=f, fill=BG)
+    d.rounded_rectangle((W - 72 - 90, 72, W - 72, 144), radius=36, fill=(0, 0, 0, 150))
+    d.text((W - 72 - 68, 84), "PR", font=f, fill=FG)
+    no_emoji = re.compile("[\U00010000-\U0010FFFF\uFE0E\uFE0F\u200D\u2600-\u27BF]")
+    text = no_emoji.sub("", str(it.get("after_text") or "")).strip()
+    if text:
+        hl = wrap(d, text, font(80), W - 144)[:3]
+        y = H - 190 - 104 * len(hl)
+        for ln in hl:
+            d.text((72, y), ln, font=font(80), fill=FG, stroke_width=2, stroke_fill=(0, 0, 0, 160))
+            y += 104
+        d.rectangle((72, y + 18, 212, y + 28), fill=ACCENT)
+    return img
+
+
 def end_frame(it, bg=None):
     Image, ImageDraw, _ = _pil()
     img = shade(fit_cover(bg.convert("RGB")), 0.55, 0.8) if bg is not None else Image.new("RGBA", (W, H), BG + (255,))
@@ -369,9 +457,9 @@ def _ff(args):
         raise MediaError(f"動画を作れませんでした: {r.stderr[:300]}")
 
 
-def make_video(it, out, clip_frames, bg, photos=4, small=None):
-    """AI の場面（約3秒・つかみの文字つき）→ 楽天の商品写真（各1.8秒）→ 終わりの画面。
-    clip_frames: AI 動画のコマ（PNG の連番）。bg: AI の場面の静止画。"""
+def make_video(it, out, clip_frames, bg, photos=4, small=None, after_frames=None):
+    """使う前の場面（約3秒・つかみの文字つき）→ 使った後の場面（約3秒・あれば）→ 楽天の商品写真（各1.8秒）→ 終わりの画面。
+    clip_frames / after_frames: AI 動画のコマ（PNG の連番）。bg: 使う前の場面の静止画。"""
     urls = (it.get("images") or [])[:photos]
     if not urls:
         raise MediaError("写真がないので動画を作れません")
@@ -386,8 +474,15 @@ def make_video(it, out, clip_frames, bg, photos=4, small=None):
              f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps=30[s];[s][1:v]overlay=0:0,format=yuv420p",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(tmp / "a.mp4")])
         dur_a = len(clip_frames) / 24
-        # 2. 写真と終わりの画面
         segs = [(tmp / "a.mp4", dur_a, False)]
+        if after_frames:
+            after_overlay(it).save(tmp / "after.png")
+            _ff(["-framerate", "24", "-i", str(Path(after_frames[0]).parent / "f%04d.png"), "-i", str(tmp / "after.png"),
+                 "-filter_complex",
+                 f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps=30[s];[s][1:v]overlay=0:0,format=yuv420p",
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(tmp / "b.mp4")])
+            segs.append((tmp / "b.mp4", len(after_frames) / 24, False))
+        # 2. 写真と終わりの画面
         for i, u in enumerate(urls, 1):
             path = tmp / f"p{i}.png"
             photo_frame(fetch_image(u), i, len(urls), bg).save(path)
@@ -432,24 +527,42 @@ def make_for(items, video=True, ai=None):
         folder.mkdir(parents=True, exist_ok=True)
         try:
             scene = it.get("scene") or DEFAULT_SCENE
+            art = it.get("art", "photo")
+            ba = bool(it.get("product") and it.get("after"))  # 使う前 → 使った後 を見せる紹介
+            seed = zlib.crc32(it["id"].encode()) % 2**32  # 前と後で同じ種を使い、同じ部屋・同じ人に近づける
             bg_path = folder / "scene.png"
             if not bg_path.exists():
-                ai.image(scene, bg_path, art=it.get("art", "photo"))
+                if ba:
+                    ai.image(scene, bg_path, art=art, seed=seed)
+                else:
+                    ai.image(scene, bg_path, art=art)
             bg = Image.open(bg_path).convert("RGB")
+            after = None
+            if ba:
+                after_path = folder / "after.png"
+                if not after_path.exists():
+                    ai.image(it["after"], after_path, art=art, seed=seed)
+                after = Image.open(after_path).convert("RGB")
             if it.get("product"):
-                # つかみの画像（困りごとの場面＋実物写真）はいつも作る。動画がある日は、動画 → この画像 → 商品写真の順に並ぶ
-                out = folder / f"{it['id']}-hook.jpg"  # 前の画像と名前を分ける（古い物が出ないように）
-                make_hook_image(it, out, bg)
+                # つかみの画像（使う前と後＋実物写真）はいつも作る。動画がある日は、動画 → この画像 → 商品写真の順に並ぶ
+                out = folder / f"{it['id']}-{'ba' if ba else 'hook'}.jpg"  # 前の画像と名前を分ける（古い物が出ないように）
+                make_hook_image(it, out, bg, after=after)
                 it["card"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                 made.append(out.name)
                 if (video or it.get("make_video")) and it.get("images"):
                     frames_dir = folder / "clip"
                     frames = sorted(frames_dir.glob("f*.png")) if frames_dir.exists() else []
                     if not frames:
-                        frames = ai.video(bg_path, scene, frames_dir, art=it.get("art", "photo"))
-                    out = folder / f"{it['id']}.mp4"
-                    make_video(it, out, frames, bg)
-                    make_video(it, folder / "preview.mp4", frames, bg, small=(432, 540))
+                        frames = ai.video(bg_path, scene, frames_dir, art=art)
+                    after_frames = None
+                    if ba:
+                        adir = folder / "clip_after"
+                        after_frames = sorted(adir.glob("f*.png")) if adir.exists() else []
+                        if not after_frames:
+                            after_frames = ai.video(folder / "after.png", it["after"], adir, art=art)
+                    out = folder / f"{it['id']}{'-ba' if ba else ''}.mp4"
+                    make_video(it, out, frames, bg, after_frames=after_frames)
+                    make_video(it, folder / "preview.mp4", frames, bg, small=(432, 540), after_frames=after_frames)
                     it["video"] = {"local": str(out.relative_to(T.DATA)), "url": None}
                     made.append(out.name)
             else:

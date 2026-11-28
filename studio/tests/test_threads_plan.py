@@ -245,7 +245,7 @@ class AIMediaTest(unittest.TestCase):
             def start(self):
                 pass
 
-            def image(self, prompt, out, art="photo"):
+            def image(self, prompt, out, art="photo", seed=None):
                 Image.new("RGB", (896, 1120), (120, 90, 60)).save(out)
                 return out
 
@@ -265,11 +265,16 @@ class AIMediaTest(unittest.TestCase):
         try:
             items = [{"id": "x-01", "kind": "毎日のおなじみ", "parts": ["おはよう\n総合3位　トイレ"], "scene": "room"},
                      {"id": "x-02", "kind": "紹介", "parts": ["寒い夜、つらい人へ。", "PR｜…"], "scene": "bed",
-                      "product": {"rank": 14, "genre": "家電"}, "images": ["https://img/1.jpg", "https://img/2.jpg"]}]
+                      "product": {"rank": 14, "genre": "家電"}, "images": ["https://img/1.jpg", "https://img/2.jpg"]},
+                     {"id": "x-03", "kind": "紹介", "parts": ["ほこり、終わらない問題。", "PR｜…"], "scene": "dusty shelf",
+                      "after": "clean shelf", "after_text": "なでた所だけ、つやっ",
+                      "product": {"rank": 3}, "images": ["https://img/1.jpg"]}]
             made = M.make_for(items, ai=FakeAI())
         finally:
             M.fetch_image = saved_fetch
-        self.assertEqual(made, ["x-01.jpg", "x-02-hook.jpg", "x-02.mp4"])
+        self.assertEqual(made, ["x-01.jpg", "x-02-hook.jpg", "x-02.mp4", "x-03-ba.jpg", "x-03-ba.mp4"])
+        self.assertTrue((T.DATA / "media" / "x-03" / "after.png").exists())  # 使った後の絵
+        self.assertTrue((T.DATA / "media" / "x-03" / "clip_after").exists())
         self.assertTrue((T.DATA / items[1]["card"]["local"]).exists())  # 動画の日も、つかみの画像を作る
         self.assertTrue((T.DATA / items[1]["video"]["local"]).exists())
         self.assertTrue((T.DATA / "media" / "x-02" / "preview.mp4").exists())
