@@ -115,9 +115,29 @@ def style_text(art):
     return STYLES.get(art or "photo", STYLES["photo"]) + ", no text, no letters, no logo, no watermark"
 
 
-def image(prompt, out, width=896, height=1120, seed=None, art="photo"):
-    """FLUX.1 schnell で1枚作る（縦長 4:5）。art: "photo"（写真風）か "anime"（アニメ風）。"""
+def image(prompt, out, width=896, height=1120, seed=None, art="photo", init=None, denoise=0.7):
+    """FLUX.1 schnell で1枚作る（縦長 4:5）。art: "photo"（写真風）か "anime"（アニメ風）。
+    init：もとにする絵（使う前の絵から、同じ場所の「使った後」を作るとき）。denoise が小さいほど、もとの絵に近い。"""
     seed = seed if seed is not None else int(time.time() * 1000) % 2**32
+    if init is not None:
+        name = upload(init)
+        wf = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "flux1-schnell-fp8.safetensors"}},
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {style_text(art)}", "clip": ["1", 1]}},
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["1", 1]}},
+            "4": {"class_type": "LoadImage", "inputs": {"image": name}},
+            "8": {"class_type": "VAEEncode", "inputs": {"pixels": ["4", 0], "vae": ["1", 2]}},
+            "5": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
+                                                       "latent_image": ["8", 0], "seed": seed, "steps": 8, "cfg": 1.0,
+                                                       "sampler_name": "euler", "scheduler": "simple",
+                                                       "denoise": float(denoise)}},
+            "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+            "7": {"class_type": "SaveImage", "inputs": {"images": ["6", 0], "filename_prefix": "noborog_img"}},
+        }
+        files = run(wf, timeout=600)
+        if not files:
+            raise AIError("画像ができませんでした")
+        return fetch(files[0], out)
     wf = {
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "flux1-schnell-fp8.safetensors"}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"text": f"{prompt}, {style_text(art)}", "clip": ["1", 1]}},
@@ -130,6 +150,56 @@ def image(prompt, out, width=896, height=1120, seed=None, art="photo"):
         "7": {"class_type": "SaveImage", "inputs": {"images": ["6", 0], "filename_prefix": "noborog_img"}},
     }
     files = run(wf, timeout=600)
+    if not files:
+        raise AIError("画像ができませんでした")
+    return fetch(files[0], out)
+
+
+EDIT_MODEL = "qwen_image_edit_2511_fp8mixed.safetensors"
+EDIT_LORA = "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors"
+
+
+def can_edit():
+    """「絵を見せて直す」AI（Qwen-Image-Edit、Apache 2.0）が入っているか。"""
+    m = COMFY_DIR / "ComfyUI" / "models"
+    return (m / "diffusion_models" / EDIT_MODEL).exists() and (m / "loras" / EDIT_LORA).exists()
+
+
+def edit(scene, prompt, out, product=None, seed=None, steps=4):
+    """Qwen-Image-Edit 2511 で、scene の絵を直す（場所はそのまま）。product（楽天の商品写真）を渡すと、
+    その形の商品を絵の中で使わせられる（楽天の写真そのものは加工しない。参考に見せるだけ）。"""
+    seed = seed if seed is not None else int(time.time() * 1000) % 2**32
+    wf = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": EDIT_MODEL, "weight_dtype": "default"}},
+        "2": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": EDIT_LORA,
+                                                              "strength_model": 1.0}},
+        "3": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["2", 0], "shift": 3.1}},
+        "4": {"class_type": "CFGNorm", "inputs": {"model": ["3", 0], "strength": 1.0}},
+        "5": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                                                     "type": "qwen_image", "device": "default"}},
+        "6": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+        "7": {"class_type": "LoadImage", "inputs": {"image": upload(scene)}},
+        "8": {"class_type": "ImageScaleToTotalPixels", "inputs": {"image": ["7", 0], "upscale_method": "lanczos",
+                                                                  "megapixels": 1.0, "resolution_steps": 1}},
+        "10": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["5", 0], "prompt": prompt,
+                                                                       "vae": ["6", 0], "image1": ["8", 0]}},
+        "11": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["5", 0], "prompt": "",
+                                                                       "vae": ["6", 0], "image1": ["8", 0]}},
+        "14": {"class_type": "VAEEncode", "inputs": {"pixels": ["8", 0], "vae": ["6", 0]}},
+        "15": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "positive": ["12", 0], "negative": ["13", 0],
+                                                    "latent_image": ["14", 0], "seed": seed, "steps": steps, "cfg": 1.0,
+                                                    "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+        "16": {"class_type": "VAEDecode", "inputs": {"samples": ["15", 0], "vae": ["6", 0]}},
+        "17": {"class_type": "SaveImage", "inputs": {"images": ["16", 0], "filename_prefix": "noborog_edit"}},
+    }
+    if product is not None:
+        wf["9"] = {"class_type": "LoadImage", "inputs": {"image": upload(product)}}
+        wf["10"]["inputs"]["image2"] = ["9", 0]
+        wf["11"]["inputs"]["image2"] = ["9", 0]
+    for k, src in (("12", "10"), ("13", "11")):
+        wf[k] = {"class_type": "FluxKontextMultiReferenceLatentMethod",
+                 "inputs": {"conditioning": [src, 0], "reference_latents_method": "index_timestep_zero"}}
+    files = run(wf, timeout=1200)
     if not files:
         raise AIError("画像ができませんでした")
     return fetch(files[0], out)
